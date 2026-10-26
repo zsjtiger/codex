@@ -21,10 +21,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let listener = TcpListener::bind(&config.addr).await?;
     info!(addr = %config.addr, dev_login = config.dev_login, "gateway listening");
-    let state = AppState {
-        pool,
-        dev_login: config.dev_login,
-    };
-    axum::serve(listener, app(state)).await?;
+    axum::serve(listener, app(AppState::new(pool, config.dev_login))).await?;
     Ok(())
 }

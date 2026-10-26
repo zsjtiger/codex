@@ -9,6 +9,7 @@ pub mod authz;
 pub mod config;
 pub mod error;
 pub mod routes;
+pub mod runtime;
 pub mod state;
 pub mod validate;
 pub mod ws;

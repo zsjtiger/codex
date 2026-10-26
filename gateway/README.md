@@ -8,11 +8,13 @@ browser and per-session `codex app-server` processes (see `../codex-rs/app-serve
 - REST control plane under `/api/v1`: sessions, workspaces, members, environments,
   threads, turns, attachments, usage and audit log. Backed by Postgres.
 - `GET /healthz` returns `ok`.
+- Turns are dispatched to the environment's `codex app-server` (see "Turn dispatch").
 - `GET /ws` is still an echo placeholder. It is not yet authenticated or connected to
   `codex app-server`.
 
-Not implemented yet: real sign-in (only the dev login exists), dispatching turns to
-`codex app-server`, object storage for attachment bytes, and rate limiting.
+Not implemented yet: real sign-in (only the dev login exists), starting app-server
+processes (environments must already have a running endpoint), recovering turns
+interrupted by a gateway restart, object storage for attachment bytes, and rate limiting.
 
 ## Configuration
 
@@ -91,6 +93,25 @@ All responses are JSON. Errors use `{"error": {"code", "message"}}`.
 Turns stay `queued` until the runtime that dispatches them to `codex app-server`
 updates them, which is not implemented yet.
 
+## Turn dispatch
+
+Creating a turn returns `201` with status `queued` and starts a background task:
+
+1. Connect to the environment's `endpoint` and send `initialize`. Connections are cached
+   per environment and reopened when they drop.
+2. On the thread's first turn, send `thread/start` and store the returned id in
+   `threads.codex_thread_id`. Later turns reuse it.
+3. Send `turn/start` with the turn's input and store the returned id in
+   `turns.codex_turn_id`. The turn is `running`.
+4. Wait for `turn/completed` for that turn. Sum the per-call token usage from
+   `thread/tokenUsage/updated` and write one `usage_records` row when the turn ends.
+5. Set the turn to `completed`, `failed` or `interrupted`, and set the thread to `idle`
+   or `failed`. Errors from app-server or the database are recorded on the turn.
+
+Limits: a turn times out after 30 minutes. Server requests such as approvals are
+rejected with "method not found", so approval-gated commands fail rather than hang.
+A lagging event stream fails the turn.
+
 ## Layout
 
 ```
@@ -106,6 +127,10 @@ src/
 ├── audit.rs        audit writes and the audit-log endpoint
 ├── validate.rs     input validation and pagination bounds
 ├── ws.rs           /ws placeholder
+├── runtime/
+│   ├── rpc.rs      JSON-RPC over WebSocket to app-server
+│   ├── mod.rs      per-environment connection cache
+│   └── dispatch.rs turn lifecycle and result recording
 └── routes/         one module per resource
 tests/api.rs        end-to-end tests
 ```

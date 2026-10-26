@@ -20,10 +20,7 @@ async fn call(
     token: Option<&str>,
     body: Option<Value>,
 ) -> (StatusCode, Value) {
-    let router = app(AppState {
-        pool: pool.clone(),
-        dev_login,
-    });
+    let router = app(AppState::new(pool.clone(), dev_login));
     let mut builder = Request::builder().method(method).uri(path);
     if let Some(token) = token {
         builder = builder.header("authorization", format!("Bearer {token}"));
