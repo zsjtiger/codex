@@ -97,6 +97,22 @@ All responses are JSON. Errors use `{"error": {"code", "message"}}`.
 | DELETE | `/api/v1/attachments/{id}` | Uploader or admin |
 | GET | `/api/v1/workspaces/{id}/usage` | Admin. `?from=&to=` (RFC 3339), defaults to the last 30 days |
 | GET | `/api/v1/workspaces/{id}/audit-logs` | Admin. `?limit=&offset=` |
+| GET, POST | `/api/v1/workspaces/{id}/projects` | POST `{name, instructions?}`. Instructions go into every new thread in the project |
+| GET, PATCH, DELETE | `/api/v1/projects/{id}` | Edit or delete: creator or admin |
+| GET, POST | `/api/v1/workspaces/{id}/skills` | Members read. Create: admin. Enabled skills go into new threads |
+| GET, PATCH, DELETE | `/api/v1/skills/{id}` | PATCH `{enabled?, name?, description?, instructions?}`: admin |
+| GET, POST | `/api/v1/workspaces/{id}/artifacts` | List filters: `?project_id=&kind=`. Kinds: document, slides, design, dashboard |
+| GET, PATCH, DELETE | `/api/v1/artifacts/{id}` | Edit or delete: creator or admin. `project_id: null` removes the project |
+| GET | `/api/v1/workspaces/{id}/search?q=` | Case-insensitive search of chats, message text, artifacts and projects |
+| GET, POST | `/api/v1/workspaces/{id}/scheduled-tasks` | POST `{name, prompt, frequency, time_of_day, weekday?, project_id?}`. Times are UTC |
+| GET, PATCH, DELETE | `/api/v1/scheduled-tasks/{id}` | Changing the schedule or re-enabling recomputes the next run |
+| POST | `/api/v1/scheduled-tasks/{id}/run` | Start a run now; the schedule is unchanged |
+| POST | `/api/v1/turns/{id}/interrupt` | Interrupt a running turn (202). The turn ends as `interrupted` |
+| PUT, GET | `/api/v1/attachments/{id}/content` | Upload bytes once (uploader only), then download. Size and SHA-256 are checked |
+
+Turn creation also accepts `model`, `effort` and `attachment_ids`. Text attachments are
+added to the turn input as fenced blocks; other types are refused. Thread creation and
+PATCH accept `project_id`.
 
 Turns stay `queued` until the runtime that dispatches them to `codex app-server`
 updates them, which is not implemented yet.
@@ -144,84 +160,10 @@ Approvals: while no browser is subscribed to the thread, or after 5 minutes with
 answer, the gateway declines the request so the turn can continue. Requests the
 gateway does not know how to answer get a JSON-RPC "method not found" error.
 
-## Data model
-
-Migration `0001_init.sql`:
-
-| Table               | Purpose                                                                 |
-|---------------------|-------------------------------------------------------------------------|
-| `users`             | Accounts, keyed by lowercase email                                      |
-| `sessions`          | Bearer sessions. Stores `sha256(token)` only, with expiry and revocation |
-| `workspaces`        | Tenants, addressed by a unique slug                                     |
-| `workspace_members` | `owner` / `admin` / `member`. Exactly one owner per workspace           |
-| `environments`      | Runtimes that execute threads. `endpoint` is the app-server `ws://` URL |
-| `threads`           | Conversations. `codex_thread_id` links to the app-server thread         |
-| `turns`             | Ordered inputs per thread (`seq`), with status and error                |
-| `attachments`       | File metadata. Bytes live in object storage under `storage_key`         |
-| `usage_records`     | Token usage written by the runtime when a turn finishes                 |
-| `audit_logs`        | Append-only record of changes, written in the same transaction          |
-
-## Authorization
-
-- Every workspace request needs a bearer token. Non-members get `404`, so workspace
-  existence is not revealed.
-- Workspace roles: `member` < `admin` < `owner`.
-  - Members: read workspace data, create threads and turns, upload attachments, and
-    modify their own threads and attachments.
-  - Admins: manage members (except owners and other admins), environments, usage and
-    audit logs, and modify any thread or attachment.
-  - Owner: change roles, delete the workspace.
-- The owner role cannot be assigned or removed through the API.
-
-## API
-
-All responses are JSON. Errors use `{"error": {"code", "message"}}`.
-
-| Method | Path | Notes |
-|---|---|---|
-| POST | `/api/v1/auth/sessions` | Dev login: `{email, display_name?}` returns `{token, expires_at, user}` |
-| DELETE | `/api/v1/auth/sessions` | Revoke the current session |
-| GET | `/api/v1/me` | Current user |
-| GET, POST | `/api/v1/workspaces` | List mine / create (caller becomes owner) |
-| GET, PATCH, DELETE | `/api/v1/workspaces/{id}` | PATCH: admin. DELETE: owner |
-| GET, POST | `/api/v1/workspaces/{id}/members` | POST `{email, role?}`: admin. Email must already have an account |
-| PATCH, DELETE | `/api/v1/workspaces/{id}/members/{user_id}` | PATCH role: owner. DELETE: admin, or self to leave |
-| GET, POST | `/api/v1/workspaces/{id}/environments` | POST: admin |
-| GET, PATCH, DELETE | `/api/v1/environments/{id}` | PATCH: admin (status, endpoint, name) |
-| GET, POST | `/api/v1/workspaces/{id}/threads` | List: `?archived=&limit=&offset=`. Create: `{title?, environment_id?}` |
-| GET, PATCH, DELETE | `/api/v1/threads/{id}` | Modify: creator or admin. PATCH `{title?, archived?}` |
-| GET, POST | `/api/v1/threads/{id}/turns` | Create returns `201` with status `queued`. Rejected on archived threads |
-| GET, POST | `/api/v1/workspaces/{id}/attachments` | Metadata only. `?thread_id=` filters the list |
-| DELETE | `/api/v1/attachments/{id}` | Uploader or admin |
-| GET | `/api/v1/workspaces/{id}/usage` | Admin. `?from=&to=` (RFC 3339), defaults to the last 30 days |
-| GET | `/api/v1/workspaces/{id}/audit-logs` | Admin. `?limit=&offset=` |
-
-Turns stay `queued` until the runtime that dispatches them to `codex app-server`
-updates them, which is not implemented yet.
-
-## Turn dispatch
-
-Creating a turn returns `201` with status `queued` and starts a background task:
-
-1. Connect to the environment's `endpoint` and send `initialize`. Connections are cached
-   per environment and reopened when they drop.
-2. On the thread's first turn, send `thread/start` and store the returned id in
-   `threads.codex_thread_id`. Later turns reuse it.
-3. Send `turn/start` with the turn's input and store the returned id in
-   `turns.codex_turn_id`. The turn is `running`.
-4. Wait for `turn/completed` for that turn. Sum the per-call token usage from
-   `thread/tokenUsage/updated` and write one `usage_records` row when the turn ends.
-5. Set the turn to `completed`, `failed` or `interrupted`, and set the thread to `idle`
-   or `failed`. Errors from app-server or the database are recorded on the turn.
-
-Limits: a turn times out after 30 minutes. Server requests such as approvals are
-rejected with "method not found", so approval-gated commands fail rather than hang.
-A lagging event stream fails the turn.
-
 ## Layout
 
 ```
-migrations/0001_init.sql   schema
+migrations/            schema, applied in order at startup
 src/
 ├── main.rs         startup: config, pool, migrations, serve
 ├── lib.rs          router assembly
