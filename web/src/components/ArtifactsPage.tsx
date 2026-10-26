@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { artifacts as artifactApi } from "../api/resources";
 import type { Artifact, ArtifactKind, Project } from "../api/types";
+import { MarkdownToc, MarkdownView, markdownHeadings } from "./Markdown";
 
 const kinds: { kind: ArtifactKind; label: string }[] = [
   { kind: "document", label: "Docs" },
@@ -90,6 +91,7 @@ export function ArtifactsPage({ workspaceId, userId, projects, canEdit, onBack, 
 
   if (open) {
     const editable = canEdit(open);
+    const headings = markdownHeadings(draftContent);
     return (
       <main className="artifacts-page">
         <div className="artifacts-inner">
@@ -101,7 +103,17 @@ export function ArtifactsPage({ workspaceId, userId, projects, canEdit, onBack, 
             <div className="muted small">
               {open.kind} · updated {new Date(open.updated_at).toLocaleString()}
             </div>
-            <textarea className="editor-body" value={draftContent} onChange={(e) => setDraftContent(e.target.value)} rows={18} maxLength={500000} disabled={!editable} aria-label="Content" />
+            {open.kind === "document" ? (
+              <div className="doc-split">
+                <textarea className="editor-body" value={draftContent} onChange={(e) => setDraftContent(e.target.value)} rows={18} maxLength={500000} disabled={!editable} aria-label="Content" />
+                <div className="doc-preview">
+                  <MarkdownToc headings={headings} />
+                  <MarkdownView source={draftContent} />
+                </div>
+              </div>
+            ) : (
+              <textarea className="editor-body" value={draftContent} onChange={(e) => setDraftContent(e.target.value)} rows={18} maxLength={500000} disabled={!editable} aria-label="Content" />
+            )}
             <div className="form-actions">
               <select value={open.project_id ?? ""} onChange={(e) => void setProject(e.target.value)} disabled={!editable} aria-label="Project">
                 <option value="">No project</option>

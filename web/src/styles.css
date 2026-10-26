@@ -386,3 +386,30 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .nav-row input[type="checkbox"] { margin-right: 8px; }
 .more-item { border: none; background: none; }
 .more-item:disabled { cursor: default; }
+
+/* Document artifacts: source on the left, rendered Markdown with a table of contents on the right */
+.doc-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.doc-split .editor-body { min-height: 60vh; }
+.doc-preview { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 20px 24px; max-height: 75vh; overflow-y: auto; }
+.markdown-toc { border-bottom: 1px solid var(--border); margin-bottom: 16px; padding-bottom: 12px; }
+.markdown-toc-title { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
+.markdown-toc ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; }
+.markdown-toc a { color: var(--text); text-decoration: none; font-size: 14px; }
+.markdown-toc a:hover { color: var(--accent); }
+.markdown { font-size: 15px; line-height: 1.7; color: var(--text); overflow-wrap: anywhere; }
+.markdown h1 { font-size: 26px; margin: 0 0 12px; }
+.markdown h2 { font-size: 20px; margin: 24px 0 8px; }
+.markdown h3 { font-size: 17px; margin: 18px 0 6px; }
+.markdown h4, .markdown h5, .markdown h6 { font-size: 15px; margin: 14px 0 4px; }
+.markdown p { margin: 0 0 12px; }
+.markdown ul, .markdown ol { margin: 0 0 12px; padding-left: 22px; }
+.markdown code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; background: var(--hover); border-radius: 4px; padding: 1px 4px; }
+.markdown pre { background: var(--hover); border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
+.markdown pre code { background: none; padding: 0; }
+.markdown blockquote { margin: 0 0 12px; padding-left: 12px; border-left: 3px solid var(--border); color: var(--text-muted); }
+.markdown hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+.markdown a { color: var(--accent); }
+@media (max-width: 760px) {
+  .doc-split { grid-template-columns: 1fr; }
+  .markdown-toc ol { grid-template-columns: 1fr; }
+}
