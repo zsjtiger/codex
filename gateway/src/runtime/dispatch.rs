@@ -167,7 +167,14 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
         None => {
             let instructions =
                 developer_instructions(&state.pool, turn.thread_id, turn.workspace_id).await?;
-            start_codex_thread(&state.pool, &lease, turn.thread_id, instructions).await?
+            start_codex_thread(
+                &state.pool,
+                &lease,
+                turn.thread_id,
+                turn.workspace_id,
+                instructions,
+            )
+            .await?
         }
     };
     // A thread that was started by an earlier app-server process must be loaded again.
@@ -279,15 +286,37 @@ async fn developer_instructions(
     Ok((!sections.is_empty()).then(|| sections.join("\n\n")))
 }
 
+/// Enabled connectors as codex `mcp_servers` entries. `None` when there are none.
+async fn mcp_servers(pool: &PgPool, workspace_id: Uuid) -> Result<Option<Value>, DispatchError> {
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT key, url FROM connectors WHERE workspace_id = $1 AND enabled ORDER BY key",
+    )
+    .bind(workspace_id)
+    .fetch_all(pool)
+    .await?;
+    if rows.is_empty() {
+        return Ok(None);
+    }
+    let servers: serde_json::Map<String, Value> = rows
+        .into_iter()
+        .map(|(key, url)| (key, json!({ "url": url })))
+        .collect();
+    Ok(Some(Value::Object(servers)))
+}
+
 async fn start_codex_thread(
     pool: &PgPool,
     connection: &super::RpcConnection,
     thread_id: Uuid,
+    workspace_id: Uuid,
     instructions: Option<String>,
 ) -> Result<String, DispatchError> {
     let mut params = json!({});
     if let Some(instructions) = instructions {
         params["developerInstructions"] = json!(instructions);
+    }
+    if let Some(servers) = mcp_servers(pool, workspace_id).await? {
+        params["config"] = json!({ "mcp_servers": servers });
     }
     let response = connection.request("thread/start", params).await?;
     let started = response
