@@ -1,36 +1,24 @@
-import { useEffect, useRef, useState } from "react";
-import { openSocket } from "./realtime/socket";
+import { useState } from "react";
+import { Sidebar } from "./components/Sidebar";
+import { Home } from "./components/Home";
+import { user } from "./data/mock";
+import { SidebarIcon } from "./components/icons";
 
-/** Skeleton page: connects to the gateway and shows echoed frames. */
 export function App() {
-  const [log, setLog] = useState<string[]>([]);
-  const [connected, setConnected] = useState(false);
-  const socketRef = useRef<WebSocket | null>(null);
-
-  useEffect(() => {
-    const socket = openSocket(
-      (data) => setLog((prev) => [...prev, `← ${data}`]),
-      () => setConnected(false),
-    );
-    socket.onopen = () => setConnected(true);
-    socketRef.current = socket;
-    return () => socket.close();
-  }, []);
-
-  const send = () => {
-    const payload = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" });
-    socketRef.current?.send(payload);
-    setLog((prev) => [...prev, `→ ${payload}`]);
-  };
+  // Open on wide screens; start closed on narrow ones, where it overlays the page.
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia("(min-width: 761px)").matches);
 
   return (
-    <main style={{ fontFamily: "system-ui", padding: 16 }}>
-      <h1>Codex</h1>
-      <p>Gateway: {connected ? "connected" : "disconnected"}</p>
-      <button onClick={send} disabled={!connected}>
-        Send initialize
-      </button>
-      <pre>{log.join("\n")}</pre>
-    </main>
+    <div className="app">
+      <Sidebar open={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} />
+      <div className="workspace">
+        {!sidebarOpen && (
+          <button className="icon-button reopen" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar">
+            <SidebarIcon />
+          </button>
+        )}
+        <Home name={user.name} />
+      </div>
+    </div>
   );
 }
