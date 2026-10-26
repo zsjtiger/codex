@@ -127,14 +127,16 @@ struct TurnRow {
     workspace_id: Uuid,
     created_by: Option<Uuid>,
     input: String,
+    model: Option<String>,
+    effort: Option<String>,
     codex_thread_id: Option<String>,
     environment_id: Option<Uuid>,
     endpoint: Option<String>,
 }
 
 async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> {
-    let row = sqlx::query_as::<_, (Uuid, Uuid, Option<Uuid>, String, Option<String>, Option<Uuid>, Option<String>)>(
-        "SELECT th.id, th.workspace_id, t.created_by, t.input, th.codex_thread_id, th.environment_id, e.endpoint
+    let row = sqlx::query_as::<_, (Uuid, Uuid, Option<Uuid>, String, Option<String>, Option<String>, Option<String>, Option<Uuid>, Option<String>)>(
+        "SELECT th.id, th.workspace_id, t.created_by, t.input, t.model, t.effort, th.codex_thread_id, th.environment_id, e.endpoint
          FROM turns t
          JOIN threads th ON th.id = t.thread_id
          LEFT JOIN environments e ON e.id = th.environment_id
@@ -148,9 +150,11 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
         workspace_id: row.1,
         created_by: row.2,
         input: row.3,
-        codex_thread_id: row.4,
-        environment_id: row.5,
-        endpoint: row.6,
+        model: row.4,
+        effort: row.5,
+        codex_thread_id: row.6,
+        environment_id: row.7,
+        endpoint: row.8,
     };
     let environment_id = turn.environment_id.ok_or(DispatchError::NoEnvironment)?;
     let lease = state
@@ -160,7 +164,11 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
 
     let codex_thread_id = match &turn.codex_thread_id {
         Some(id) => id.clone(),
-        None => start_codex_thread(&state.pool, &lease, turn.thread_id).await?,
+        None => {
+            let instructions =
+                developer_instructions(&state.pool, turn.thread_id, turn.workspace_id).await?;
+            start_codex_thread(&state.pool, &lease, turn.thread_id, instructions).await?
+        }
     };
     // A thread that was started by an earlier app-server process must be loaded again.
     if !lease.is_thread_loaded(&codex_thread_id) {
@@ -172,15 +180,17 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
 
     // Subscribe before starting the turn so no notification can be missed.
     let mut events = lease.subscribe();
-    let response = lease
-        .request(
-            "turn/start",
-            json!({
-                "threadId": codex_thread_id,
-                "input": [{ "type": "text", "text": turn.input }],
-            }),
-        )
-        .await?;
+    let mut params = json!({
+        "threadId": codex_thread_id,
+        "input": [{ "type": "text", "text": turn.input }],
+    });
+    if let Some(model) = &turn.model {
+        params["model"] = json!(model);
+    }
+    if let Some(effort) = &turn.effort {
+        params["effort"] = json!(effort);
+    }
+    let response = lease.request("turn/start", params).await?;
     let codex_turn_id = response
         .pointer("/turn/id")
         .and_then(Value::as_str)
@@ -239,12 +249,47 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
     Ok(())
 }
 
+/// Project instructions followed by each enabled skill. `None` when there is nothing to add.
+async fn developer_instructions(
+    pool: &PgPool,
+    thread_id: Uuid,
+    workspace_id: Uuid,
+) -> Result<Option<String>, DispatchError> {
+    let project: Option<String> = sqlx::query_scalar(
+        "SELECT p.instructions FROM threads th JOIN projects p ON p.id = th.project_id WHERE th.id = $1",
+    )
+    .bind(thread_id)
+    .fetch_optional(pool)
+    .await?
+    .flatten();
+    let skills: Vec<(String, String)> = sqlx::query_as(
+        "SELECT name, instructions FROM skills WHERE workspace_id = $1 AND enabled ORDER BY name",
+    )
+    .bind(workspace_id)
+    .fetch_all(pool)
+    .await?;
+
+    let mut sections: Vec<String> = Vec::new();
+    if let Some(instructions) = project.filter(|text| !text.trim().is_empty()) {
+        sections.push(format!("Project instructions:\n{instructions}"));
+    }
+    for (name, instructions) in skills {
+        sections.push(format!("Skill {name}:\n{instructions}"));
+    }
+    Ok((!sections.is_empty()).then(|| sections.join("\n\n")))
+}
+
 async fn start_codex_thread(
     pool: &PgPool,
     connection: &super::RpcConnection,
     thread_id: Uuid,
+    instructions: Option<String>,
 ) -> Result<String, DispatchError> {
-    let response = connection.request("thread/start", json!({})).await?;
+    let mut params = json!({});
+    if let Some(instructions) = instructions {
+        params["developerInstructions"] = json!(instructions);
+    }
+    let response = connection.request("thread/start", params).await?;
     let started = response
         .pointer("/thread/id")
         .and_then(Value::as_str)
@@ -342,5 +387,42 @@ async fn mark_failed(pool: &PgPool, turn_id: Uuid, message: &str) -> Result<(), 
     .bind(turn_id)
     .execute(pool)
     .await?;
+    Ok(())
+}
+
+/// Asks app-server to interrupt a running turn.
+pub async fn interrupt(state: &AppState, turn_id: Uuid) -> Result<(), String> {
+    let (codex_thread_id, codex_turn_id, environment_id, endpoint): (
+        Option<String>,
+        Option<String>,
+        Option<Uuid>,
+        Option<String>,
+    ) = sqlx::query_as(
+        "SELECT th.codex_thread_id, t.codex_turn_id, th.environment_id, e.endpoint
+             FROM turns t
+             JOIN threads th ON th.id = t.thread_id
+             LEFT JOIN environments e ON e.id = th.environment_id
+             WHERE t.id = $1",
+    )
+    .bind(turn_id)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|err| err.to_string())?;
+    let environment_id = environment_id.ok_or_else(|| "thread has no environment".to_string())?;
+    let (Some(codex_thread_id), Some(codex_turn_id)) = (codex_thread_id, codex_turn_id) else {
+        return Err("turn has not started on app-server yet".to_string());
+    };
+    let lease = state
+        .runtime
+        .lease(environment_id, endpoint.as_deref())
+        .await
+        .map_err(|err| err.to_string())?;
+    lease
+        .request(
+            "turn/interrupt",
+            json!({ "threadId": codex_thread_id, "turnId": codex_turn_id }),
+        )
+        .await
+        .map_err(|err| err.to_string())?;
     Ok(())
 }

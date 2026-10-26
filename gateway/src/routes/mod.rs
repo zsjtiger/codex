@@ -2,10 +2,15 @@ use axum::Router;
 
 use crate::state::AppState;
 
+mod artifacts;
 mod attachments;
 mod auth;
 mod environments;
 mod members;
+mod projects;
+mod scheduled;
+mod search;
+mod skills;
 mod threads;
 pub mod usage;
 mod workspaces;
@@ -20,6 +25,11 @@ pub fn router() -> Router<AppState> {
         .merge(threads::routes())
         .merge(attachments::routes())
         .merge(usage::routes())
+        .merge(projects::routes())
+        .merge(skills::routes())
+        .merge(artifacts::routes())
+        .merge(search::routes())
+        .merge(scheduled::routes())
         .merge(crate::audit::routes());
     Router::new().nest("/api/v1", api)
 }

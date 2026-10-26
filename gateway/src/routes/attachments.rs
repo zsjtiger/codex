@@ -1,12 +1,15 @@
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
-    http::StatusCode,
-    routing::get,
+    body::Bytes,
+    extract::{DefaultBodyLimit, Path, Query, State},
+    http::{StatusCode, header},
+    response::{IntoResponse, Response},
+    routing::{get, put},
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use sqlx::FromRow;
 use uuid::Uuid;
 
@@ -34,6 +37,8 @@ pub struct AttachmentView {
     pub sha256: Option<String>,
     /// Object-storage key. Uploading the bytes is not implemented yet.
     pub storage_key: String,
+    /// True once the bytes have been uploaded to `/content`.
+    pub uploaded: bool,
     pub created_at: DateTime<Utc>,
 }
 
@@ -55,10 +60,16 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/workspaces/{id}/attachments", get(list).post(create))
         .route("/attachments/{id}", axum::routing::delete(delete))
+        .route(
+            "/attachments/{id}/content",
+            put(upload)
+                .get(download)
+                .layer(DefaultBodyLimit::max(MAX_ATTACHMENT_BYTES as usize)),
+        )
 }
 
 const COLUMNS: &str = "id, workspace_id, thread_id, uploaded_by, filename, content_type, size_bytes, \
-                       sha256, storage_key, created_at";
+                       sha256, storage_key, uploaded, created_at";
 
 async fn create(
     State(state): State<AppState>,
@@ -188,4 +199,107 @@ async fn delete(
     tx.commit().await?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Stores the bytes for an attachment created with metadata. Only the uploader can upload,
+/// once, and the size and optional SHA-256 must match the metadata.
+async fn upload(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+    body: Bytes,
+) -> Result<StatusCode, ApiError> {
+    let (workspace_id, uploaded_by, size_bytes, storage_key, sha256, uploaded): (
+        Uuid,
+        Option<Uuid>,
+        i64,
+        String,
+        Option<String>,
+        bool,
+    ) = sqlx::query_as(
+        "SELECT workspace_id, uploaded_by, size_bytes, storage_key, sha256, uploaded FROM attachments WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?;
+    require_role(&state.pool, workspace_id, user.id, Role::Member).await?;
+    if uploaded_by != Some(user.id) {
+        return Err(ApiError::Forbidden);
+    }
+    if uploaded {
+        return Err(ApiError::Conflict(
+            "attachment already uploaded".to_string(),
+        ));
+    }
+    if body.len() as i64 != size_bytes {
+        return Err(ApiError::BadRequest(format!(
+            "body must be {size_bytes} bytes"
+        )));
+    }
+    if let Some(expected) = sha256 {
+        let actual = hex::encode(Sha256::digest(&body));
+        if actual != expected {
+            return Err(ApiError::BadRequest(
+                "body does not match the declared sha256".to_string(),
+            ));
+        }
+    }
+
+    let path = state.storage.join(&storage_key);
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent).await.map_err(|err| {
+            tracing::error!(%err, "could not create attachment directory");
+            ApiError::Internal
+        })?;
+    }
+    tokio::fs::write(&path, &body).await.map_err(|err| {
+        tracing::error!(%err, "could not write attachment");
+        ApiError::Internal
+    })?;
+    sqlx::query("UPDATE attachments SET uploaded = true WHERE id = $1")
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Returns the stored bytes to workspace members.
+async fn download(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Response, ApiError> {
+    let (workspace_id, storage_key, content_type, filename, uploaded): (Uuid, String, String, String, bool) =
+        sqlx::query_as(
+            "SELECT workspace_id, storage_key, content_type, filename, uploaded FROM attachments WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
+    require_role(&state.pool, workspace_id, user.id, Role::Member).await?;
+    if !uploaded {
+        return Err(ApiError::NotFound);
+    }
+    let bytes = tokio::fs::read(state.storage.join(&storage_key))
+        .await
+        .map_err(|err| {
+            tracing::error!(%err, "could not read attachment");
+            ApiError::Internal
+        })?;
+    // Quotes and control characters would break the header, so drop them from the name.
+    let safe_name: String = filename
+        .chars()
+        .filter(|c| *c != '"' && *c != '\\' && !c.is_control())
+        .collect();
+    Ok((
+        [
+            (header::CONTENT_TYPE, content_type),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{safe_name}\""),
+            ),
+        ],
+        bytes,
+    )
+        .into_response())
 }

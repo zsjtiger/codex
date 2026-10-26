@@ -16,6 +16,8 @@ pub struct Config {
     pub codex_home: Option<PathBuf>,
     pub idle_timeout: Duration,
     pub turns_per_minute: usize,
+    /// Directory for attachment bytes.
+    pub storage_dir: PathBuf,
 }
 
 impl Config {
@@ -41,7 +43,11 @@ impl Config {
                 .map_err(|_| "GATEWAY_TURNS_PER_MINUTE must be a whole number".to_string())?,
             Err(_) => crate::state::DEFAULT_TURNS_PER_MINUTE,
         };
+        let storage_dir = std::env::var_os("GATEWAY_STORAGE_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("storage"));
         Ok(Self {
+            storage_dir,
             turns_per_minute,
             addr: std::env::var("GATEWAY_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".to_string()),
             database_url,

@@ -61,3 +61,18 @@ pub async fn require_role(
         Err(ApiError::Forbidden)
     }
 }
+
+/// Allows the creator of a record, or an admin or owner, to change it.
+pub async fn ensure_creator_or_admin(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    created_by: Option<Uuid>,
+    user_id: Uuid,
+) -> Result<(), ApiError> {
+    let role = require_role(pool, workspace_id, user_id, Role::Member).await?;
+    if created_by == Some(user_id) || role >= Role::Admin {
+        Ok(())
+    } else {
+        Err(ApiError::Forbidden)
+    }
+}

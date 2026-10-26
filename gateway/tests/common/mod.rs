@@ -31,6 +31,8 @@ pub struct MockServer {
     pub url: String,
     /// Methods the gateway has sent, in order.
     pub seen: Arc<Mutex<Vec<String>>>,
+    /// Every request the gateway has sent, with its params.
+    pub requests: Arc<Mutex<Vec<(String, Value)>>>,
     /// Responses the gateway has sent back to the mock's server requests.
     pub responses: Arc<Mutex<Vec<Value>>>,
     /// Largest number of turns in flight at once.
@@ -44,11 +46,13 @@ pub async fn mock_app_server() -> MockServer {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("ws://{}", listener.local_addr().unwrap());
     let seen = Arc::new(Mutex::new(Vec::new()));
+    let requests = Arc::new(Mutex::new(Vec::new()));
     let responses = Arc::new(Mutex::new(Vec::new()));
     let max_in_flight = Arc::new(AtomicUsize::new(0));
     let in_flight = Arc::new(AtomicUsize::new(0));
     let turn_counter = Arc::new(AtomicU64::new(1));
 
+    let requests_c = Arc::clone(&requests);
     let (seen_c, responses_c, max_c) = (
         Arc::clone(&seen),
         Arc::clone(&responses),
@@ -70,6 +74,7 @@ pub async fn mock_app_server() -> MockServer {
                 }
             });
 
+            let requests = Arc::clone(&requests_c);
             let (seen, responses, max_in_flight, in_flight, turn_counter) = (
                 Arc::clone(&seen_c),
                 Arc::clone(&responses_c),
@@ -90,6 +95,10 @@ pub async fn mock_app_server() -> MockServer {
                         continue;
                     };
                     seen.lock().unwrap().push(method.clone());
+                    requests
+                        .lock()
+                        .unwrap()
+                        .push((method.clone(), msg["params"].clone()));
                     let Some(id) = msg.get("id").cloned() else {
                         continue; // notification such as "initialized"
                     };
@@ -191,6 +200,7 @@ pub async fn mock_app_server() -> MockServer {
     MockServer {
         url,
         seen,
+        requests,
         responses,
         max_in_flight,
     }
@@ -305,4 +315,38 @@ pub async fn spawn_gateway(state: AppState) -> SocketAddr {
         axum::serve(listener, app(state)).await.unwrap();
     });
     addr
+}
+
+/// Sends a request with a raw body and returns the status, content type and bytes.
+pub async fn call_raw(
+    state: &AppState,
+    method: &str,
+    path: &str,
+    token: &str,
+    content_type: &str,
+    body: Vec<u8>,
+) -> (StatusCode, Option<String>, Vec<u8>) {
+    let router = app(state.clone());
+    let request = Request::builder()
+        .method(method)
+        .uri(path)
+        .header("authorization", format!("Bearer {token}"))
+        .header("content-type", content_type)
+        .body(Body::from(body))
+        .unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    let status = response.status();
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string);
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes()
+        .to_vec();
+    (status, content_type, bytes)
 }

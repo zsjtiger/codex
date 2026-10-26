@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use sqlx::PgPool;
 
@@ -18,6 +18,8 @@ pub struct AppState {
     pub tickets: Arc<Tickets>,
     /// Caps how many turns one user can create per minute.
     pub turn_limiter: Arc<SlidingWindow>,
+    /// Where attachment bytes are stored, under the keys recorded in the database.
+    pub storage: PathBuf,
 }
 
 impl AppState {
@@ -32,7 +34,13 @@ impl AppState {
                 DEFAULT_TURNS_PER_MINUTE,
                 Duration::from_secs(60),
             )),
+            storage: PathBuf::from("storage"),
         }
+    }
+
+    pub fn with_storage(mut self, storage: PathBuf) -> Self {
+        self.storage = storage;
+        self
     }
 
     pub fn with_turn_limit(mut self, turns_per_minute: usize) -> Self {

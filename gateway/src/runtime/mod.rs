@@ -8,6 +8,7 @@
 pub mod dispatch;
 pub mod hub;
 pub mod rpc;
+pub mod schedule;
 
 use std::{
     collections::HashMap,

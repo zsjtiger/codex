@@ -2,7 +2,7 @@ use axum::{
     Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::get,
+    routing::{get, post},
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -24,6 +24,7 @@ pub struct ThreadView {
     pub id: Uuid,
     pub workspace_id: Uuid,
     pub environment_id: Option<Uuid>,
+    pub project_id: Option<Uuid>,
     pub created_by: Option<Uuid>,
     pub title: String,
     pub state: String,
@@ -45,6 +46,7 @@ struct ThreadAccess {
 pub struct CreateThread {
     title: Option<String>,
     environment_id: Option<Uuid>,
+    project_id: Option<Uuid>,
 }
 
 #[derive(Deserialize)]
@@ -52,6 +54,9 @@ pub struct UpdateThread {
     title: Option<String>,
     /// `true` archives the thread, `false` restores it.
     archived: Option<bool>,
+    /// Absent keeps the project, `null` removes it, a value moves the thread.
+    #[serde(default, deserialize_with = "crate::serde_helpers::double_option")]
+    project_id: Option<Option<Uuid>>,
 }
 
 #[derive(Deserialize)]
@@ -77,6 +82,10 @@ pub struct TurnView {
     pub error: Option<String>,
     /// Turn id assigned by codex app-server; set once the turn starts running.
     pub codex_turn_id: Option<String>,
+    /// Model requested for this turn, if one was chosen.
+    pub model: Option<String>,
+    /// Reasoning effort requested for this turn, if one was chosen.
+    pub effort: Option<String>,
     pub created_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
@@ -85,7 +94,11 @@ pub struct TurnView {
 #[derive(Deserialize)]
 pub struct CreateTurn {
     input: String,
+    model: Option<String>,
+    effort: Option<String>,
 }
+
+const TURN_COLUMNS: &str = "id, thread_id, seq, status, input, error, codex_turn_id, model, effort, created_by, created_at, completed_at";
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -98,9 +111,10 @@ pub fn routes() -> Router<AppState> {
             get(get_thread).patch(update_thread).delete(delete_thread),
         )
         .route("/threads/{id}/turns", get(list_turns).post(create_turn))
+        .route("/turns/{id}/interrupt", post(interrupt_turn))
 }
 
-const COLUMNS: &str = "id, workspace_id, environment_id, created_by, title, state, codex_thread_id, \
+const COLUMNS: &str = "id, workspace_id, environment_id, project_id, created_by, title, state, codex_thread_id, \
                        archived_at, created_at, updated_at, last_activity_at";
 
 async fn thread_access(pool: &PgPool, id: Uuid) -> Result<ThreadAccess, ApiError> {
@@ -184,13 +198,29 @@ async fn create_thread(
         }
     }
 
+    if let Some(project_id) = req.project_id {
+        let in_workspace: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM projects WHERE id = $1 AND workspace_id = $2)",
+        )
+        .bind(project_id)
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
+        if !in_workspace {
+            return Err(ApiError::BadRequest(
+                "project does not belong to this workspace".to_string(),
+            ));
+        }
+    }
+
     let mut tx = state.pool.begin().await?;
     let thread_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO threads (workspace_id, environment_id, created_by, title)
-         VALUES ($1, $2, $3, $4) RETURNING id",
+        "INSERT INTO threads (workspace_id, environment_id, project_id, created_by, title)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id",
     )
     .bind(id)
     .bind(req.environment_id)
+    .bind(req.project_id)
     .bind(user.id)
     .bind(&title)
     .fetch_one(&mut *tx)
@@ -235,6 +265,25 @@ async fn update_thread(
         validate::length("title", title, 1, 200)?;
     }
 
+    let (set_project, project_id) = match req.project_id {
+        None => (false, None),
+        Some(None) => (true, None),
+        Some(Some(project)) => {
+            let in_workspace: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM projects WHERE id = $1 AND workspace_id = $2)",
+            )
+            .bind(project)
+            .bind(access.workspace_id)
+            .fetch_one(&state.pool)
+            .await?;
+            if !in_workspace {
+                return Err(ApiError::BadRequest(
+                    "project does not belong to this workspace".to_string(),
+                ));
+            }
+            (true, Some(project))
+        }
+    };
     sqlx::query(
         "UPDATE threads
          SET title = COALESCE($2, title),
@@ -243,12 +292,15 @@ async fn update_thread(
                  WHEN $3::bool THEN COALESCE(archived_at, now())
                  ELSE NULL
              END,
+             project_id = CASE WHEN $4 THEN $5 ELSE project_id END,
              updated_at = now()
          WHERE id = $1",
     )
     .bind(id)
     .bind(req.title.as_deref())
     .bind(req.archived)
+    .bind(set_project)
+    .bind(project_id)
     .execute(&state.pool)
     .await?;
     Ok(Json(load_thread(&state.pool, id).await?))
@@ -291,18 +343,15 @@ async fn list_turns(
     let access = thread_access(&state.pool, id).await?;
     require_role(&state.pool, access.workspace_id, user.id, Role::Member).await?;
     let (limit, offset) = validate::page(query.limit, query.offset)?;
-    let rows = sqlx::query_as::<_, TurnView>(
-        "SELECT id, thread_id, seq, status, input, error, codex_turn_id, created_by, created_at, completed_at
-         FROM turns
-         WHERE thread_id = $1
-         ORDER BY seq
-         LIMIT $2 OFFSET $3",
-    )
-    .bind(id)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(&state.pool)
-    .await?;
+    let sql = format!(
+        "SELECT {TURN_COLUMNS} FROM turns WHERE thread_id = $1 ORDER BY seq LIMIT $2 OFFSET $3"
+    );
+    let rows = sqlx::query_as::<_, TurnView>(&sql)
+        .bind(id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&state.pool)
+        .await?;
     Ok(Json(rows))
 }
 
@@ -316,6 +365,12 @@ async fn create_turn(
     let access = thread_access(&state.pool, id).await?;
     require_role(&state.pool, access.workspace_id, user.id, Role::Member).await?;
     validate::length("input", &req.input, 1, 100_000)?;
+    if let Some(model) = &req.model {
+        validate::length("model", model, 1, 100)?;
+    }
+    if let Some(effort) = &req.effort {
+        validate::length("effort", effort, 1, 32)?;
+    }
     if !state.turn_limiter.allow(user.id) {
         return Err(ApiError::TooManyRequests);
     }
@@ -337,13 +392,15 @@ async fn create_turn(
             .fetch_one(&mut *tx)
             .await?;
     let turn = sqlx::query_as::<_, TurnView>(
-        "INSERT INTO turns (thread_id, seq, input, created_by)
-         VALUES ($1, $2, $3, $4)
-         RETURNING id, thread_id, seq, status, input, error, codex_turn_id, created_by, created_at, completed_at",
+        "INSERT INTO turns (thread_id, seq, input, model, effort, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, thread_id, seq, status, input, error, codex_turn_id, model, effort, created_by, created_at, completed_at",
     )
     .bind(id)
     .bind(seq)
     .bind(&req.input)
+    .bind(req.model.as_deref())
+    .bind(req.effort.as_deref())
     .bind(user.id)
     .fetch_one(&mut *tx)
     .await?;
@@ -355,4 +412,29 @@ async fn create_turn(
 
     crate::runtime::dispatch::spawn_drain(state.clone(), turn.thread_id);
     Ok((StatusCode::CREATED, Json(turn)))
+}
+
+/// Asks app-server to stop a running turn. The turn finishes as `interrupted` once
+/// app-server reports it, so this returns before the turn has ended.
+async fn interrupt_turn(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    let row: (Uuid, String) = sqlx::query_as(
+        "SELECT th.workspace_id, t.status FROM turns t JOIN threads th ON th.id = t.thread_id WHERE t.id = $1",
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?;
+    require_role(&state.pool, row.0, user.id, Role::Member).await?;
+    if row.1 != "running" {
+        return Err(ApiError::Conflict(
+            "only a running turn can be interrupted".to_string(),
+        ));
+    }
+    crate::runtime::dispatch::interrupt(&state, id)
+        .await
+        .map_err(|err| ApiError::Conflict(err.to_string()))?;
+    Ok(StatusCode::ACCEPTED)
 }

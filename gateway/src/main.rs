@@ -22,6 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state = AppState::new(pool, config.dev_login, config.runtime_config())
         .with_turn_limit(config.turns_per_minute);
     state.runtime.spawn_reaper();
+    codex_gateway::runtime::schedule::spawn_scheduler(state.clone());
     let interrupted = dispatch::recover(&state).await?;
     info!(interrupted, "recovered turns from a previous run");
 
