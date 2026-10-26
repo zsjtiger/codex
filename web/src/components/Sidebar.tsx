@@ -10,6 +10,7 @@ interface SidebarProps {
   activeId: string | null;
   onSelect: (threadId: string) => void;
   onNew: () => void;
+  onSearch: () => void;
   user: User;
   socketStatus: SocketStatus;
   onSignOut: () => void;
@@ -31,7 +32,7 @@ const statusLabel: Record<SocketStatus, string> = {
   closed: "Offline",
 };
 
-export function Sidebar({ open, onToggle, threads, activeId, onSelect, onNew, user, socketStatus, onSignOut }: SidebarProps) {
+export function Sidebar({ open, onToggle, threads, activeId, onSelect, onNew, onSearch, user, socketStatus, onSignOut }: SidebarProps) {
   const [recentsOpen, setRecentsOpen] = useState(true);
 
   return (
@@ -47,8 +48,8 @@ export function Sidebar({ open, onToggle, threads, activeId, onSelect, onNew, us
 
       <nav className="nav">
         {navItems.map(({ label, Icon }) =>
-          label === "New" ? (
-            <button key={label} className="nav-item" onClick={onNew}>
+          label === "New" || label === "Search" ? (
+            <button key={label} className="nav-item" onClick={label === "New" ? onNew : onSearch}>
               <Icon />
               <span>{label}</span>
             </button>

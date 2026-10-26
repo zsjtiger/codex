@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { Home } from "./components/Home";
 import { SignIn } from "./components/SignIn";
+import { SearchDialog } from "./components/SearchDialog";
 import { SidebarIcon } from "./components/icons";
 import { useCodex } from "./state/useCodex";
 
@@ -9,6 +10,19 @@ export function App() {
   // Open on wide screens; start closed on narrow ones, where it overlays the page.
   const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia("(min-width: 761px)").matches);
   const codex = useCodex();
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // Cmd/Ctrl+K opens search from anywhere in the app.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setSearchOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   if (codex.checking) return <div className="loading">Loading…</div>;
   if (!codex.user) return <SignIn onSignIn={codex.signIn} />;
@@ -24,10 +38,19 @@ export function App() {
         activeId={codex.activeId}
         onSelect={(id) => void codex.selectThread(id)}
         onNew={codex.newChat}
+        onSearch={() => setSearchOpen(true)}
         user={codex.user}
         socketStatus={codex.socketStatus}
         onSignOut={() => void codex.signOut()}
       />
+      {searchOpen && (
+        <SearchDialog
+          threads={codex.threads}
+          onSelect={(id) => void codex.selectThread(id)}
+          onNew={codex.newChat}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
       <div className="workspace">
         {!sidebarOpen && (
           <button className="icon-button reopen" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar">
