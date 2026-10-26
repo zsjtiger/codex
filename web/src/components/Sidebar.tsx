@@ -1,10 +1,18 @@
 import { useState } from "react";
-import { ArtifactIcon, ChatIcon, ChevronIcon, ClockIcon, CustomizeIcon, FileIcon, MoreIcon, PinIcon, PlusIcon, ProjectIcon, SearchIcon, SidebarIcon } from "./icons";
-import { type ChatItem, currentUser, pinned, recents } from "../data/mock";
+import type { Thread, User } from "../api/types";
+import type { SocketStatus } from "../realtime/socket";
+import { ArtifactIcon, ChatIcon, ChevronIcon, ClockIcon, CustomizeIcon, MoreIcon, PlusIcon, ProjectIcon, SearchIcon, SidebarIcon } from "./icons";
 
 interface SidebarProps {
   open: boolean;
   onToggle: () => void;
+  threads: Thread[];
+  activeId: string | null;
+  onSelect: (threadId: string) => void;
+  onNew: () => void;
+  user: User;
+  socketStatus: SocketStatus;
+  onSignOut: () => void;
 }
 
 const navItems = [
@@ -17,24 +25,13 @@ const navItems = [
   { label: "More", Icon: MoreIcon },
 ];
 
-function EmptyNote({ children }: { children: string }) {
-  return <p className="empty-note">{children}</p>;
-}
+const statusLabel: Record<SocketStatus, string> = {
+  open: "Live",
+  connecting: "Connecting…",
+  closed: "Offline",
+};
 
-function ChatRow({ item }: { item: ChatItem }) {
-  return (
-    <a className="chat-row" href="#" title={item.title}>
-      <ChatIcon className="chat-row-icon" />
-      <span className="chat-row-title">{item.title}</span>
-      {item.hasFile && <FileIcon className="row-marker" />}
-      {item.scheduled && <ClockIcon className="row-marker" width={14} height={14} />}
-      {item.unread && <span className="unread-dot" aria-label="unread" />}
-    </a>
-  );
-}
-
-export function Sidebar({ open, onToggle }: SidebarProps) {
-  const [pinnedOpen, setPinnedOpen] = useState(true);
+export function Sidebar({ open, onToggle, threads, activeId, onSelect, onNew, user, socketStatus, onSignOut }: SidebarProps) {
   const [recentsOpen, setRecentsOpen] = useState(true);
 
   return (
@@ -49,30 +46,22 @@ export function Sidebar({ open, onToggle }: SidebarProps) {
       </div>
 
       <nav className="nav">
-        {navItems.map(({ label, Icon }) => (
-          <a key={label} className="nav-item" href="#">
-            <Icon />
-            <span>{label}</span>
-          </a>
-        ))}
+        {navItems.map(({ label, Icon }) =>
+          label === "New" ? (
+            <button key={label} className="nav-item" onClick={onNew}>
+              <Icon />
+              <span>{label}</span>
+            </button>
+          ) : (
+            <a key={label} className="nav-item" href="#" onClick={(event) => event.preventDefault()} aria-disabled="true">
+              <Icon />
+              <span>{label}</span>
+            </a>
+          ),
+        )}
       </nav>
 
       <div className="sidebar-scroll">
-        <section>
-          <button className="section-heading" onClick={() => setPinnedOpen(!pinnedOpen)} aria-expanded={pinnedOpen}>
-            <span>Pinned</span>
-            <ChevronIcon className={pinnedOpen ? "" : "chevron-closed"} />
-          </button>
-          {pinnedOpen && (
-            <div className="chat-list">
-              {pinned.length === 0 && <EmptyNote>No pinned chats</EmptyNote>}
-              {pinned.map((item) => (
-                <ChatRow key={item.id} item={item} />
-              ))}
-            </div>
-          )}
-        </section>
-
         <section>
           <button className="section-heading" onClick={() => setRecentsOpen(!recentsOpen)} aria-expanded={recentsOpen}>
             <span>Recents</span>
@@ -80,35 +69,34 @@ export function Sidebar({ open, onToggle }: SidebarProps) {
           </button>
           {recentsOpen && (
             <div className="chat-list">
-              {recents.length === 0 && <EmptyNote>No chats yet</EmptyNote>}
-              {recents.map((item) => (
-                <ChatRow key={item.id} item={item} />
+              {threads.length === 0 && <p className="empty-note">No chats yet</p>}
+              {threads.map((thread) => (
+                <button
+                  key={thread.id}
+                  className={`chat-row ${thread.id === activeId ? "chat-row-active" : ""}`}
+                  onClick={() => onSelect(thread.id)}
+                  title={thread.title}
+                >
+                  <ChatIcon className="chat-row-icon" />
+                  <span className="chat-row-title">{thread.title}</span>
+                  {thread.state === "running" && <span className="unread-dot" aria-label="running" />}
+                  {thread.state === "failed" && <span className="failed-dot" aria-label="failed" />}
+                </button>
               ))}
-              {recents.length > 0 && (
-                <a className="view-all" href="#">
-                  View all
-                </a>
-              )}
             </div>
           )}
         </section>
       </div>
 
       <footer className="sidebar-footer">
-        {currentUser ? (
-          <>
-            <div className="avatar">{currentUser.initial}</div>
-            <div className="account">
-              <span className="account-name">{currentUser.name}</span>
-              <span className="account-plan"> · {currentUser.plan}</span>
-            </div>
-          </>
-        ) : (
-          <div className="account">
-            <span className="account-name">Not signed in</span>
-          </div>
-        )}
-        <ChevronIcon className="footer-chevron" />
+        <div className="avatar">{(user.display_name || user.email).charAt(0).toUpperCase()}</div>
+        <div className="account">
+          <span className="account-name">{user.display_name}</span>
+          <span className="account-plan"> · {statusLabel[socketStatus]}</span>
+        </div>
+        <button className="icon-button" onClick={onSignOut} aria-label="Sign out" title="Sign out">
+          <ChevronIcon />
+        </button>
       </footer>
     </aside>
   );

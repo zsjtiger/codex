@@ -75,6 +75,8 @@ pub struct TurnView {
     pub status: String,
     pub input: String,
     pub error: Option<String>,
+    /// Turn id assigned by codex app-server; set once the turn starts running.
+    pub codex_turn_id: Option<String>,
     pub created_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
@@ -290,7 +292,7 @@ async fn list_turns(
     require_role(&state.pool, access.workspace_id, user.id, Role::Member).await?;
     let (limit, offset) = validate::page(query.limit, query.offset)?;
     let rows = sqlx::query_as::<_, TurnView>(
-        "SELECT id, thread_id, seq, status, input, error, created_by, created_at, completed_at
+        "SELECT id, thread_id, seq, status, input, error, codex_turn_id, created_by, created_at, completed_at
          FROM turns
          WHERE thread_id = $1
          ORDER BY seq
@@ -337,7 +339,7 @@ async fn create_turn(
     let turn = sqlx::query_as::<_, TurnView>(
         "INSERT INTO turns (thread_id, seq, input, created_by)
          VALUES ($1, $2, $3, $4)
-         RETURNING id, thread_id, seq, status, input, error, created_by, created_at, completed_at",
+         RETURNING id, thread_id, seq, status, input, error, codex_turn_id, created_by, created_at, completed_at",
     )
     .bind(id)
     .bind(seq)
