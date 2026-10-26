@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ArtifactIcon, ChatIcon, ChevronIcon, ClockIcon, CustomizeIcon, FileIcon, MoreIcon, PinIcon, PlusIcon, ProjectIcon, SearchIcon, SidebarIcon } from "./icons";
-import { type ChatItem, pinned, recents, user } from "../data/mock";
+import { type ChatItem, currentUser, pinned, recents } from "../data/mock";
 
 interface SidebarProps {
   open: boolean;
@@ -16,6 +16,10 @@ const navItems = [
   { label: "Customize", Icon: CustomizeIcon },
   { label: "More", Icon: MoreIcon },
 ];
+
+function EmptyNote({ children }: { children: string }) {
+  return <p className="empty-note">{children}</p>;
+}
 
 function ChatRow({ item }: { item: ChatItem }) {
   return (
@@ -61,6 +65,7 @@ export function Sidebar({ open, onToggle }: SidebarProps) {
           </button>
           {pinnedOpen && (
             <div className="chat-list">
+              {pinned.length === 0 && <EmptyNote>No pinned chats</EmptyNote>}
               {pinned.map((item) => (
                 <ChatRow key={item.id} item={item} />
               ))}
@@ -75,23 +80,34 @@ export function Sidebar({ open, onToggle }: SidebarProps) {
           </button>
           {recentsOpen && (
             <div className="chat-list">
+              {recents.length === 0 && <EmptyNote>No chats yet</EmptyNote>}
               {recents.map((item) => (
                 <ChatRow key={item.id} item={item} />
               ))}
-              <a className="view-all" href="#">
-                View all
-              </a>
+              {recents.length > 0 && (
+                <a className="view-all" href="#">
+                  View all
+                </a>
+              )}
             </div>
           )}
         </section>
       </div>
 
       <footer className="sidebar-footer">
-        <div className="avatar">{user.initial}</div>
-        <div className="account">
-          <span className="account-name">{user.name}</span>
-          <span className="account-plan"> · {user.plan}</span>
-        </div>
+        {currentUser ? (
+          <>
+            <div className="avatar">{currentUser.initial}</div>
+            <div className="account">
+              <span className="account-name">{currentUser.name}</span>
+              <span className="account-plan"> · {currentUser.plan}</span>
+            </div>
+          </>
+        ) : (
+          <div className="account">
+            <span className="account-name">Not signed in</span>
+          </div>
+        )}
         <ChevronIcon className="footer-chevron" />
       </footer>
     </aside>

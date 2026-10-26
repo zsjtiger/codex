@@ -12,7 +12,7 @@ function greeting(date: Date): string {
   return "Good evening";
 }
 
-export function Home({ name }: { name: string }) {
+export function Home({ name }: { name?: string }) {
   const [draft, setDraft] = useState("");
   const [model, setModel] = useState(models[0]);
   const [effort, setEffort] = useState(efforts[1]);
@@ -24,9 +24,7 @@ export function Home({ name }: { name: string }) {
       <div className="home-inner">
         <h1 className="greeting">
           <SparkIcon className="greeting-mark" />
-          <span>
-            {greeting(new Date())}, {name}
-          </span>
+          <span>{name ? `${greeting(new Date())}, ${name}` : greeting(new Date())}</span>
         </h1>
 
         <form
@@ -99,6 +97,7 @@ export function Home({ name }: { name: string }) {
             <span>Recent artifacts</span>
             <a href="#">View all</a>
           </div>
+          {artifacts.length === 0 && <p className="empty-note">No artifacts yet</p>}
           <div className="artifact-grid">
             {artifacts.map((artifact) => (
               <a key={artifact.id} className="artifact-card" href="#">

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { Home } from "./components/Home";
-import { user } from "./data/mock";
+import { currentUser } from "./data/mock";
 import { SidebarIcon } from "./components/icons";
 
 export function App() {
@@ -17,7 +17,7 @@ export function App() {
             <SidebarIcon />
           </button>
         )}
-        <Home name={user.name} />
+        <Home name={currentUser?.name} />
       </div>
     </div>
   );
