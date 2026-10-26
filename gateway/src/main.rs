@@ -1,16 +1,7 @@
-//! Web gateway for the cloud Codex service.
-//!
-//! Currently a skeleton: it serves a health check and a WebSocket endpoint that
-//! echoes frames back. Authentication and forwarding to `codex app-server`
-//! are not implemented yet.
-
-use axum::{
-    Router,
-    extract::ws::{Message, WebSocket, WebSocketUpgrade},
-    response::IntoResponse,
-    routing::get,
-};
-use tracing::{info, warn};
+use codex_gateway::{AppState, app, config::Config};
+use sqlx::postgres::PgPoolOptions;
+use tokio::net::TcpListener;
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -21,45 +12,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
-    let addr = std::env::var("GATEWAY_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".to_string());
-    let app = router();
+    let config = Config::from_env()?;
+    let pool = PgPoolOptions::new()
+        .max_connections(10)
+        .connect(&config.database_url)
+        .await?;
+    sqlx::migrate!("./migrations").run(&pool).await?;
 
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    info!(%addr, "gateway listening");
-    axum::serve(listener, app).await?;
+    let listener = TcpListener::bind(&config.addr).await?;
+    info!(addr = %config.addr, dev_login = config.dev_login, "gateway listening");
+    let state = AppState {
+        pool,
+        dev_login: config.dev_login,
+    };
+    axum::serve(listener, app(state)).await?;
     Ok(())
-}
-
-fn router() -> Router {
-    Router::new()
-        .route("/healthz", get(healthz))
-        .route("/ws", get(ws_handler))
-}
-
-async fn healthz() -> &'static str {
-    "ok"
-}
-
-async fn ws_handler(ws: WebSocketUpgrade) -> impl IntoResponse {
-    ws.on_upgrade(handle_socket)
-}
-
-/// Placeholder: echoes text frames. Replace with JSON-RPC forwarding to a
-/// per-session `codex app-server` once the runtime layer exists.
-async fn handle_socket(mut socket: WebSocket) {
-    while let Some(message) = socket.recv().await {
-        match message {
-            Ok(Message::Text(text)) => {
-                if socket.send(Message::Text(text)).await.is_err() {
-                    break;
-                }
-            }
-            Ok(Message::Close(_)) => break,
-            Ok(_) => {}
-            Err(err) => {
-                warn!(%err, "websocket receive failed");
-                break;
-            }
-        }
-    }
 }
