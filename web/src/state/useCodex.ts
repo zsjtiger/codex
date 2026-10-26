@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, loadStoredToken, setToken } from "../api/client";
+import { attachments as attachmentApi, interruptTurn, threads as threadApi } from "../api/resources";
 import type { Environment, LoginResponse, Thread, Turn, User, Workspace } from "../api/types";
 import { type Frame, GatewaySocket, type SocketStatus } from "../realtime/socket";
+
+export interface SendOptions {
+  model?: string;
+  effort?: string;
+  attachment_ids?: string[];
+}
 
 export interface Approval {
   requestId: string;
@@ -31,6 +38,7 @@ export function useCodex() {
   const [socketStatus, setSocketStatus] = useState<SocketStatus>("closed");
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [draftProjectId, setDraftProjectId] = useState<string | null>(null);
 
   // Refs let long-lived callbacks (the WebSocket handler) read current values.
   const activeRef = useRef<string | null>(null);
@@ -173,7 +181,7 @@ export function useCodex() {
   );
 
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, options: SendOptions = {}) => {
       const input = text.trim();
       const ws = workspaceRef.current;
       if (!input || sending || !ws || !environment) return;
@@ -182,15 +190,16 @@ export function useCodex() {
       try {
         let threadId = activeRef.current;
         if (!threadId) {
-          const created = await api<Thread>("POST", `/workspaces/${ws.id}/threads`, {
+          const created = await threadApi.create(ws.id, {
             title: input.slice(0, 60),
             environment_id: environment.id,
+            project_id: draftProjectId,
           });
           threadId = created.id;
           await refreshThreads(ws);
           await selectThread(threadId);
         }
-        await api<Turn>("POST", `/threads/${threadId}/turns`, { input });
+        await threadApi.send(threadId, { input, ...options });
         await loadTurns(threadId);
         await refreshThreads(ws);
       } catch (err) {
@@ -199,7 +208,33 @@ export function useCodex() {
         setSending(false);
       }
     },
-    [environment, fail, loadTurns, refreshThreads, selectThread, sending],
+    [draftProjectId, environment, fail, loadTurns, refreshThreads, selectThread, sending],
+  );
+
+  const interrupt = useCallback(
+    async (turnId: string) => {
+      try {
+        await interruptTurn(turnId);
+      } catch (err) {
+        fail(err);
+      }
+    },
+    [fail],
+  );
+
+  const uploadAttachment = useCallback(
+    async (file: File): Promise<string> => {
+      const ws = workspaceRef.current;
+      if (!ws) throw new Error("No workspace yet.");
+      const meta = await attachmentApi.create(ws.id, {
+        filename: file.name,
+        content_type: file.type || "application/octet-stream",
+        size_bytes: file.size,
+      });
+      await attachmentApi.upload(meta.id, file);
+      return meta.id;
+    },
+    [],
   );
 
   const answerApproval = useCallback((approval: Approval, result: unknown) => {
@@ -221,6 +256,12 @@ export function useCodex() {
     error,
     sending,
     dismissError: () => setError(null),
+    draftProjectId,
+    setDraftProjectId,
+    refreshThreads: () => (workspaceRef.current ? refreshThreads(workspaceRef.current) : Promise.resolve()),
+    interrupt,
+    uploadAttachment,
+    reportError: fail,
     signIn,
     signOut,
     selectThread,

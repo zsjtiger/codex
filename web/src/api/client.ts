@@ -23,6 +23,10 @@ export function loadStoredToken(): string | null {
   }
 }
 
+export function getToken(): string | null {
+  return token;
+}
+
 export function setToken(next: string | null): void {
   token = next;
   try {

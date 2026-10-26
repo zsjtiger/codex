@@ -1,22 +1,28 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { Thread } from "../api/types";
+import { useEffect, useRef, useState } from "react";
+import { search } from "../api/resources";
+import type { SearchResults, Thread } from "../api/types";
 import { ChatIcon, PlusIcon, SearchIcon } from "./icons";
 
 interface SearchDialogProps {
+  workspaceId: string;
   threads: Thread[];
-  onSelect: (threadId: string) => void;
+  onOpenThread: (threadId: string) => void;
+  onOpenArtifacts: () => void;
+  onOpenProjects: () => void;
   onNew: () => void;
   onClose: () => void;
+  onError: (message: string) => void;
 }
 
-type Row = { key: string; label: string; onRun: () => void; icon: "chat" | "new" };
+type Row = { key: string; label: string; detail?: string; onRun: () => void };
 
 /**
- * Search over the chats already loaded in the page. Filtering is client-side, so
- * it covers the most recent threads the sidebar fetched.
+ * Search over the workspace through the gateway: chat titles, message text, artifacts and
+ * projects. With no query it lists recent chats.
  */
-export function SearchDialog({ threads, onSelect, onNew, onClose }: SearchDialogProps) {
+export function SearchDialog({ workspaceId, threads, onOpenThread, onOpenArtifacts, onOpenProjects, onNew, onClose, onError }: SearchDialogProps) {
   const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SearchResults | null>(null);
   const [highlight, setHighlight] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -24,45 +30,55 @@ export function SearchDialog({ threads, onSelect, onNew, onClose }: SearchDialog
     inputRef.current?.focus();
   }, []);
 
-  const rows: Row[] = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    const matches = threads
-      .filter((t) => needle === "" || t.title.toLowerCase().includes(needle))
-      .map((t) => ({ key: t.id, label: t.title, icon: "chat" as const, onRun: () => onSelect(t.id) }));
-    return [...matches, { key: "new", label: "New session", icon: "new" as const, onRun: onNew }];
-  }, [threads, query, onSelect, onNew]);
-
-  // Keep the highlight inside the list as the results change.
+  // Debounced server search. Stale responses are dropped.
   useEffect(() => {
-    setHighlight((h) => Math.min(h, rows.length - 1));
-  }, [rows.length]);
+    const q = query.trim();
+    if (!q) {
+      setResults(null);
+      return;
+    }
+    let current = true;
+    const timer = setTimeout(() => {
+      search(workspaceId, q)
+        .then((found) => current && setResults(found))
+        .catch((err) => current && onError(err instanceof Error ? err.message : "Search failed."));
+    }, 200);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [query, workspaceId, onError]);
+
+  const close = () => onClose();
+  const sections: { heading: string; rows: Row[] }[] = [];
+  if (!query.trim()) {
+    sections.push({
+      heading: "Recents",
+      rows: threads.map((t) => ({ key: `t-${t.id}`, label: t.title, onRun: () => onOpenThread(t.id) })),
+    });
+  } else if (results) {
+    sections.push(
+      { heading: "Chats", rows: results.threads.map((t) => ({ key: `t-${t.id}`, label: t.title, onRun: () => onOpenThread(t.id) })) },
+      {
+        heading: "Messages",
+        rows: results.turns.map((t) => ({ key: `m-${t.id}`, label: t.thread_title, detail: t.input.slice(0, 120), onRun: () => onOpenThread(t.thread_id) })),
+      },
+      { heading: "Artifacts", rows: results.artifacts.map((a) => ({ key: `a-${a.id}`, label: a.title, detail: a.kind, onRun: onOpenArtifacts })) },
+      { heading: "Projects", rows: results.projects.map((p) => ({ key: `p-${p.id}`, label: p.name, onRun: onOpenProjects })) },
+    );
+  }
+  sections.push({ heading: "Actions", rows: [{ key: "new", label: "New session", onRun: onNew }] });
+  const rows = sections.flatMap((s) => s.rows);
+  const shown = Math.min(highlight, Math.max(rows.length - 1, 0));
 
   const run = (row: Row | undefined) => {
     if (!row) return;
     row.onRun();
-    onClose();
-  };
-
-  const chatRows = rows.filter((r) => r.icon === "chat");
-  const actionRows = rows.filter((r) => r.icon === "new");
-
-  const renderRow = (row: Row) => {
-    const index = rows.indexOf(row);
-    return (
-      <button
-        key={row.key}
-        className={`search-row ${index === highlight ? "search-row-active" : ""}`}
-        onMouseEnter={() => setHighlight(index)}
-        onClick={() => run(row)}
-      >
-        {row.icon === "chat" ? <ChatIcon width={18} height={18} /> : <PlusIcon width={18} height={18} />}
-        <span className="search-row-label">{row.label}</span>
-      </button>
-    );
+    close();
   };
 
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
+    <div className="modal-backdrop" onMouseDown={close}>
       <div
         className="search-dialog"
         role="dialog"
@@ -70,18 +86,18 @@ export function SearchDialog({ threads, onSelect, onNew, onClose }: SearchDialog
         aria-label="Search"
         onMouseDown={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
-          if (event.key === "Escape") onClose();
+          if (event.key === "Escape") close();
           if (event.key === "ArrowDown") {
             event.preventDefault();
-            setHighlight((h) => (rows.length ? (h + 1) % rows.length : 0));
+            setHighlight(rows.length ? (shown + 1) % rows.length : 0);
           }
           if (event.key === "ArrowUp") {
             event.preventDefault();
-            setHighlight((h) => (rows.length ? (h - 1 + rows.length) % rows.length : 0));
+            setHighlight(rows.length ? (shown - 1 + rows.length) % rows.length : 0);
           }
           if (event.key === "Enter") {
             event.preventDefault();
-            run(rows[highlight]);
+            run(rows[shown]);
           }
         }}
       >
@@ -90,25 +106,43 @@ export function SearchDialog({ threads, onSelect, onNew, onClose }: SearchDialog
           <input
             ref={inputRef}
             className="search-input"
-            placeholder="Search chats…"
+            placeholder="Search chats, messages, artifacts and projects…"
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
               setHighlight(0);
             }}
-            aria-label="Search chats"
+            aria-label="Search"
           />
-          <button className="icon-button" onClick={onClose} aria-label="Close search">
+          <button className="icon-button" onClick={close} aria-label="Close search">
             ×
           </button>
         </div>
 
         <div className="search-results">
-          {chatRows.length > 0 && <div className="search-heading">{query.trim() ? "Matching chats" : "Recents"}</div>}
-          {chatRows.map(renderRow)}
-          {chatRows.length === 0 && query.trim() && <p className="empty-note">No chats match “{query.trim()}”</p>}
-          <div className="search-heading">Actions</div>
-          {actionRows.map(renderRow)}
+          {sections.map((section) =>
+            section.rows.length === 0 ? null : (
+              <div key={section.heading}>
+                <div className="search-heading">{section.heading}</div>
+                {section.rows.map((row) => {
+                  const index = rows.indexOf(row);
+                  return (
+                    <button
+                      key={row.key}
+                      className={`search-row ${index === shown ? "search-row-active" : ""}`}
+                      onMouseEnter={() => setHighlight(index)}
+                      onClick={() => run(row)}
+                    >
+                      {section.heading === "Actions" ? <PlusIcon width={18} height={18} /> : <ChatIcon width={18} height={18} />}
+                      <span className="search-row-label">{row.label}</span>
+                      {row.detail && <span className="search-row-detail">{row.detail}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            ),
+          )}
+          {query.trim() && results && rows.length === 1 && <p className="empty-note">No matches for “{query.trim()}”</p>}
         </div>
 
         <footer className="search-footer">

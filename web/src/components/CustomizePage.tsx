@@ -1,19 +1,69 @@
-import { useState } from "react";
-import { PlusIcon, SearchIcon } from "./icons";
+import { useEffect, useState } from "react";
+import { skills as skillApi } from "../api/resources";
+import type { Skill } from "../api/types";
 
 const sections = ["Skills", "Connectors", "Plugins"] as const;
-const scopes = ["Yours", "Discover"] as const;
-const addOptions = ["Upload skill", "Create a skill", "Create with Claude"];
+
+interface CustomizePageProps {
+  workspaceId: string;
+  isAdmin: boolean;
+  onBack: () => void;
+  onError: (message: string) => void;
+}
 
 /**
- * Customize shell: section tabs, scope switch, and an Add menu. Skills, connectors and
- * plugins have no gateway API yet, so each list shows an empty state and the actions are
- * disabled.
+ * Skills are instructions added to new chats in the workspace. Connectors and plugins
+ * have no gateway API yet, so those tabs say so instead of showing a fake list.
  */
-export function CustomizePage({ onBack }: { onBack: () => void }) {
+export function CustomizePage({ workspaceId, isAdmin, onBack, onError }: CustomizePageProps) {
   const [section, setSection] = useState<(typeof sections)[number]>("Skills");
-  const [scope, setScope] = useState<(typeof scopes)[number]>("Yours");
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [items, setItems] = useState<Skill[]>([]);
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [instructions, setInstructions] = useState("");
+
+  const reload = () =>
+    skillApi
+      .list(workspaceId)
+      .then(setItems)
+      .catch((err) => onError(err instanceof Error ? err.message : "Could not load skills."));
+
+  useEffect(() => {
+    void reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId]);
+
+  const create = async () => {
+    try {
+      await skillApi.create(workspaceId, { name: name.trim(), description: description.trim(), instructions: instructions.trim() });
+      setCreating(false);
+      setName("");
+      setDescription("");
+      setInstructions("");
+      await reload();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Could not create the skill.");
+    }
+  };
+
+  const toggle = async (skill: Skill) => {
+    try {
+      await skillApi.update(skill.id, { enabled: !skill.enabled });
+      await reload();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Could not update the skill.");
+    }
+  };
+
+  const remove = async (skill: Skill) => {
+    try {
+      await skillApi.remove(skill.id);
+      await reload();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Could not delete the skill.");
+    }
+  };
 
   return (
     <main className="customize-page">
@@ -26,59 +76,71 @@ export function CustomizePage({ onBack }: { onBack: () => void }) {
         <div className="customize-toolbar">
           <div className="tabs" role="tablist">
             {sections.map((name) => (
-              <button
-                key={name}
-                role="tab"
-                aria-selected={section === name}
-                className={`tab ${section === name ? "tab-active" : ""}`}
-                onClick={() => setSection(name)}
-              >
+              <button key={name} role="tab" aria-selected={section === name} className={`tab ${section === name ? "tab-active" : ""}`} onClick={() => setSection(name)}>
                 {name}
               </button>
             ))}
           </div>
-
-          <div className="customize-tools">
-            <div className="segmented" role="group" aria-label="Scope">
-              {scopes.map((name) => (
-                <button
-                  key={name}
-                  className={scope === name ? "segment-active" : ""}
-                  aria-pressed={scope === name}
-                  onClick={() => setScope(name)}
-                >
-                  {name}
-                </button>
-              ))}
-            </div>
-            <button className="icon-button" aria-label="Search" disabled>
-              <SearchIcon />
+          {section === "Skills" && isAdmin && !creating && (
+            <button className="add-button" onClick={() => setCreating(true)}>
+              New skill
             </button>
-            <div className="add-menu">
-              <button className="add-button" onClick={() => setMenuOpen(!menuOpen)} aria-expanded={menuOpen}>
-                <PlusIcon width={16} height={16} /> Add
-              </button>
-              {menuOpen && (
-                <ul className="add-menu-list" role="menu">
-                  {addOptions.map((option) => (
-                    <li key={option} role="menuitem" aria-disabled="true" className="add-menu-item">
-                      {option}
-                      <span className="badge">Soon</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
+          )}
         </div>
 
-        <section>
-          <p className="empty-state">
-            {scope === "Yours"
-              ? `No ${section.toLowerCase()} added yet.`
-              : `Nothing to discover for ${section.toLowerCase()} yet.`}
-          </p>
-        </section>
+        {section !== "Skills" ? (
+          <p className="empty-state">{section} are not available yet.</p>
+        ) : (
+          <>
+            {!isAdmin && <p className="muted small">Only workspace admins can add or change skills.</p>}
+            {creating && (
+              <form
+                className="form-card"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void create();
+                }}
+              >
+                <label className="field">
+                  <span>Name</span>
+                  <input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} required />
+                </label>
+                <label className="field">
+                  <span>Description</span>
+                  <input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} />
+                </label>
+                <label className="field">
+                  <span>Instructions</span>
+                  <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={6} maxLength={20000} required />
+                </label>
+                <div className="form-actions">
+                  <button type="button" onClick={() => setCreating(false)}>
+                    Cancel
+                  </button>
+                  <button className="primary" type="submit" disabled={!name.trim() || !instructions.trim()}>
+                    Add skill
+                  </button>
+                </div>
+              </form>
+            )}
+            {items.length === 0 && !creating && <p className="empty-state">No skills added yet.</p>}
+            <div className="list">
+              {items.map((skill) => (
+                <div key={skill.id} className="list-row">
+                  <div className="list-main">
+                    <div className="list-title">{skill.name}</div>
+                    <div className="list-sub">{skill.description || skill.instructions.slice(0, 120)}</div>
+                  </div>
+                  <div className="list-actions">
+                    <span className={`status ${skill.enabled ? "status-on" : ""}`}>{skill.enabled ? "On" : "Off"}</span>
+                    {isAdmin && <button onClick={() => void toggle(skill)}>{skill.enabled ? "Turn off" : "Turn on"}</button>}
+                    {isAdmin && <button onClick={() => void remove(skill)}>Delete</button>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </main>
   );

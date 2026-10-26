@@ -3,42 +3,49 @@ import type { Thread, User } from "../api/types";
 import type { SocketStatus } from "../realtime/socket";
 import { ArtifactIcon, ChatIcon, ChevronIcon, ClockIcon, CustomizeIcon, MoreIcon, PlusIcon, ProjectIcon, SearchIcon, SidebarIcon } from "./icons";
 
-interface SidebarProps {
-  open: boolean;
-  onToggle: () => void;
-  threads: Thread[];
-  activeId: string | null;
-  onSelect: (threadId: string) => void;
-  onNew: () => void;
-  onSearch: () => void;
-  onArtifacts: () => void;
-  onCustomize: () => void;
-  onScheduled: () => void;
-  activeView: "chat" | "artifacts" | "customize" | "scheduled";
-  user: User;
-  socketStatus: SocketStatus;
-  onSignOut: () => void;
-}
+export type NavLabel = "New" | "Search" | "Projects" | "Artifacts" | "Scheduled" | "Customize";
+export type View = "chat" | "artifacts" | "customize" | "scheduled" | "projects";
 
-const navItems = [
+const navItems: { label: NavLabel; Icon: typeof PlusIcon }[] = [
   { label: "New", Icon: PlusIcon },
   { label: "Search", Icon: SearchIcon },
   { label: "Projects", Icon: ProjectIcon },
   { label: "Artifacts", Icon: ArtifactIcon },
   { label: "Scheduled", Icon: ClockIcon },
   { label: "Customize", Icon: CustomizeIcon },
-  { label: "More", Icon: MoreIcon },
 ];
 
-const statusLabel: Record<SocketStatus, string> = {
-  open: "Live",
-  connecting: "Connecting…",
-  closed: "Offline",
+const viewFor: Partial<Record<NavLabel, View>> = {
+  Projects: "projects",
+  Artifacts: "artifacts",
+  Scheduled: "scheduled",
+  Customize: "customize",
 };
 
-export function Sidebar({ open, onToggle, threads, activeId, onSelect, onNew, onSearch, onArtifacts, onCustomize, onScheduled, activeView, user, socketStatus, onSignOut }: SidebarProps) {
+interface SidebarProps {
+  open: boolean;
+  onToggle: () => void;
+  threads: Thread[];
+  activeId: string | null;
+  activeView: View;
+  onSelect: (threadId: string) => void;
+  onNew: () => void;
+  onSearch: () => void;
+  onView: (view: View) => void;
+  hidden: NavLabel[];
+  onHiddenChange: (hidden: NavLabel[]) => void;
+  user: User;
+  socketStatus: SocketStatus;
+  onSignOut: () => void;
+}
+
+const statusLabel: Record<SocketStatus, string> = { open: "Live", connecting: "Connecting…", closed: "Offline" };
+
+export function Sidebar(props: SidebarProps) {
+  const { open, onToggle, threads, activeId, activeView, onSelect, onNew, onSearch, onView, hidden, onHiddenChange, user, socketStatus, onSignOut } = props;
   const [recentsOpen, setRecentsOpen] = useState(true);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
 
   // The More menu closes on Escape or a click elsewhere.
@@ -58,6 +65,15 @@ export function Sidebar({ open, onToggle, threads, activeId, onSelect, onNew, on
     };
   }, [moreOpen]);
 
+  const activate = (label: NavLabel) => {
+    if (label === "New") onNew();
+    else if (label === "Search") onSearch();
+    else onView(viewFor[label]!);
+  };
+
+  const isActive = (label: NavLabel) => viewFor[label] === activeView;
+  const visibleItems = navItems.filter((item) => editing || !hidden.includes(item.label));
+
   return (
     <aside className={`sidebar ${open ? "" : "sidebar-collapsed"}`} aria-label="Sidebar">
       <div className="sidebar-top">
@@ -70,69 +86,45 @@ export function Sidebar({ open, onToggle, threads, activeId, onSelect, onNew, on
       </div>
 
       <nav className="nav">
-        {navItems.map(({ label, Icon }) =>
-          label === "New" || label === "Search" || label === "Artifacts" || label === "Customize" || label === "Scheduled" ? (
-            <button
-              key={label}
-              className={`nav-item ${(label === "Artifacts" && activeView === "artifacts") || (label === "Customize" && activeView === "customize") || (label === "Scheduled" && activeView === "scheduled") ? "nav-item-active" : ""}`}
-              onClick={
-                label === "New"
-                  ? onNew
-                  : label === "Search"
-                    ? onSearch
-                    : label === "Artifacts"
-                      ? onArtifacts
-                      : label === "Customize"
-                        ? onCustomize
-                        : onScheduled
-              }
-            >
+        {visibleItems.map(({ label, Icon }) => (
+          <div key={label} className="nav-row">
+            <button className={`nav-item ${isActive(label) ? "nav-item-active" : ""}`} onClick={() => activate(label)}>
               <Icon />
               <span>{label}</span>
             </button>
-          ) : label === "More" ? (
-            <div key={label} className="more-wrap" ref={moreRef}>
-              <button
-                className={`nav-item ${moreOpen ? "nav-item-active" : ""}`}
-                onClick={() => setMoreOpen(!moreOpen)}
-                aria-expanded={moreOpen}
-                aria-haspopup="menu"
-              >
-                <Icon />
-                <span>{label}</span>
+            {editing && (
+              <input
+                type="checkbox"
+                aria-label={`Show ${label}`}
+                checked={!hidden.includes(label)}
+                onChange={(e) => onHiddenChange(e.target.checked ? hidden.filter((h) => h !== label) : [...hidden, label])}
+              />
+            )}
+          </div>
+        ))}
+
+        <div className="more-wrap" ref={moreRef}>
+          <button className={`nav-item ${moreOpen ? "nav-item-active" : ""}`} onClick={() => setMoreOpen(!moreOpen)} aria-expanded={moreOpen} aria-haspopup="menu">
+            <MoreIcon />
+            <span>More</span>
+          </button>
+          {moreOpen && (
+            <div className="more-menu" role="menu">
+              <button role="menuitem" className="more-item more-item-enabled" onClick={() => { setMoreOpen(false); onView("projects"); }}>
+                <ProjectIcon width={16} height={16} />
+                <span>Projects</span>
               </button>
-              {moreOpen && (
-                <div className="more-menu" role="menu">
-                  <button role="menuitem" className="more-item" disabled>
-                    <ProjectIcon width={16} height={16} />
-                    <span>Projects</span>
-                    <span className="badge">Beta</span>
-                  </button>
-                  <button
-                    role="menuitem"
-                    className="more-item more-item-enabled"
-                    onClick={() => {
-                      setMoreOpen(false);
-                      onScheduled();
-                    }}
-                  >
-                    <ClockIcon width={16} height={16} />
-                    <span>Scheduled</span>
-                  </button>
-                  <hr className="more-divider" />
-                  <button role="menuitem" className="more-item" disabled>
-                    <span>Edit sidebar…</span>
-                  </button>
-                </div>
-              )}
+              <button role="menuitem" className="more-item more-item-enabled" onClick={() => { setMoreOpen(false); onView("scheduled"); }}>
+                <ClockIcon width={16} height={16} />
+                <span>Scheduled</span>
+              </button>
+              <hr className="more-divider" />
+              <button role="menuitem" className="more-item more-item-enabled" onClick={() => { setMoreOpen(false); setEditing(!editing); }}>
+                <span>{editing ? "Done editing sidebar" : "Edit sidebar…"}</span>
+              </button>
             </div>
-          ) : (
-            <a key={label} className="nav-item" href="#" onClick={(event) => event.preventDefault()} aria-disabled="true">
-              <Icon />
-              <span>{label}</span>
-            </a>
-          ),
-        )}
+          )}
+        </div>
       </nav>
 
       <div className="sidebar-scroll">
@@ -145,12 +137,7 @@ export function Sidebar({ open, onToggle, threads, activeId, onSelect, onNew, on
             <div className="chat-list">
               {threads.length === 0 && <p className="empty-note">No chats yet</p>}
               {threads.map((thread) => (
-                <button
-                  key={thread.id}
-                  className={`chat-row ${thread.id === activeId ? "chat-row-active" : ""}`}
-                  onClick={() => onSelect(thread.id)}
-                  title={thread.title}
-                >
+                <button key={thread.id} className={`chat-row ${thread.id === activeId ? "chat-row-active" : ""}`} onClick={() => onSelect(thread.id)} title={thread.title}>
                   <ChatIcon className="chat-row-icon" />
                   <span className="chat-row-title">{thread.title}</span>
                   {thread.state === "running" && <span className="unread-dot" aria-label="running" />}
