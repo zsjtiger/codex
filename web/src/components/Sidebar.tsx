@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Thread, User } from "../api/types";
 import type { SocketStatus } from "../realtime/socket";
 import { ArtifactIcon, ChatIcon, ChevronIcon, ClockIcon, CustomizeIcon, MoreIcon, PlusIcon, ProjectIcon, SearchIcon, SidebarIcon } from "./icons";
@@ -37,6 +37,25 @@ const statusLabel: Record<SocketStatus, string> = {
 
 export function Sidebar({ open, onToggle, threads, activeId, onSelect, onNew, onSearch, onArtifacts, onCustomize, activeView, user, socketStatus, onSignOut }: SidebarProps) {
   const [recentsOpen, setRecentsOpen] = useState(true);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+
+  // The More menu closes on Escape or a click elsewhere.
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onPointer = (event: MouseEvent) => {
+      if (!moreRef.current?.contains(event.target as Node)) setMoreOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMoreOpen(false);
+    };
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [moreOpen]);
 
   return (
     <aside className={`sidebar ${open ? "" : "sidebar-collapsed"}`} aria-label="Sidebar">
@@ -62,6 +81,35 @@ export function Sidebar({ open, onToggle, threads, activeId, onSelect, onNew, on
               <Icon />
               <span>{label}</span>
             </button>
+          ) : label === "More" ? (
+            <div key={label} className="more-wrap" ref={moreRef}>
+              <button
+                className={`nav-item ${moreOpen ? "nav-item-active" : ""}`}
+                onClick={() => setMoreOpen(!moreOpen)}
+                aria-expanded={moreOpen}
+                aria-haspopup="menu"
+              >
+                <Icon />
+                <span>{label}</span>
+              </button>
+              {moreOpen && (
+                <div className="more-menu" role="menu">
+                  <button role="menuitem" className="more-item" disabled>
+                    <ProjectIcon width={16} height={16} />
+                    <span>Projects</span>
+                    <span className="badge">Beta</span>
+                  </button>
+                  <button role="menuitem" className="more-item" disabled>
+                    <ClockIcon width={16} height={16} />
+                    <span>Scheduled</span>
+                  </button>
+                  <hr className="more-divider" />
+                  <button role="menuitem" className="more-item" disabled>
+                    <span>Edit sidebar…</span>
+                  </button>
+                </div>
+              )}
+            </div>
           ) : (
             <a key={label} className="nav-item" href="#" onClick={(event) => event.preventDefault()} aria-disabled="true">
               <Icon />
