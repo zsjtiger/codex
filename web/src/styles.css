@@ -413,3 +413,13 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
   .doc-split { grid-template-columns: 1fr; }
   .markdown-toc ol { grid-template-columns: 1fr; }
 }
+
+/* Math and charts inside rendered documents */
+.math-block { margin: 12px 0; overflow-x: auto; }
+.math-inline { display: inline-block; }
+.chart { margin: 16px 0; }
+.chart svg { width: 100%; height: auto; display: block; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; color: var(--text-muted); margin-top: 6px; }
+.chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.chart-legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.chart-error { color: #8a2b1f; font-size: 13px; margin: 0 0 12px; }
