@@ -1,4 +1,4 @@
-use codex_gateway::{AppState, app, config::Config};
+use codex_gateway::{AppState, app, config::Config, runtime::dispatch};
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 use tracing::info;
@@ -19,8 +19,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
 
+    let state = AppState::new(pool, config.dev_login, config.runtime_config());
+    state.runtime.spawn_reaper();
+    let interrupted = dispatch::recover(&state).await?;
+    info!(interrupted, "recovered turns from a previous run");
+
     let listener = TcpListener::bind(&config.addr).await?;
-    info!(addr = %config.addr, dev_login = config.dev_login, "gateway listening");
-    axum::serve(listener, app(AppState::new(pool, config.dev_login))).await?;
+    info!(addr = %config.addr, dev_login = config.dev_login, local_runtime = config.codex_bin.is_some(), "gateway listening");
+    axum::serve(listener, app(state)).await?;
     Ok(())
 }

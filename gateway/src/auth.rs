@@ -3,6 +3,7 @@ use axum::{
     http::{header::AUTHORIZATION, request::Parts},
 };
 use sha2::{Digest, Sha256};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{error::ApiError, state::AppState};
@@ -27,6 +28,27 @@ pub fn hash_token(token: &str) -> String {
     hex::encode(Sha256::digest(token.as_bytes()))
 }
 
+/// Resolves a bearer token to a live session. Used by HTTP extraction and the WebSocket upgrade.
+pub async fn authenticate(pool: &PgPool, token: &str) -> Result<CurrentUser, ApiError> {
+    let (id, email, display_name, session_id): (Uuid, String, String, Uuid) = sqlx::query_as(
+        "SELECT u.id, u.email, u.display_name, s.id
+         FROM sessions s
+         JOIN users u ON u.id = s.user_id
+         WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()",
+    )
+    .bind(hash_token(token))
+    .fetch_optional(pool)
+    .await?
+    .ok_or(ApiError::Unauthorized)?;
+
+    Ok(CurrentUser {
+        id,
+        email,
+        display_name,
+        session_id,
+    })
+}
+
 impl FromRequestParts<AppState> for CurrentUser {
     type Rejection = ApiError;
 
@@ -40,23 +62,6 @@ impl FromRequestParts<AppState> for CurrentUser {
             .and_then(|value| value.to_str().ok())
             .and_then(|value| value.strip_prefix("Bearer "))
             .ok_or(ApiError::Unauthorized)?;
-
-        let (id, email, display_name, session_id): (Uuid, String, String, Uuid) = sqlx::query_as(
-            "SELECT u.id, u.email, u.display_name, s.id
-             FROM sessions s
-             JOIN users u ON u.id = s.user_id
-             WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()",
-        )
-        .bind(hash_token(token))
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or(ApiError::Unauthorized)?;
-
-        Ok(Self {
-            id,
-            email,
-            display_name,
-            session_id,
-        })
+        authenticate(&state.pool, token).await
     }
 }

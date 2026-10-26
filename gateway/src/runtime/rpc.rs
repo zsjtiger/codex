@@ -1,15 +1,15 @@
 //! JSON-RPC 2.0 client over a WebSocket connection to `codex app-server`.
 //!
-//! Requests are matched to responses by id. Server notifications are broadcast
-//! to subscribers. Server-initiated requests (approvals and similar) are
-//! rejected with "method not found" for now, so the server does not block.
+//! Requests are matched to responses by id. Server notifications and
+//! server-initiated requests (approvals and similar) are broadcast to subscribers,
+//! who answer with `respond` or `respond_error`.
 
 use std::{
     collections::HashMap,
     fmt,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicI64, Ordering},
+        atomic::{AtomicBool, AtomicI64, Ordering},
     },
 };
 
@@ -21,8 +21,7 @@ use tokio::{
 };
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite::Message};
 
-const METHOD_NOT_FOUND: i64 = -32601;
-const NOTIFICATION_BUFFER: usize = 4096;
+const EVENT_BUFFER: usize = 4096;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RpcError {
@@ -31,7 +30,7 @@ pub struct RpcError {
 }
 
 impl RpcError {
-    fn transport(message: impl Into<String>) -> Self {
+    pub(crate) fn transport(message: impl Into<String>) -> Self {
         Self {
             code: None,
             message: message.into(),
@@ -50,8 +49,17 @@ impl fmt::Display for RpcError {
 
 impl std::error::Error for RpcError {}
 
+/// A server notification (no id).
 #[derive(Debug, Clone)]
 pub struct Notification {
+    pub method: String,
+    pub params: Value,
+}
+
+/// A server-initiated request that expects a response. `id` is echoed back as-is.
+#[derive(Debug, Clone)]
+pub struct ServerRequest {
+    pub id: Value,
     pub method: String,
     pub params: Value,
 }
@@ -63,7 +71,9 @@ pub struct RpcConnection {
     outgoing: mpsc::Sender<String>,
     pending: Pending,
     next_id: AtomicI64,
+    closed: Arc<AtomicBool>,
     notifications: broadcast::Sender<Notification>,
+    server_requests: broadcast::Sender<ServerRequest>,
 }
 
 impl RpcConnection {
@@ -83,19 +93,22 @@ impl RpcConnection {
             }
         });
 
-        let pending: Pending = Arc::default();
-        let (notifications, _) = broadcast::channel(NOTIFICATION_BUFFER);
+        let (notifications, _) = broadcast::channel(EVENT_BUFFER);
+        let (server_requests, _) = broadcast::channel(EVENT_BUFFER);
         let connection = Arc::new(Self {
             outgoing,
-            pending: Arc::clone(&pending),
+            pending: Arc::default(),
             next_id: AtomicI64::new(1),
+            closed: Arc::new(AtomicBool::new(false)),
             notifications: notifications.clone(),
+            server_requests: server_requests.clone(),
         });
         tokio::spawn(read_loop(
             stream,
-            pending,
+            Arc::clone(&connection.pending),
             notifications,
-            connection.outgoing.clone(),
+            server_requests,
+            Arc::clone(&connection.closed),
         ));
 
         connection
@@ -111,12 +124,16 @@ impl RpcConnection {
     }
 
     pub fn is_closed(&self) -> bool {
-        self.outgoing.is_closed()
+        self.closed.load(Ordering::Acquire) || self.outgoing.is_closed()
     }
 
     /// Subscribe before sending the request that triggers the events, so none are missed.
     pub fn subscribe(&self) -> broadcast::Receiver<Notification> {
         self.notifications.subscribe()
+    }
+
+    pub fn subscribe_server_requests(&self) -> broadcast::Receiver<ServerRequest> {
+        self.server_requests.subscribe()
     }
 
     pub async fn request(&self, method: &str, params: Value) -> Result<Value, RpcError> {
@@ -139,6 +156,17 @@ impl RpcConnection {
             .map_err(|_| RpcError::transport("connection closed before a response arrived"))?
     }
 
+    /// Answers a server-initiated request with a result.
+    pub async fn respond(&self, id: Value, result: Value) -> Result<(), RpcError> {
+        self.send_frame(json!({ "id": id, "result": result })).await
+    }
+
+    /// Answers a server-initiated request with an error.
+    pub async fn respond_error(&self, id: Value, code: i64, message: &str) -> Result<(), RpcError> {
+        self.send_frame(json!({ "id": id, "error": { "code": code, "message": message } }))
+            .await
+    }
+
     async fn send_frame(&self, frame: Value) -> Result<(), RpcError> {
         self.outgoing
             .send(frame.to_string())
@@ -151,7 +179,8 @@ async fn read_loop(
     mut stream: SplitStream<Socket>,
     pending: Pending,
     notifications: broadcast::Sender<Notification>,
-    outgoing: mpsc::Sender<String>,
+    server_requests: broadcast::Sender<ServerRequest>,
+    closed: Arc<AtomicBool>,
 ) {
     while let Some(Ok(message)) = stream.next().await {
         let Message::Text(text) = message else {
@@ -162,13 +191,12 @@ async fn read_loop(
         };
 
         match (value.get("method").and_then(Value::as_str), value.get("id")) {
-            // Server-initiated request: reject it so the server does not wait forever.
-            (Some(_), Some(id)) => {
-                let reply = json!({
-                    "id": id,
-                    "error": { "code": METHOD_NOT_FOUND, "message": "not supported by codex-gateway" }
+            (Some(method), Some(id)) => {
+                let _ = server_requests.send(ServerRequest {
+                    id: id.clone(),
+                    method: method.to_string(),
+                    params: value.get("params").cloned().unwrap_or(Value::Null),
                 });
-                let _ = outgoing.send(reply.to_string()).await;
             }
             (Some(method), None) => {
                 let _ = notifications.send(Notification {
@@ -188,7 +216,8 @@ async fn read_loop(
             (None, None) => {}
         }
     }
-    // The socket is gone: fail every request still waiting.
+    // The socket is gone: mark the connection closed and fail every waiting request.
+    closed.store(true, Ordering::Release);
     pending.lock().expect("pending lock poisoned").clear();
 }
 

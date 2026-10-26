@@ -1,20 +1,23 @@
+use std::sync::Arc;
+
 use sqlx::PgPool;
 
-use crate::runtime::Runtime;
+use crate::runtime::{Runtime, RuntimeConfig};
 
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
     pub dev_login: bool,
-    pub runtime: std::sync::Arc<Runtime>,
+    pub runtime: Arc<Runtime>,
 }
 
 impl AppState {
-    pub fn new(pool: PgPool, dev_login: bool) -> Self {
+    pub fn new(pool: PgPool, dev_login: bool, runtime_config: RuntimeConfig) -> Self {
+        let runtime = Runtime::new(pool.clone(), runtime_config);
         Self {
             pool,
             dev_login,
-            runtime: std::sync::Arc::new(Runtime::default()),
+            runtime,
         }
     }
 }

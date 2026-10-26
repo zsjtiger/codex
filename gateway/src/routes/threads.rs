@@ -348,6 +348,6 @@ async fn create_turn(
         .await?;
     tx.commit().await?;
 
-    crate::runtime::dispatch::spawn_turn(state.clone(), turn.id);
+    crate::runtime::dispatch::spawn_drain(state.clone(), turn.thread_id);
     Ok((StatusCode::CREATED, Json(turn)))
 }

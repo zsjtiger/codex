@@ -1,19 +1,25 @@
-//! Runs one queued turn on its environment's codex app-server and writes the outcome back.
+//! Runs queued turns on their environment's codex app-server and records the outcome.
+//!
+//! Turns on one thread run one at a time, oldest first. A drain task holds the
+//! thread's lock and works through its queued turns until none are left.
+
+use std::time::Duration;
 
 use serde_json::{Value, json};
 use sqlx::PgPool;
-use tokio::{sync::broadcast, time::timeout};
+use tokio::sync::broadcast;
 use uuid::Uuid;
 
-use super::{Notification, RpcConnection, RpcError};
+use super::{Notification, RpcError, RuntimeError};
 use crate::{routes::usage::record_usage, state::AppState};
 
 /// Longest a single turn may run before the gateway gives up waiting for it.
-const TURN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+const TURN_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Debug)]
 enum DispatchError {
     NoEnvironment,
+    Runtime(RuntimeError),
     Rpc(RpcError),
     Protocol(String),
     Lagged,
@@ -25,7 +31,8 @@ enum DispatchError {
 impl std::fmt::Display for DispatchError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NoEnvironment => f.write_str("thread has no environment with an endpoint"),
+            Self::NoEnvironment => f.write_str("thread has no environment"),
+            Self::Runtime(err) => write!(f, "{err}"),
             Self::Rpc(err) => write!(f, "codex app-server error: {err}"),
             Self::Protocol(msg) => write!(f, "unexpected app-server response: {msg}"),
             Self::Lagged => f.write_str("event stream fell behind and dropped events"),
@@ -33,6 +40,12 @@ impl std::fmt::Display for DispatchError {
             Self::Timeout => f.write_str("turn timed out"),
             Self::Database(err) => write!(f, "database error: {err}"),
         }
+    }
+}
+
+impl From<RuntimeError> for DispatchError {
+    fn from(err: RuntimeError) -> Self {
+        Self::Runtime(err)
     }
 }
 
@@ -48,16 +61,65 @@ impl From<sqlx::Error> for DispatchError {
     }
 }
 
-/// Dispatches a turn in the background. Failures are recorded on the turn, not returned.
-pub fn spawn_turn(state: AppState, turn_id: Uuid) {
-    tokio::spawn(async move {
-        if let Err(err) = run_turn(&state, turn_id).await {
+/// Starts draining a thread's queue in the background.
+pub fn spawn_drain(state: AppState, thread_id: Uuid) {
+    tokio::spawn(async move { drain(&state, thread_id).await });
+}
+
+async fn drain(state: &AppState, thread_id: Uuid) {
+    let lock = state.runtime.thread_lock(thread_id);
+    let _turn_order = lock.lock().await;
+    loop {
+        let next: Option<Uuid> = match sqlx::query_scalar(
+            "SELECT id FROM turns WHERE thread_id = $1 AND status = 'queued' ORDER BY seq LIMIT 1",
+        )
+        .bind(thread_id)
+        .fetch_optional(&state.pool)
+        .await
+        {
+            Ok(next) => next,
+            Err(err) => {
+                tracing::error!(%thread_id, %err, "could not read turn queue");
+                return;
+            }
+        };
+        let Some(turn_id) = next else {
+            return;
+        };
+        if let Err(err) = run_turn(state, turn_id).await {
             tracing::warn!(%turn_id, %err, "turn failed");
             if let Err(db_err) = mark_failed(&state.pool, turn_id, &err.to_string()).await {
                 tracing::error!(%turn_id, %db_err, "could not record turn failure");
             }
         }
-    });
+    }
+}
+
+/// On startup: turns left `running` by a previous process can no longer finish, so they
+/// are failed. Threads with queued turns get their queues drained again.
+pub async fn recover(state: &AppState) -> Result<usize, sqlx::Error> {
+    let interrupted = sqlx::query(
+        "UPDATE turns SET status = 'failed', error = 'gateway restarted before the turn finished', completed_at = now()
+         WHERE status = 'running'",
+    )
+    .execute(&state.pool)
+    .await?
+    .rows_affected();
+    sqlx::query(
+        "UPDATE threads SET state = 'failed'
+         WHERE id IN (SELECT thread_id FROM turns WHERE error = 'gateway restarted before the turn finished')",
+    )
+    .execute(&state.pool)
+    .await?;
+
+    let queued: Vec<Uuid> =
+        sqlx::query_scalar("SELECT DISTINCT thread_id FROM turns WHERE status = 'queued'")
+            .fetch_all(&state.pool)
+            .await?;
+    for thread_id in queued {
+        spawn_drain(state.clone(), thread_id);
+    }
+    Ok(interrupted as usize)
 }
 
 struct TurnRow {
@@ -90,21 +152,20 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
         environment_id: row.5,
         endpoint: row.6,
     };
-
-    let (Some(environment_id), Some(endpoint)) = (turn.environment_id, turn.endpoint.as_deref())
-    else {
-        return Err(DispatchError::NoEnvironment);
-    };
-    let connection = state.runtime.connection(environment_id, endpoint).await?;
+    let environment_id = turn.environment_id.ok_or(DispatchError::NoEnvironment)?;
+    let lease = state
+        .runtime
+        .lease(environment_id, turn.endpoint.as_deref())
+        .await?;
 
     let codex_thread_id = match &turn.codex_thread_id {
         Some(id) => id.clone(),
-        None => start_codex_thread(&state.pool, &connection, turn.thread_id).await?,
+        None => start_codex_thread(&state.pool, &lease, turn.thread_id).await?,
     };
 
     // Subscribe before starting the turn so no notification can be missed.
-    let mut events = connection.subscribe();
-    let response = connection
+    let mut events = lease.subscribe();
+    let response = lease
         .request(
             "turn/start",
             json!({
@@ -129,14 +190,13 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
         .execute(&state.pool)
         .await?;
 
-    let outcome = timeout(
+    let outcome = tokio::time::timeout(
         TURN_TIMEOUT,
         wait_for_completion(&mut events, &codex_thread_id, &codex_turn_id),
     )
     .await
     .map_err(|_| DispatchError::Timeout)??;
 
-    let (input_tokens, output_tokens) = outcome.usage;
     sqlx::query("UPDATE turns SET status = $2, error = $3, completed_at = now() WHERE id = $1")
         .bind(turn_id)
         .bind(&outcome.status)
@@ -155,6 +215,8 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
     .bind(thread_state)
     .execute(&state.pool)
     .await?;
+
+    let (input_tokens, output_tokens) = outcome.usage;
     if input_tokens > 0 || output_tokens > 0 {
         record_usage(
             &state.pool,
@@ -172,7 +234,7 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
 
 async fn start_codex_thread(
     pool: &PgPool,
-    connection: &RpcConnection,
+    connection: &super::RpcConnection,
     thread_id: Uuid,
 ) -> Result<String, DispatchError> {
     let response = connection.request("thread/start", json!({})).await?;
@@ -180,7 +242,6 @@ async fn start_codex_thread(
         .pointer("/thread/id")
         .and_then(Value::as_str)
         .ok_or_else(|| DispatchError::Protocol("thread/start returned no thread id".to_string()))?;
-    // Keep the first id if two turns race to start the same thread.
     sqlx::query(
         "UPDATE threads SET codex_thread_id = $2 WHERE id = $1 AND codex_thread_id IS NULL",
     )
@@ -235,13 +296,9 @@ async fn wait_for_completion(
             "turn/completed"
                 if params.pointer("/turn/id").and_then(Value::as_str) == Some(codex_turn_id) =>
             {
-                let raw_status = params
-                    .pointer("/turn/status")
-                    .and_then(Value::as_str)
-                    .unwrap_or("failed");
-                let status = match raw_status {
-                    "completed" => "completed",
-                    "interrupted" => "interrupted",
+                let status = match params.pointer("/turn/status").and_then(Value::as_str) {
+                    Some("completed") => "completed",
+                    Some("interrupted") => "interrupted",
                     _ => "failed",
                 };
                 let error = params
