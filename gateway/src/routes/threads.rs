@@ -96,6 +96,66 @@ pub struct CreateTurn {
     input: String,
     model: Option<String>,
     effort: Option<String>,
+    /// Uploaded text attachments whose contents are added to the turn input.
+    attachment_ids: Option<Vec<Uuid>>,
+}
+
+/// Largest total size of text attachments included in one turn.
+const MAX_INLINE_ATTACHMENT_BYTES: i64 = 200_000;
+
+/// Appends each attached text file to the message. Only the uploader's own uploaded text
+/// files are accepted, so a turn cannot read someone else's attachment.
+async fn turn_input(
+    state: &AppState,
+    user: &CurrentUser,
+    workspace_id: Uuid,
+    input: &str,
+    ids: &[Uuid],
+) -> Result<String, ApiError> {
+    if ids.is_empty() {
+        return Ok(input.to_string());
+    }
+    let rows: Vec<(String, String, i64, String)> = sqlx::query_as(
+        "SELECT filename, content_type, size_bytes, storage_key FROM attachments
+         WHERE id = ANY($1) AND workspace_id = $2 AND uploaded_by = $3 AND uploaded
+         ORDER BY created_at",
+    )
+    .bind(ids)
+    .bind(workspace_id)
+    .bind(user.id)
+    .fetch_all(&state.pool)
+    .await?;
+    if rows.len() != ids.iter().collect::<std::collections::HashSet<_>>().len() {
+        return Err(ApiError::BadRequest(
+            "some attachments are missing, not uploaded, or not yours".to_string(),
+        ));
+    }
+    let total: i64 = rows.iter().map(|row| row.2).sum();
+    if total > MAX_INLINE_ATTACHMENT_BYTES {
+        return Err(ApiError::BadRequest(format!(
+            "attachments in one message can total at most {MAX_INLINE_ATTACHMENT_BYTES} bytes"
+        )));
+    }
+    let mut text = input.to_string();
+    for (filename, content_type, _, storage_key) in rows {
+        if !(content_type.starts_with("text/") || content_type == "application/json") {
+            return Err(ApiError::BadRequest(format!(
+                "{filename}: only text attachments can be sent with a message"
+            )));
+        }
+        let bytes = tokio::fs::read(state.storage.join(&storage_key))
+            .await
+            .map_err(|err| {
+                tracing::error!(%err, "could not read attachment for a turn");
+                ApiError::Internal
+            })?;
+        let content = String::from_utf8(bytes)
+            .map_err(|_| ApiError::BadRequest(format!("{filename} is not valid UTF-8 text")))?;
+        text.push_str(&format!(
+            "\n\nAttached file: {filename}\n```\n{content}\n```"
+        ));
+    }
+    Ok(text)
 }
 
 const TURN_COLUMNS: &str = "id, thread_id, seq, status, input, error, codex_turn_id, model, effort, created_by, created_at, completed_at";
@@ -365,6 +425,15 @@ async fn create_turn(
     let access = thread_access(&state.pool, id).await?;
     require_role(&state.pool, access.workspace_id, user.id, Role::Member).await?;
     validate::length("input", &req.input, 1, 100_000)?;
+    let input = turn_input(
+        &state,
+        &user,
+        access.workspace_id,
+        &req.input,
+        req.attachment_ids.as_deref().unwrap_or(&[]),
+    )
+    .await?;
+    validate::length("input", &input, 1, 100_000)?;
     if let Some(model) = &req.model {
         validate::length("model", model, 1, 100)?;
     }
@@ -398,7 +467,7 @@ async fn create_turn(
     )
     .bind(id)
     .bind(seq)
-    .bind(&req.input)
+    .bind(&input)
     .bind(req.model.as_deref())
     .bind(req.effort.as_deref())
     .bind(user.id)

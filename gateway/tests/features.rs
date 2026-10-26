@@ -488,3 +488,105 @@ async fn running_turn_can_be_interrupted(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::CONFLICT);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn text_attachments_are_added_to_the_turn_input(pool: PgPool) {
+    let storage = std::env::temp_dir().join(format!("gateway-turn-attachments-{}", Uuid::new_v4()));
+    let mock = mock_app_server().await;
+    let state = state_for(&pool).with_storage(storage.clone());
+    let owner = login(&state, "owner@example.com").await;
+    let other = login(&state, "other@example.com").await;
+    let (ws, thread_id) = setup(&state, &owner, Some(&mock.url)).await;
+    let turns = format!("/api/v1/threads/{thread_id}/turns");
+
+    let (_, text) = call(
+        &state,
+        "POST",
+        &format!("/api/v1/workspaces/{ws}/attachments"),
+        &owner,
+        Some(json!({ "filename": "notes.txt", "content_type": "text/plain", "size_bytes": 5 })),
+    )
+    .await;
+    let text_id = text["id"].as_str().unwrap().to_string();
+    call_raw(
+        &state,
+        "PUT",
+        &format!("/api/v1/attachments/{text_id}/content"),
+        &owner,
+        "text/plain",
+        b"hello".to_vec(),
+    )
+    .await;
+
+    let (_, image) = call(
+        &state,
+        "POST",
+        &format!("/api/v1/workspaces/{ws}/attachments"),
+        &owner,
+        Some(json!({ "filename": "a.png", "content_type": "image/png", "size_bytes": 3 })),
+    )
+    .await;
+    let image_id = image["id"].as_str().unwrap().to_string();
+    call_raw(
+        &state,
+        "PUT",
+        &format!("/api/v1/attachments/{image_id}/content"),
+        &owner,
+        "image/png",
+        vec![1, 2, 3],
+    )
+    .await;
+
+    // Someone else's upload cannot be used.
+    call(
+        &state,
+        "POST",
+        &format!("/api/v1/workspaces/{ws}/members"),
+        &owner,
+        Some(json!({ "email": "other@example.com" })),
+    )
+    .await;
+    let (status, _) = call(
+        &state,
+        "POST",
+        &turns,
+        &other,
+        Some(json!({ "input": "hi", "attachment_ids": [text_id] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _) = call(
+        &state,
+        "POST",
+        &turns,
+        &owner,
+        Some(json!({ "input": "hi", "attachment_ids": [image_id] })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "non-text attachments are refused"
+    );
+
+    let (status, turn) = call(
+        &state,
+        "POST",
+        &turns,
+        &owner,
+        Some(json!({ "input": "Summarise it.", "attachment_ids": [text_id] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{turn}");
+    let input = turn["input"].as_str().unwrap();
+    assert!(
+        input.starts_with("Summarise it.")
+            && input.contains("Attached file: notes.txt")
+            && input.contains("hello"),
+        "{input}"
+    );
+    wait_for_turn(&state, &owner, &thread_id, 0).await;
+
+    let _ = std::fs::remove_dir_all(storage);
+}
