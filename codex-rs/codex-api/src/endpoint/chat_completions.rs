@@ -136,15 +136,14 @@ pub(crate) fn build_chat_completions_body(request: &ResponsesApiRequest) -> Valu
                 if !messages.last().is_some_and(is_assistant) {
                     messages.push(json!({"role": "assistant", "content": Value::Null}));
                 }
-                let message = messages
-                    .last_mut()
-                    .expect("an assistant message is present");
-                match message.get_mut("tool_calls").and_then(Value::as_array_mut) {
-                    Some(calls) => calls.push(tool_call),
-                    None => message["tool_calls"] = json!([tool_call]),
-                }
-                if let Some(reasoning) = pending_reasoning.take() {
-                    message["reasoning_content"] = Value::String(reasoning);
+                if let Some(message) = messages.last_mut() {
+                    match message.get_mut("tool_calls").and_then(Value::as_array_mut) {
+                        Some(calls) => calls.push(tool_call),
+                        None => message["tool_calls"] = json!([tool_call]),
+                    }
+                    if let Some(reasoning) = pending_reasoning.take() {
+                        message["reasoning_content"] = Value::String(reasoning);
+                    }
                 }
             }
             ResponseItem::FunctionCallOutput {
