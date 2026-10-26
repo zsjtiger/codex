@@ -6,6 +6,7 @@ import type {
   Artifact,
   ArtifactKind,
   Attachment,
+  Connector,
   Frequency,
   Project,
   ScheduledTask,
@@ -25,8 +26,8 @@ export const projects = {
 };
 
 export const skills = {
-  list: (ws: string) => api<Skill[]>("GET", `/workspaces/${ws}/skills`),
-  create: (ws: string, body: { name: string; description: string; instructions: string }) =>
+  list: (ws: string, kind: "skill" | "plugin") => api<Skill[]>("GET", `/workspaces/${ws}/skills?kind=${kind}`),
+  create: (ws: string, body: { kind: "skill" | "plugin"; name: string; description: string; instructions: string }) =>
     api<Skill>("POST", `/workspaces/${ws}/skills`, body),
   update: (id: string, body: { enabled?: boolean; name?: string; description?: string; instructions?: string }) =>
     api<Skill>("PATCH", `/skills/${id}`, body),
@@ -88,4 +89,13 @@ export const attachments = {
       throw new ApiError(response.status, data?.error?.code ?? "error", data?.error?.message ?? response.statusText);
     }
   },
+};
+
+export const connectors = {
+  list: (ws: string) => api<Connector[]>("GET", `/workspaces/${ws}/connectors`),
+  create: (ws: string, body: { name: string; url: string; enabled?: boolean }) =>
+    api<Connector>("POST", `/workspaces/${ws}/connectors`, body),
+  update: (id: string, body: { name?: string; url?: string; enabled?: boolean }) =>
+    api<Connector>("PATCH", `/connectors/${id}`, body),
+  remove: (id: string) => api<void>("DELETE", `/connectors/${id}`),
 };

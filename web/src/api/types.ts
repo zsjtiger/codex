@@ -66,9 +66,22 @@ export interface Project {
   updated_at: string;
 }
 
+export interface Connector {
+  id: string;
+  workspace_id: string;
+  name: string;
+  /** Server key used in codex's configuration, derived from the name. */
+  key: string;
+  url: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Skill {
   id: string;
   workspace_id: string;
+  kind: "skill" | "plugin";
   name: string;
   description: string;
   instructions: string;
