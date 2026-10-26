@@ -74,6 +74,9 @@ export interface Connector {
   key: string;
   url: string;
   enabled: boolean;
+  /** Last startup status codex reported, or null if not checked yet. */
+  status: "starting" | "ready" | "failed" | "cancelled" | null;
+  status_error: string | null;
   created_at: string;
   updated_at: string;
 }

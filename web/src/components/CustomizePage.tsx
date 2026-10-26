@@ -12,6 +12,22 @@ interface CustomizePageProps {
   onError: (message: string) => void;
 }
 
+function connectorStatusLabel(c: Connector): string {
+  if (!c.enabled) return "Disabled";
+  switch (c.status) {
+    case "ready":
+      return "Connected";
+    case "starting":
+      return "Connecting…";
+    case "failed":
+      return "Failed";
+    case "cancelled":
+      return "Cancelled";
+    default:
+      return "Not checked";
+  }
+}
+
 /**
  * Skills and plugins are instruction bundles added to new chats. Connectors are MCP servers
  * that codex can call from new chats. Only admins change any of them.
@@ -175,7 +191,9 @@ export function CustomizePage({ workspaceId, isAdmin, onBack, onError }: Customi
                     </div>
                   </div>
                   <div className="list-actions">
-                    <span className={`status ${c.enabled ? "status-on" : ""}`}>{c.enabled ? "Connected" : "Disabled"}</span>
+                    <span className={`status ${c.enabled && c.status === "ready" ? "status-on" : ""}`} title={c.status_error ?? undefined}>
+                      {connectorStatusLabel(c)}
+                    </span>
                     {isAdmin && (
                       <button onClick={() => void act(() => connectorApi.update(c.id, { enabled: !c.enabled }), "Could not update the connector.")}>
                         {c.enabled ? "Disable" : "Enable"}
@@ -187,7 +205,7 @@ export function CustomizePage({ workspaceId, isAdmin, onBack, onError }: Customi
               ))}
             </div>
             <p className="muted small">
-              Enabled connectors are added to chats that start after the change. Connectors that need sign-in are not supported yet.
+              Enabled connectors are added to chats that start after the change. Status is the last report from codex in any chat; it shows "Not checked" until a chat has started with the connector. Connectors that need sign-in are not supported yet.
             </p>
           </>
         ) : (

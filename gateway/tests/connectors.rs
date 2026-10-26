@@ -235,3 +235,81 @@ async fn no_connectors_means_no_config_is_sent(pool: PgPool) {
     let (_, start) = requests.iter().find(|(m, _)| m == "thread/start").unwrap();
     assert!(start.get("config").is_none());
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn connector_status_follows_codex_startup_reports(pool: PgPool) {
+    let mock = mock_app_server().await;
+    let state = AppState::new(pool.clone(), true, RuntimeConfig::default());
+    let owner = login(&state, "owner@example.com").await;
+    let (ws, thread_id) = setup(&state, &owner, Some(&mock.url)).await;
+    let connectors = format!("/api/v1/workspaces/{ws}/connectors");
+    let (_, good) = call(
+        &state,
+        "POST",
+        &connectors,
+        &owner,
+        Some(json!({ "name": "Good", "url": "https://ok.example.com/mcp" })),
+    )
+    .await;
+    let (_, bad) = call(
+        &state,
+        "POST",
+        &connectors,
+        &owner,
+        Some(json!({ "name": "Bad", "url": "https://down.example.com/mcp" })),
+    )
+    .await;
+    assert!(good["status"].is_null(), "unchecked until codex reports");
+
+    call(
+        &state,
+        "POST",
+        &format!("/api/v1/threads/{thread_id}/turns"),
+        &owner,
+        Some(json!({ "input": "hello" })),
+    )
+    .await;
+    wait_for_turn(&state, &owner, &thread_id, 0).await;
+
+    let mut statuses = std::collections::HashMap::new();
+    for _ in 0..200 {
+        let (_, list) = call(&state, "GET", &connectors, &owner, None).await;
+        statuses.clear();
+        for c in list.as_array().unwrap() {
+            statuses.insert(
+                c["key"].as_str().unwrap().to_string(),
+                c["status"].as_str().map(str::to_string),
+            );
+        }
+        if statuses.get("good") == Some(&Some("ready".to_string()))
+            && statuses.get("bad") == Some(&Some("failed".to_string()))
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(statuses.get("good"), Some(&Some("ready".to_string())));
+    assert_eq!(statuses.get("bad"), Some(&Some("failed".to_string())));
+
+    let (_, failed) = call(
+        &state,
+        "GET",
+        &format!("/api/v1/connectors/{}", bad["id"].as_str().unwrap()),
+        &owner,
+        None,
+    )
+    .await;
+    assert_eq!(failed["status_error"], "connection refused");
+
+    // Changing the URL clears the old status until codex reports again.
+    let (_, changed) = call(
+        &state,
+        "PATCH",
+        &format!("/api/v1/connectors/{}", bad["id"].as_str().unwrap()),
+        &owner,
+        Some(json!({ "url": "https://down2.example.com/mcp" })),
+    )
+    .await;
+    assert!(changed["status"].is_null());
+    assert!(changed["status_error"].is_null());
+}

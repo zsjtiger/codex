@@ -109,10 +109,14 @@ All responses are JSON. Errors use `{"error": {"code", "message"}}`.
 | POST | `/api/v1/scheduled-tasks/{id}/run` | Start a run now; the schedule is unchanged |
 | POST | `/api/v1/turns/{id}/interrupt` | Interrupt a running turn (202). The turn ends as `interrupted` |
 | PUT, GET | `/api/v1/attachments/{id}/content` | Upload bytes once (uploader only), then download. Size and SHA-256 are checked |
+| GET, POST | `/api/v1/workspaces/{id}/connectors` | Connectors are MCP servers. Members read. Create: admin. URL must be http or https |
+| GET, PATCH, DELETE | `/api/v1/connectors/{id}` | PATCH `{name?, url?, enabled?}`: admin. `status` is the last startup status codex reported (`starting`, `ready`, `failed`, `cancelled`), or null until a chat starts with it |
+| GET, POST | `/api/v1/workspaces/{id}/skills?kind=skill|plugin` | Plugins are skills with `kind: "plugin"` |
 
 Turn creation also accepts `model`, `effort` and `attachment_ids`. Text attachments are
 added to the turn input as fenced blocks; other types are refused. Thread creation and
-PATCH accept `project_id`.
+PATCH accept `project_id`. Enabled connectors are passed to each new codex thread as
+`mcp_servers`; a connector's status is updated from codex's startup reports.
 
 Turns stay `queued` until the runtime that dispatches them to `codex app-server`
 updates them, which is not implemented yet.

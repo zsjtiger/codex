@@ -118,6 +118,9 @@ impl Hub {
         let Some(thread_id) = self.gateway_thread(pool, codex_thread_id).await else {
             return;
         };
+        if method == "mcpServer/startupStatus/updated" {
+            record_connector_status(pool, thread_id, params).await;
+        }
         self.send_to(
             thread_id,
             &json!({ "type": "event", "threadId": thread_id, "method": method, "params": params }),
@@ -252,4 +255,39 @@ async fn decline(connection: &RpcConnection, id: &Value, method: &str) {
                 .await;
         }
     }
+}
+
+/// Stores the startup status codex reports for an MCP server as the workspace connector's status.
+/// Unknown status values are ignored.
+async fn record_connector_status(pool: &PgPool, thread_id: Uuid, params: &Value) {
+    let (Some(name), Some(status)) = (
+        params.get("name").and_then(Value::as_str),
+        params.get("status").and_then(Value::as_str),
+    ) else {
+        return;
+    };
+    if !matches!(status, "starting" | "ready" | "failed" | "cancelled") {
+        return;
+    }
+    let error = params
+        .get("error")
+        .and_then(Value::as_str)
+        .map(|e| truncate(e, 2000));
+    let result = sqlx::query(
+        "UPDATE connectors SET status = $3, status_error = $4, status_at = now()
+         WHERE workspace_id = (SELECT workspace_id FROM threads WHERE id = $1) AND key = $2",
+    )
+    .bind(thread_id)
+    .bind(name)
+    .bind(status)
+    .bind(error)
+    .execute(pool)
+    .await;
+    if let Err(err) = result {
+        tracing::warn!(%err, "could not record connector status");
+    }
+}
+
+fn truncate(text: &str, max: usize) -> String {
+    text.chars().take(max).collect()
 }

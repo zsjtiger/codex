@@ -28,6 +28,10 @@ pub struct ConnectorView {
     pub key: String,
     pub url: String,
     pub enabled: bool,
+    /// Last startup status codex reported: starting, ready, failed or cancelled. Null until checked.
+    pub status: Option<String>,
+    pub status_error: Option<String>,
+    pub status_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -55,7 +59,7 @@ pub fn routes() -> Router<AppState> {
         )
 }
 
-const COLUMNS: &str = "id, workspace_id, name, key, url, enabled, created_at, updated_at";
+const COLUMNS: &str = "id, workspace_id, name, key, url, enabled, status, status_error, status_at, created_at, updated_at";
 
 /// Turns a display name into a key codex accepts: lowercase letters, digits, `_` and `-`.
 pub fn key_for(name: &str) -> Result<String, ApiError> {
@@ -180,7 +184,10 @@ async fn update(
     };
     sqlx::query(
         "UPDATE connectors SET name = COALESCE($2, name), key = COALESCE($3, key), url = COALESCE($4, url),
-             enabled = COALESCE($5, enabled), updated_at = now()
+             enabled = COALESCE($5, enabled),
+             status = CASE WHEN $4 IS NOT NULL OR $5 IS NOT NULL THEN NULL ELSE status END,
+             status_error = CASE WHEN $4 IS NOT NULL OR $5 IS NOT NULL THEN NULL ELSE status_error END,
+             updated_at = now()
          WHERE id = $1",
     )
     .bind(id)

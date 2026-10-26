@@ -105,9 +105,39 @@ pub async fn mock_app_server() -> MockServer {
                     let reply = |result: Value| json!({ "id": id, "result": result }).to_string();
                     match method.as_str() {
                         "initialize" => out_tx.send(reply(json!({ "userAgent": "mock" }))).unwrap(),
-                        "thread/start" => out_tx
-                            .send(reply(json!({ "thread": { "id": "thr_mock" } })))
-                            .unwrap(),
+                        "thread/start" => {
+                            out_tx
+                                .send(reply(json!({ "thread": { "id": "thr_mock" } })))
+                                .unwrap();
+                            // Report each configured MCP server: URLs containing "ok" connect, others fail.
+                            if let Some(servers) =
+                                msg["params"]["config"]["mcp_servers"].as_object()
+                            {
+                                for (name, config) in servers {
+                                    let url = config["url"].as_str().unwrap_or_default();
+                                    let (status, error) = if url.contains("ok") {
+                                        ("ready", Value::Null)
+                                    } else {
+                                        ("failed", json!("connection refused"))
+                                    };
+                                    out_tx
+                                        .send(
+                                            json!({
+                                                "method": "mcpServer/startupStatus/updated",
+                                                "params": {
+                                                    "threadId": "thr_mock",
+                                                    "name": name,
+                                                    "status": status,
+                                                    "error": error,
+                                                    "failureReason": null
+                                                }
+                                            })
+                                            .to_string(),
+                                        )
+                                        .unwrap();
+                                }
+                            }
+                        }
                         "turn/start" => {
                             let input = msg["params"]["input"][0]["text"]
                                 .as_str()
