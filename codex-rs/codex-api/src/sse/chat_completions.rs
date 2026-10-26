@@ -48,18 +48,61 @@ struct PendingToolCall {
     id: String,
     name: String,
     arguments: String,
+    added: bool,
+}
+
+fn message_item(text: String) -> ResponseItem {
+    ResponseItem::Message {
+        encrypted_content: None,
+        status: None,
+        id: None,
+        role: "assistant".to_string(),
+        content: vec![ContentItem::OutputText {
+            text,
+            annotations: None,
+            logprobs: None,
+        }],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    }
+}
+
+fn reasoning_item(text: String) -> ResponseItem {
+    ResponseItem::Reasoning {
+        id: None,
+        summary: Vec::new(),
+        content: Some(vec![ReasoningItemContent::ReasoningText { text }]),
+        encrypted_content: None,
+        internal_chat_message_metadata_passthrough: None,
+    }
+}
+
+fn function_call_item(call_id: String, name: String, arguments: String) -> ResponseItem {
+    ResponseItem::FunctionCall {
+        encrypted_content: None,
+        status: None,
+        id: None,
+        name,
+        namespace: None,
+        arguments,
+        encrypted_function_args: None,
+        call_id,
+        internal_chat_message_metadata_passthrough: None,
+    }
 }
 
 /// Turns Chat Completions chunks into Responses-shaped events.
 ///
-/// Text and reasoning deltas stream out as they arrive. Message and function-call items are
-/// emitted once, on `[DONE]`, so each item carries its complete content.
+/// Each item is announced with `OutputItemAdded` before its first delta, and finished with
+/// `OutputItemDone` on `[DONE]` so it carries its complete content.
 #[derive(Default)]
 pub(crate) struct ChatCompletionsDecoder {
     started: bool,
     response_id: String,
     text: String,
+    message_added: bool,
     reasoning: String,
+    reasoning_added: bool,
     tool_calls: BTreeMap<u64, PendingToolCall>,
     finish_reason: Option<String>,
     token_usage: Option<TokenUsage>,
@@ -69,30 +112,22 @@ impl ChatCompletionsDecoder {
     fn complete(&mut self) -> Vec<ResponseEvent> {
         let mut events = Vec::new();
         if !self.reasoning.is_empty() {
-            events.push(ResponseEvent::OutputItemDone(ResponseItem::Reasoning {
-                id: None,
-                summary: Vec::new(),
-                content: Some(vec![ReasoningItemContent::ReasoningText {
-                    text: std::mem::take(&mut self.reasoning),
-                }]),
-                encrypted_content: None,
-                internal_chat_message_metadata_passthrough: None,
-            }));
+            if !self.reasoning_added {
+                events.push(ResponseEvent::OutputItemAdded(
+                    reasoning_item(String::new()),
+                ));
+            }
+            events.push(ResponseEvent::OutputItemDone(reasoning_item(
+                std::mem::take(&mut self.reasoning),
+            )));
         }
         if !self.text.is_empty() || self.tool_calls.is_empty() {
-            events.push(ResponseEvent::OutputItemDone(ResponseItem::Message {
-                encrypted_content: None,
-                status: None,
-                id: None,
-                role: "assistant".to_string(),
-                content: vec![ContentItem::OutputText {
-                    text: std::mem::take(&mut self.text),
-                    annotations: None,
-                    logprobs: None,
-                }],
-                phase: None,
-                internal_chat_message_metadata_passthrough: None,
-            }));
+            if !self.message_added {
+                events.push(ResponseEvent::OutputItemAdded(message_item(String::new())));
+            }
+            events.push(ResponseEvent::OutputItemDone(message_item(std::mem::take(
+                &mut self.text,
+            ))));
         }
         for (index, call) in std::mem::take(&mut self.tool_calls) {
             let call_id = if call.id.is_empty() {
@@ -100,21 +135,21 @@ impl ChatCompletionsDecoder {
             } else {
                 call.id
             };
-            events.push(ResponseEvent::OutputItemDone(ResponseItem::FunctionCall {
-                encrypted_content: None,
-                status: None,
-                id: None,
-                name: call.name,
-                namespace: None,
-                arguments: if call.arguments.is_empty() {
-                    "{}".to_string()
-                } else {
-                    call.arguments
-                },
-                encrypted_function_args: None,
-                call_id,
-                internal_chat_message_metadata_passthrough: None,
-            }));
+            let arguments = if call.arguments.is_empty() {
+                "{}".to_string()
+            } else {
+                call.arguments
+            };
+            if !call.added {
+                events.push(ResponseEvent::OutputItemAdded(function_call_item(
+                    call_id.clone(),
+                    call.name.clone(),
+                    String::new(),
+                )));
+            }
+            events.push(ResponseEvent::OutputItemDone(function_call_item(
+                call_id, call.name, arguments,
+            )));
         }
         events.push(ResponseEvent::Completed {
             response_id: std::mem::take(&mut self.response_id),
@@ -160,6 +195,10 @@ impl SseDecoder for ChatCompletionsDecoder {
             }
             let delta = &choice["delta"];
             if let Some(text) = delta["content"].as_str().filter(|text| !text.is_empty()) {
+                if !self.message_added {
+                    self.message_added = true;
+                    events.push(ResponseEvent::OutputItemAdded(message_item(String::new())));
+                }
                 self.text.push_str(text);
                 events.push(ResponseEvent::OutputTextDelta(text.to_string()));
             }
@@ -167,6 +206,12 @@ impl SseDecoder for ChatCompletionsDecoder {
                 .as_str()
                 .filter(|text| !text.is_empty())
             {
+                if !self.reasoning_added {
+                    self.reasoning_added = true;
+                    events.push(ResponseEvent::OutputItemAdded(
+                        reasoning_item(String::new()),
+                    ));
+                }
                 self.reasoning.push_str(text);
                 events.push(ResponseEvent::ReasoningSummaryDelta {
                     delta: text.to_string(),
@@ -184,6 +229,19 @@ impl SseDecoder for ChatCompletionsDecoder {
                     .filter(|name| !name.is_empty())
                 {
                     call.name = name.to_string();
+                }
+                if !call.added && !call.name.is_empty() {
+                    call.added = true;
+                    let call_id = if call.id.is_empty() {
+                        format!("call_{index}")
+                    } else {
+                        call.id.clone()
+                    };
+                    events.push(ResponseEvent::OutputItemAdded(function_call_item(
+                        call_id,
+                        call.name.clone(),
+                        String::new(),
+                    )));
                 }
                 if let Some(arguments) = tool_call["function"]["arguments"].as_str() {
                     call.arguments.push_str(arguments);
@@ -261,14 +319,14 @@ mod tests {
             "[DONE]",
         ]);
 
-        assert_eq!(events.len(), 8);
+        assert_eq!(events.len(), 10);
         assert_matches!(&events[0], ResponseEvent::Created { response_id: Some(id) } if id == "c1");
-        assert_matches!(&events[1], ResponseEvent::OutputTextDelta(text) if text == "Hel");
-        assert_matches!(&events[2], ResponseEvent::OutputTextDelta(text) if text == "lo");
-        assert_matches!(&events[3], ResponseEvent::ToolCallInputDelta { call_id: Some(id), .. } if id == "call_9");
-        assert_matches!(&events[4], ResponseEvent::ToolCallInputDelta { .. });
+        assert_matches!(&events[2], ResponseEvent::OutputTextDelta(text) if text == "Hel");
+        assert_matches!(&events[3], ResponseEvent::OutputTextDelta(text) if text == "lo");
+        assert_matches!(&events[5], ResponseEvent::ToolCallInputDelta { call_id: Some(id), .. } if id == "call_9");
+        assert_matches!(&events[6], ResponseEvent::ToolCallInputDelta { .. });
         assert_matches!(
-            &events[5],
+            &events[7],
             ResponseEvent::OutputItemDone(ResponseItem::Message { content, .. })
                 if content == &vec![ContentItem::OutputText {
                     text: "Hello".to_string(),
@@ -277,12 +335,12 @@ mod tests {
                 }]
         );
         assert_matches!(
-            &events[6],
+            &events[8],
             ResponseEvent::OutputItemDone(ResponseItem::FunctionCall { name, arguments, call_id, .. })
                 if name == "get_weather" && arguments == "{\"city\":\"Paris\"}" && call_id == "call_9"
         );
         assert_matches!(
-            &events[7],
+            &events[9],
             ResponseEvent::Completed { response_id, token_usage: Some(usage), end_turn: Some(false), .. }
                 if response_id == "c1"
                     && usage.input_tokens == 10
@@ -300,14 +358,14 @@ mod tests {
             "[DONE]",
         ]);
 
-        assert_matches!(&events[1], ResponseEvent::ReasoningSummaryDelta { delta, .. } if delta == "think");
+        assert_matches!(&events[2], ResponseEvent::ReasoningSummaryDelta { delta, .. } if delta == "think");
         assert_matches!(
-            &events[3],
+            &events[5],
             ResponseEvent::OutputItemDone(ResponseItem::Reasoning { content: Some(content), .. })
                 if content == &vec![ReasoningItemContent::ReasoningText { text: "think".to_string() }]
         );
         assert_matches!(
-            &events[5],
+            &events[7],
             ResponseEvent::Completed {
                 end_turn: Some(true),
                 ..

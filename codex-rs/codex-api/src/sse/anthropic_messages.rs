@@ -7,6 +7,7 @@ use crate::error::ApiError;
 use crate::telemetry::SseTelemetry;
 use codex_client::StreamResponse;
 use codex_protocol::models::ContentItem;
+use codex_protocol::models::ReasoningItemContent;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::TokenUsage;
 use serde_json::Value;
@@ -49,13 +50,53 @@ enum ContentBlock {
         name: String,
         input: String,
     },
-    Thinking,
+    Thinking(String),
+}
+
+fn message_item(text: String) -> ResponseItem {
+    ResponseItem::Message {
+        encrypted_content: None,
+        status: None,
+        id: None,
+        role: "assistant".to_string(),
+        content: vec![ContentItem::OutputText {
+            text,
+            annotations: None,
+            logprobs: None,
+        }],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    }
+}
+
+fn reasoning_item(text: String) -> ResponseItem {
+    ResponseItem::Reasoning {
+        id: None,
+        summary: Vec::new(),
+        content: Some(vec![ReasoningItemContent::ReasoningText { text }]),
+        encrypted_content: None,
+        internal_chat_message_metadata_passthrough: None,
+    }
+}
+
+fn function_call_item(call_id: String, name: String, arguments: String) -> ResponseItem {
+    ResponseItem::FunctionCall {
+        encrypted_content: None,
+        status: None,
+        id: None,
+        name,
+        namespace: None,
+        arguments,
+        encrypted_function_args: None,
+        call_id,
+        internal_chat_message_metadata_passthrough: None,
+    }
 }
 
 /// Turns Anthropic Messages stream events into Responses-shaped events.
 ///
-/// Text and tool-input deltas stream out as they arrive. A text or tool-use block is emitted
-/// as a finished item when its `content_block_stop` arrives.
+/// Each content block is announced with `OutputItemAdded` when it starts, streams its deltas,
+/// and is finished with `OutputItemDone` when it stops.
 #[derive(Default)]
 pub(crate) struct AnthropicMessagesDecoder {
     response_id: String,
@@ -118,13 +159,30 @@ impl SseDecoder for AnthropicMessagesDecoder {
                 let index = value["index"].as_u64().unwrap_or(0);
                 let block = &value["content_block"];
                 let content_block = match block["type"].as_str() {
-                    Some("tool_use") => ContentBlock::ToolUse {
-                        id: block["id"].as_str().unwrap_or_default().to_string(),
-                        name: block["name"].as_str().unwrap_or_default().to_string(),
-                        input: String::new(),
-                    },
-                    Some("thinking" | "redacted_thinking") => ContentBlock::Thinking,
-                    _ => ContentBlock::Text(block["text"].as_str().unwrap_or_default().to_string()),
+                    Some("tool_use") => {
+                        let id = block["id"].as_str().unwrap_or_default().to_string();
+                        let name = block["name"].as_str().unwrap_or_default().to_string();
+                        events.push(ResponseEvent::OutputItemAdded(function_call_item(
+                            id.clone(),
+                            name.clone(),
+                            String::new(),
+                        )));
+                        ContentBlock::ToolUse {
+                            id,
+                            name,
+                            input: String::new(),
+                        }
+                    }
+                    Some("thinking" | "redacted_thinking") => {
+                        events.push(ResponseEvent::OutputItemAdded(
+                            reasoning_item(String::new()),
+                        ));
+                        ContentBlock::Thinking(String::new())
+                    }
+                    _ => {
+                        events.push(ResponseEvent::OutputItemAdded(message_item(String::new())));
+                        ContentBlock::Text(block["text"].as_str().unwrap_or_default().to_string())
+                    }
                 };
                 self.blocks.insert(index, content_block);
             }
@@ -146,9 +204,11 @@ impl SseDecoder for AnthropicMessagesDecoder {
                             delta: piece.to_string(),
                         });
                     }
-                    (Some("thinking_delta"), Some(ContentBlock::Thinking)) => {
+                    (Some("thinking_delta"), Some(ContentBlock::Thinking(text))) => {
+                        let piece = delta["thinking"].as_str().unwrap_or_default();
+                        text.push_str(piece);
                         events.push(ResponseEvent::ReasoningSummaryDelta {
-                            delta: delta["thinking"].as_str().unwrap_or_default().to_string(),
+                            delta: piece.to_string(),
                             summary_index: 0,
                         });
                     }
@@ -159,36 +219,21 @@ impl SseDecoder for AnthropicMessagesDecoder {
                 let index = value["index"].as_u64().unwrap_or(0);
                 match self.blocks.remove(&index) {
                     Some(ContentBlock::Text(text)) if !text.is_empty() => {
-                        events.push(ResponseEvent::OutputItemDone(ResponseItem::Message {
-                            encrypted_content: None,
-                            status: None,
-                            id: None,
-                            role: "assistant".to_string(),
-                            content: vec![ContentItem::OutputText {
-                                text,
-                                annotations: None,
-                                logprobs: None,
-                            }],
-                            phase: None,
-                            internal_chat_message_metadata_passthrough: None,
-                        }));
+                        events.push(ResponseEvent::OutputItemDone(message_item(text)));
                     }
                     Some(ContentBlock::ToolUse { id, name, input }) => {
-                        events.push(ResponseEvent::OutputItemDone(ResponseItem::FunctionCall {
-                            encrypted_content: None,
-                            status: None,
-                            id: None,
+                        events.push(ResponseEvent::OutputItemDone(function_call_item(
+                            id,
                             name,
-                            namespace: None,
-                            arguments: if input.is_empty() {
+                            if input.is_empty() {
                                 "{}".to_string()
                             } else {
                                 input
                             },
-                            encrypted_function_args: None,
-                            call_id: id,
-                            internal_chat_message_metadata_passthrough: None,
-                        }));
+                        )));
+                    }
+                    Some(ContentBlock::Thinking(text)) if !text.is_empty() => {
+                        events.push(ResponseEvent::OutputItemDone(reasoning_item(text)));
                     }
                     _ => {}
                 }
@@ -302,11 +347,11 @@ mod tests {
             ("message_stop", json!({"type": "message_stop"})),
         ]);
 
-        assert_eq!(events.len(), 7);
+        assert_eq!(events.len(), 9);
         assert_matches!(&events[0], ResponseEvent::Created { response_id: Some(id) } if id == "msg_1");
-        assert_matches!(&events[1], ResponseEvent::OutputTextDelta(text) if text == "Hi");
+        assert_matches!(&events[2], ResponseEvent::OutputTextDelta(text) if text == "Hi");
         assert_matches!(
-            &events[2],
+            &events[3],
             ResponseEvent::OutputItemDone(ResponseItem::Message { content, .. })
                 if content == &vec![ContentItem::OutputText {
                     text: "Hi".to_string(),
@@ -314,15 +359,15 @@ mod tests {
                     logprobs: None,
                 }]
         );
-        assert_matches!(&events[3], ResponseEvent::ToolCallInputDelta { .. });
-        assert_matches!(&events[4], ResponseEvent::ToolCallInputDelta { .. });
+        assert_matches!(&events[5], ResponseEvent::ToolCallInputDelta { .. });
+        assert_matches!(&events[6], ResponseEvent::ToolCallInputDelta { .. });
         assert_matches!(
-            &events[5],
+            &events[7],
             ResponseEvent::OutputItemDone(ResponseItem::FunctionCall { name, arguments, call_id, .. })
                 if name == "get_weather" && arguments == "{\"city\":\"Paris\"}" && call_id == "toolu_1"
         );
         assert_matches!(
-            &events[6],
+            &events[8],
             ResponseEvent::Completed { response_id, token_usage: Some(usage), end_turn: Some(false), .. }
                 if response_id == "msg_1"
                     && usage.input_tokens == 15
