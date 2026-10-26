@@ -3,6 +3,7 @@ import { Sidebar } from "./components/Sidebar";
 import { Home } from "./components/Home";
 import { SignIn } from "./components/SignIn";
 import { SearchDialog } from "./components/SearchDialog";
+import { ArtifactsPage } from "./components/ArtifactsPage";
 import { SidebarIcon } from "./components/icons";
 import { useCodex } from "./state/useCodex";
 
@@ -11,6 +12,7 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia("(min-width: 761px)").matches);
   const codex = useCodex();
   const [searchOpen, setSearchOpen] = useState(false);
+  const [view, setView] = useState<"chat" | "artifacts">("chat");
 
   // Cmd/Ctrl+K opens search from anywhere in the app.
   useEffect(() => {
@@ -37,8 +39,13 @@ export function App() {
         threads={codex.threads}
         activeId={codex.activeId}
         onSelect={(id) => void codex.selectThread(id)}
-        onNew={codex.newChat}
+        onNew={() => {
+          setView("chat");
+          codex.newChat();
+        }}
         onSearch={() => setSearchOpen(true)}
+        onArtifacts={() => setView("artifacts")}
+        activeView={view}
         user={codex.user}
         socketStatus={codex.socketStatus}
         onSignOut={() => void codex.signOut()}
@@ -57,6 +64,9 @@ export function App() {
             <SidebarIcon />
           </button>
         )}
+        {view === "artifacts" ? (
+          <ArtifactsPage onBack={() => setView("chat")} />
+        ) : (
         <Home
           user={codex.user}
           thread={activeThread}
@@ -69,6 +79,7 @@ export function App() {
           error={codex.error}
           onDismissError={codex.dismissError}
         />
+        )}
       </div>
     </div>
   );
