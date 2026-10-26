@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { artifacts as artifactApi, threads as threadApi } from "../api/resources";
 import type { Artifact, Project, Thread, Turn, User } from "../api/types";
 import type { Approval, SendOptions } from "../state/useCodex";
+import type { ToolUse } from "../state/toolUses";
 import { Composer } from "./Composer";
 import { Conversation } from "./Conversation";
 import { ChevronIcon, SparkIcon } from "./icons";
@@ -19,6 +20,7 @@ interface HomeProps {
   thread: Thread | null;
   turns: Turn[];
   agentText: Record<string, string>;
+  toolUses: Record<string, ToolUse[]>;
   approvals: Approval[];
   sending: boolean;
   projects: Project[];
@@ -36,10 +38,12 @@ interface HomeProps {
 }
 
 export function Home(props: HomeProps) {
-  const { user, workspaceId, thread, turns, agentText, approvals, sending, projects, draftProjectId, onDraftProject, onThreadChanged, onSend, onStop, onAnswer, onOpenArtifacts, upload, error, onError, onDismissError } = props;
+  const { user, workspaceId, thread, turns, agentText, toolUses, approvals, sending, projects, draftProjectId, onDraftProject, onThreadChanged, onSend, onStop, onAnswer, onOpenArtifacts, upload, error, onError, onDismissError } = props;
   const pending = approvals.filter((a) => a.threadId === thread?.id);
   const runningTurn = [...turns].reverse().find((t) => (t.status === "running" || t.status === "queued") && t.codex_turn_id);
   const [recent, setRecent] = useState<Artifact[]>([]);
+  const [showUsed, setShowUsed] = useState(false);
+  const used = thread ? (toolUses[thread.id] ?? []) : [];
 
   useEffect(() => {
     if (thread) return;
@@ -60,7 +64,7 @@ export function Home(props: HomeProps) {
   };
 
   return (
-    <main className="home">
+    <main className={thread && showUsed ? "home home-with-panel" : "home"}>
       {error && (
         <p className="banner error" role="alert">
           {error}
@@ -70,9 +74,20 @@ export function Home(props: HomeProps) {
         </p>
       )}
 
+      {thread && showUsed && <UsedPanel uses={used} onClose={() => setShowUsed(false)} />}
+
       {thread ? (
         <div className="thread-view">
-          <header className="thread-title">{thread.title}</header>
+          <header className="thread-title">
+            <span>{thread.title}</span>
+            <button
+              className="used-toggle"
+              aria-pressed={showUsed}
+              onClick={() => setShowUsed((open) => !open)}
+            >
+              Used{used.length > 0 ? ` · ${used.length}` : ""}
+            </button>
+          </header>
           <Conversation turns={turns} agentText={agentText} approvals={pending} onAnswer={onAnswer} />
           <div className="composer-dock">
             <Composer
@@ -128,5 +143,39 @@ export function Home(props: HomeProps) {
         </div>
       )}
     </main>
+  );
+}
+
+function UsedPanel({ uses, onClose }: { uses: ToolUse[]; onClose: () => void }) {
+  const groups = new Map<string, ToolUse[]>();
+  for (const use of uses) groups.set(use.kind, [...(groups.get(use.kind) ?? []), use]);
+
+  return (
+    <aside className="used-panel" aria-label="Used in this session">
+      <header className="used-panel-header">
+        <h2>Used in this session</h2>
+        <button className="banner-close" onClick={onClose} aria-label="Close">
+          ×
+        </button>
+      </header>
+      {uses.length === 0 ? (
+        <p className="muted">Web searches, connectors, commands and file changes appear here as Codex uses them.</p>
+      ) : (
+        [...groups].map(([kind, items]) => (
+          <section key={kind} className="used-group">
+            <h3>
+              {kind} <span className="muted">{items.length}</span>
+            </h3>
+            <ul>
+              {items.map((item) => (
+                <li key={item.id} title={item.label}>
+                  {item.label || kind}
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))
+      )}
+    </aside>
   );
 }

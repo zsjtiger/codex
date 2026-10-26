@@ -164,6 +164,7 @@ export function App() {
             thread={activeThread}
             turns={codex.turns}
             agentText={codex.agentText}
+            toolUses={codex.toolUses}
             approvals={codex.approvals}
             sending={codex.sending}
             projects={projects}

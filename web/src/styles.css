@@ -213,6 +213,17 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 /* Conversation */
 .thread-view { display: flex; flex-direction: column; min-height: 100vh; width: 100%; max-width: 768px; margin: 0 auto; padding-top: 16px; }
 .thread-title { font-size: 15px; color: var(--text-muted); padding: 8px 4px 16px; }
+.thread-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.used-toggle { border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); border-radius: 8px; padding: 4px 10px; font-size: 13px; cursor: pointer; }
+.used-toggle[aria-pressed="true"] { color: var(--text); background: var(--hover); }
+.home-with-panel { padding-right: 344px; }
+.used-panel { position: fixed; top: 0; right: 0; bottom: 0; width: min(320px, 100%); overflow-y: auto; background: var(--surface); border-left: 1px solid var(--border); padding: 16px 18px; z-index: 5; }
+.used-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.used-panel h2 { font-size: 15px; font-weight: 600; margin: 0; }
+.used-group { margin-bottom: 14px; }
+.used-group h3 { font-size: 13px; font-weight: 600; margin: 0 0 6px; }
+.used-group ul { list-style: none; margin: 0; padding: 0; }
+.used-group li { font-size: 13px; padding: 4px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-bottom: 1px solid var(--border); }
 .conversation { display: flex; flex-direction: column; gap: 18px; padding-bottom: 24px; }
 .turn { display: flex; flex-direction: column; gap: 8px; }
 .bubble { padding: 12px 16px; border-radius: 14px; font-size: 15px; line-height: 1.55; white-space: pre-wrap; max-width: 100%; }

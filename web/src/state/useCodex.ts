@@ -3,6 +3,7 @@ import { api, ApiError, loadStoredToken, setToken } from "../api/client";
 import { attachments as attachmentApi, interruptTurn, threads as threadApi } from "../api/resources";
 import type { Environment, LoginResponse, Thread, Turn, User, Workspace } from "../api/types";
 import { type Frame, GatewaySocket, type SocketStatus } from "../realtime/socket";
+import { type ToolUse, toolUseFromItem } from "./toolUses";
 
 export interface SendOptions {
   model?: string;
@@ -34,6 +35,7 @@ export function useCodex() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [agentText, setAgentText] = useState<Record<string, string>>({});
+  const [toolUses, setToolUses] = useState<Record<string, ToolUse[]>>({});
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [socketStatus, setSocketStatus] = useState<SocketStatus>("closed");
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +69,15 @@ export function useCodex() {
             const key = params.turnId as string;
             const text = params.item.text as string;
             setAgentText((prev) => ({ ...prev, [key]: prev[key] ? `${prev[key]}\n\n${text}` : text }));
+          }
+          const use = method === "item/completed" ? toolUseFromItem(params.item) : null;
+          const threadId = (params.threadId ?? frame.threadId) as string | undefined;
+          if (use && threadId) {
+            setToolUses((prev) => {
+              const list = prev[threadId] ?? [];
+              if (list.some((existing) => existing.id === use.id)) return prev;
+              return { ...prev, [threadId]: [...list, use] };
+            });
           }
           if (method === "turn/started" || method === "turn/completed") {
             if (frame.threadId === activeRef.current) void loadTurns(frame.threadId as string).catch(fail);
@@ -251,6 +262,7 @@ export function useCodex() {
     activeId,
     turns,
     agentText,
+    toolUses,
     approvals,
     socketStatus,
     error,
