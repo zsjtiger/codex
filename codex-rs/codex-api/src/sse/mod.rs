@@ -1,6 +1,11 @@
+pub(crate) mod anthropic_messages;
+pub(crate) mod chat_completions;
+pub(crate) mod forward;
 pub(crate) mod responses;
 mod responses_error;
 
+pub(crate) use anthropic_messages::spawn_anthropic_messages_stream;
+pub(crate) use chat_completions::spawn_chat_completions_stream;
 pub(crate) use responses::ResponsesStreamEvent;
 pub(crate) use responses::process_responses_event;
 pub use responses::spawn_response_stream;

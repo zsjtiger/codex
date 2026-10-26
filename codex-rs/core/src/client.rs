@@ -40,7 +40,9 @@ use crate::PromptCacheKey;
 use crate::tools::ExecutedToolCalls;
 use async_channel::Sender;
 use codex_api::AgentIdentityTelemetry;
+use codex_api::AnthropicMessagesClient as ApiAnthropicMessagesClient;
 use codex_api::ApiError;
+use codex_api::ChatCompletionsClient as ApiChatCompletionsClient;
 use codex_api::AuthProvider;
 use codex_api::Compression;
 use codex_api::MemoriesClient as ApiMemoriesClient;
@@ -1778,6 +1780,119 @@ impl ResponsesHttpExecutor<'_> {
         }
     }
 
+    /// Streams a turn over a non-Responses wire protocol.
+    ///
+    /// The core builds the same Responses-shaped request for every provider, and the codex-api
+    /// client converts it into the provider's own format, so prompts and tools are shared across
+    /// protocols. Auth recovery and inference tracing are specific to the Responses path.
+    pub(crate) async fn stream_wire_protocol(
+        &self,
+        wire_api: WireApi,
+        prompt: &Prompt,
+        model_info: &ModelInfo,
+        session_telemetry: &SessionTelemetry,
+        effort: Option<ReasoningEffortConfig>,
+        summary: ReasoningSummaryConfig,
+        service_tier: Option<String>,
+        responses_metadata: &CodexResponsesMetadata,
+        inference_trace: &InferenceTraceContext,
+    ) -> Result<ResponseStream> {
+        let path = match wire_api {
+            WireApi::ChatCompletions => "/chat/completions",
+            WireApi::Anthropic => "/messages",
+            WireApi::Responses => {
+                return Err(CodexErr::UnsupportedOperation(
+                    "the Responses wire API streams through stream_responses_http".to_string(),
+                ));
+            }
+        };
+        let client_setup = self
+            .client
+            .current_client_setup(ClientRouting::Workspace)
+            .await?;
+        let include_internal = self
+            .client
+            .state
+            .provider
+            .include_internal_metadata(&client_setup.api_provider);
+        let transport = self.client.build_api_transport(
+            &client_setup.api_provider,
+            path,
+            client_setup.redirect_policy,
+        )?;
+        let request_auth_context = AuthRequestTelemetryContext::new(
+            client_setup.auth.as_ref().map(CodexAuth::auth_mode),
+            client_setup.api_auth.as_ref(),
+            client_setup.agent_identity_telemetry.clone(),
+            PendingUnauthorizedRetry::default(),
+        )
+        .map_err(|error| self.client.state.provider.map_api_error(error))?;
+        let (request_telemetry, sse_telemetry) = ModelClientSession::build_streaming_telemetry(
+            session_telemetry,
+            request_auth_context,
+            RequestRouteTelemetry::for_endpoint(path),
+            self.client.state.auth_env_telemetry.clone(),
+        );
+        let mut request = self.client.build_responses_request(
+            prompt,
+            model_info,
+            effort,
+            summary,
+            service_tier,
+            responses_metadata,
+            include_internal,
+        )?;
+        self.client
+            .prepare_response_items_for_request(&mut request.input);
+        let interceptors = crate::model_request::prepare(
+            &self.client.request_contributors,
+            &self.client.state.thread_id.to_string(),
+            &model_info.slug,
+            codex_extension_api::ModelRequestKind::Generation,
+            &mut request.client_metadata,
+        );
+        let inference_trace_attempt = inference_trace.start_attempt();
+        inference_trace_attempt.record_started(&request);
+        let options = ApiResponsesOptions {
+            session_id: Some(self.client.responses_session_id(responses_metadata)),
+            thread_id: Some(responses_metadata.thread_id.to_string()),
+            session_source: Some(self.client.state.session_source.clone()),
+            ..Default::default()
+        };
+        let stream = match wire_api {
+            WireApi::ChatCompletions => {
+                ApiChatCompletionsClient::new(
+                    transport,
+                    client_setup.api_provider,
+                    client_setup.api_auth,
+                )
+                .with_telemetry(Some(request_telemetry), Some(sse_telemetry))
+                .stream_request(request, options)
+                .await
+            }
+            WireApi::Anthropic => {
+                ApiAnthropicMessagesClient::new(
+                    transport,
+                    client_setup.api_provider,
+                    client_setup.api_auth,
+                )
+                .with_telemetry(Some(request_telemetry), Some(sse_telemetry))
+                .stream_request(request, options)
+                .await
+            }
+            WireApi::Responses => unreachable!("handled above"),
+        };
+        let stream = stream.map_err(|error| self.client.state.provider.map_api_error(error))?;
+        let (stream, _) = map_response_stream(
+            stream,
+            session_telemetry.clone(),
+            inference_trace_attempt,
+            Arc::clone(&self.client.state.provider),
+            interceptors,
+        );
+        Ok(stream)
+    }
+
     /// Streams a turn via the OpenAI Responses API over HTTP.
     ///
     /// Handles reasoning summaries, verbosity, and the `text` controls used for output schemas.
@@ -2432,6 +2547,21 @@ impl ModelClientSession {
                         &self.turn_state,
                         /*expected_auth_owner*/ None,
                         self.client.event_sender.as_ref(),
+                        prompt,
+                        model_info,
+                        session_telemetry,
+                        effort,
+                        summary,
+                        service_tier,
+                        responses_metadata,
+                        inference_trace,
+                    )
+                    .await
+            }
+            WireApi::ChatCompletions | WireApi::Anthropic => {
+                ResponsesHttpExecutor::new(&self.client)
+                    .stream_wire_protocol(
+                        wire_api,
                         prompt,
                         model_info,
                         session_telemetry,

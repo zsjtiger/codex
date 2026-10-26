@@ -7191,6 +7191,20 @@
             "responses"
           ],
           "type": "string"
+        },
+        {
+          "description": "The Chat Completions API at `/chat/completions`, spoken by DeepSeek and other OpenAI-compatible providers.",
+          "enum": [
+            "chat_completions"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The Anthropic Messages API at `/messages`, spoken by Claude models.",
+          "enum": [
+            "anthropic"
+          ],
+          "type": "string"
         }
       ]
     },
