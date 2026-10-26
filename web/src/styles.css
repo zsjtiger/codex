@@ -109,7 +109,7 @@ a { color: inherit; text-decoration: none; }
 .footer-chevron { color: var(--text-muted); }
 
 /* Main area */
-.workspace { flex: 1; min-width: 0; position: relative; overflow-y: auto; }
+.workspace { flex: 1; min-width: 0; position: relative; overflow-y: auto; display: flex; flex-direction: column; }
 .reopen { position: absolute; top: 12px; left: 12px; }
 
 .home { display: flex; justify-content: center; padding: 0 24px 48px; }
@@ -283,3 +283,24 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .empty-state { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 14px; margin: 0; }
 .nav-item-active { background: var(--hover); }
 @media (max-width: 760px) { .creator-grid { grid-template-columns: repeat(2, 1fr); } .artifacts-page { padding: 16px; } }
+
+/* Customize page */
+.customize-page { flex: 1; overflow-y: auto; padding: 24px 32px 48px; }
+.customize-inner { max-width: 1000px; margin: 0 auto; }
+.customize-page h1 { font-family: ui-serif, Georgia, serif; font-weight: 400; font-size: 34px; margin: 12px 0 18px; }
+.customize-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 28px; }
+.customize-tools { display: flex; align-items: center; gap: 8px; position: relative; }
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; padding: 2px; }
+.segmented button { border: none; background: none; padding: 5px 12px; border-radius: 999px; cursor: pointer; font-size: 14px; color: var(--text-muted); }
+.segmented .segment-active { background: var(--hover); color: var(--text); }
+.add-button {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-size: 14px;
+}
+.add-menu { position: relative; }
+.add-menu-list {
+  position: absolute; right: 0; top: calc(100% + 6px); min-width: 220px; margin: 0; padding: 6px; list-style: none;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,0.15); z-index: 5;
+}
+.add-menu-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-radius: 8px; font-size: 14px; color: var(--text-muted); }
+@media (max-width: 760px) { .customize-page { padding: 16px; } }

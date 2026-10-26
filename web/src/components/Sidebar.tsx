@@ -12,7 +12,8 @@ interface SidebarProps {
   onNew: () => void;
   onSearch: () => void;
   onArtifacts: () => void;
-  activeView: "chat" | "artifacts";
+  onCustomize: () => void;
+  activeView: "chat" | "artifacts" | "customize";
   user: User;
   socketStatus: SocketStatus;
   onSignOut: () => void;
@@ -34,7 +35,7 @@ const statusLabel: Record<SocketStatus, string> = {
   closed: "Offline",
 };
 
-export function Sidebar({ open, onToggle, threads, activeId, onSelect, onNew, onSearch, onArtifacts, activeView, user, socketStatus, onSignOut }: SidebarProps) {
+export function Sidebar({ open, onToggle, threads, activeId, onSelect, onNew, onSearch, onArtifacts, onCustomize, activeView, user, socketStatus, onSignOut }: SidebarProps) {
   const [recentsOpen, setRecentsOpen] = useState(true);
 
   return (
@@ -50,11 +51,13 @@ export function Sidebar({ open, onToggle, threads, activeId, onSelect, onNew, on
 
       <nav className="nav">
         {navItems.map(({ label, Icon }) =>
-          label === "New" || label === "Search" || label === "Artifacts" ? (
+          label === "New" || label === "Search" || label === "Artifacts" || label === "Customize" ? (
             <button
               key={label}
-              className={`nav-item ${label === "Artifacts" && activeView === "artifacts" ? "nav-item-active" : ""}`}
-              onClick={label === "New" ? onNew : label === "Search" ? onSearch : onArtifacts}
+              className={`nav-item ${(label === "Artifacts" && activeView === "artifacts") || (label === "Customize" && activeView === "customize") ? "nav-item-active" : ""}`}
+              onClick={
+                label === "New" ? onNew : label === "Search" ? onSearch : label === "Artifacts" ? onArtifacts : onCustomize
+              }
             >
               <Icon />
               <span>{label}</span>
