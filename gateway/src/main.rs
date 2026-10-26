@@ -19,7 +19,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
 
-    let state = AppState::new(pool, config.dev_login, config.runtime_config());
+    let state = AppState::new(pool, config.dev_login, config.runtime_config())
+        .with_turn_limit(config.turns_per_minute);
     state.runtime.spawn_reaper();
     let interrupted = dispatch::recover(&state).await?;
     info!(interrupted, "recovered turns from a previous run");

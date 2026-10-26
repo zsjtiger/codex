@@ -43,6 +43,22 @@ pub fn routes() -> Router<AppState> {
             post(create_session).delete(delete_session),
         )
         .route("/me", get(me))
+        .route("/ws-tickets", post(create_ws_ticket))
+}
+
+#[derive(Serialize)]
+pub struct WsTicket {
+    ticket: String,
+    expires_at: DateTime<Utc>,
+}
+
+/// Issues a single-use ticket for opening `/ws`.
+async fn create_ws_ticket(
+    State(state): State<AppState>,
+    user: CurrentUser,
+) -> (StatusCode, Json<WsTicket>) {
+    let (ticket, expires_at) = state.tickets.issue(user);
+    (StatusCode::CREATED, Json(WsTicket { ticket, expires_at }))
 }
 
 /// Development-only login: creates the user if needed and issues a session token.

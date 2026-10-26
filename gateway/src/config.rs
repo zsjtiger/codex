@@ -15,6 +15,7 @@ pub struct Config {
     /// Root directory for per-environment `CODEX_HOME`s, required with `codex_bin`.
     pub codex_home: Option<PathBuf>,
     pub idle_timeout: Duration,
+    pub turns_per_minute: usize,
 }
 
 impl Config {
@@ -34,7 +35,14 @@ impl Config {
                 .map_err(|_| "GATEWAY_IDLE_SECS must be a whole number of seconds".to_string())?,
             Err(_) => 30 * 60,
         };
+        let turns_per_minute = match std::env::var("GATEWAY_TURNS_PER_MINUTE") {
+            Ok(value) => value
+                .parse::<usize>()
+                .map_err(|_| "GATEWAY_TURNS_PER_MINUTE must be a whole number".to_string())?,
+            Err(_) => crate::state::DEFAULT_TURNS_PER_MINUTE,
+        };
         Ok(Self {
+            turns_per_minute,
             addr: std::env::var("GATEWAY_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".to_string()),
             database_url,
             dev_login,

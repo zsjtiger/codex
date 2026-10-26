@@ -1,7 +1,7 @@
 //! Browser WebSocket: authenticated, subscription-based event and approval channel.
 //!
-//! Connect to `/ws?token=<session token>` (browsers cannot set headers on WebSocket
-//! upgrades). Then send JSON messages:
+//! Get a ticket with `POST /api/v1/ws-tickets`, then connect to `/ws?ticket=<ticket>`.
+//! Tickets last 60 seconds and work once. Then send JSON messages:
 //!
 //! - `{"type":"subscribe","threadId":"..."}`: start receiving the thread's events.
 //! - `{"type":"unsubscribe","threadId":"..."}`
@@ -25,7 +25,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::{
-    auth::{CurrentUser, authenticate},
+    auth::CurrentUser,
     authz::{Role, require_role},
     error::ApiError,
     runtime::{Lease, hub::ResolveError},
@@ -34,7 +34,7 @@ use crate::{
 
 #[derive(Deserialize)]
 pub struct WsQuery {
-    token: Option<String>,
+    ticket: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -61,8 +61,11 @@ pub async fn ws_handler(
     Query(query): Query<WsQuery>,
     ws: WebSocketUpgrade,
 ) -> Result<Response, ApiError> {
-    let token = query.token.ok_or(ApiError::Unauthorized)?;
-    let user = authenticate(&state.pool, &token).await?;
+    let ticket = query.ticket.ok_or(ApiError::Unauthorized)?;
+    let user = state
+        .tickets
+        .redeem(&ticket)
+        .ok_or(ApiError::Unauthorized)?;
     Ok(ws
         .on_upgrade(move |socket| session(socket, state, user))
         .into_response())

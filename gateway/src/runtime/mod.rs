@@ -202,7 +202,9 @@ impl Runtime {
         local: &LocalLaunch,
     ) -> Result<Entry, RuntimeError> {
         let home = local.home_root.join(environment_id.to_string());
-        std::fs::create_dir_all(&home).map_err(|err| RuntimeError::Launch(err.to_string()))?;
+        // The environment's files live in its own workspace, so environments do not share a cwd.
+        let workspace = home.join("workspace");
+        std::fs::create_dir_all(&workspace).map_err(|err| RuntimeError::Launch(err.to_string()))?;
         let port = {
             let listener = TcpListener::bind("127.0.0.1:0")
                 .map_err(|err| RuntimeError::Launch(err.to_string()))?;
@@ -221,6 +223,7 @@ impl Runtime {
         let mut child = tokio::process::Command::new(&local.codex_bin)
             .args(["app-server", "--listen", &url])
             .env("CODEX_HOME", &home)
+            .current_dir(&workspace)
             .stdin(Stdio::null())
             .stdout(Stdio::from(log))
             .stderr(Stdio::from(log_err))

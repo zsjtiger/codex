@@ -15,6 +15,7 @@ pub enum ApiError {
     /// Also returned to non-members, so workspace existence is not revealed.
     NotFound,
     Conflict(String),
+    TooManyRequests,
     Internal,
 }
 
@@ -38,6 +39,11 @@ impl ApiError {
                 "resource not found".to_string(),
             ),
             Self::Conflict(m) => (StatusCode::CONFLICT, "conflict", m.clone()),
+            Self::TooManyRequests => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "rate_limited",
+                "too many requests; slow down".to_string(),
+            ),
             Self::Internal => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal",

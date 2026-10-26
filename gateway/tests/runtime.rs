@@ -179,3 +179,46 @@ async fn environment_without_endpoint_fails_the_turn(pool: PgPool) {
         "{turn}"
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn turn_creation_is_rate_limited_per_user(pool: PgPool) {
+    let state = AppState::new(pool.clone(), true, RuntimeConfig::default()).with_turn_limit(2);
+    let token = login(&state, "owner@example.com").await;
+    let (_, thread_id) = setup(&state, &token, None).await;
+    let turns = format!("/api/v1/threads/{thread_id}/turns");
+
+    assert_eq!(
+        call(
+            &state,
+            "POST",
+            &turns,
+            &token,
+            Some(json!({ "input": "one" }))
+        )
+        .await
+        .0,
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        call(
+            &state,
+            "POST",
+            &turns,
+            &token,
+            Some(json!({ "input": "two" }))
+        )
+        .await
+        .0,
+        StatusCode::CREATED
+    );
+    let (status, body) = call(
+        &state,
+        "POST",
+        &turns,
+        &token,
+        Some(json!({ "input": "three" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
+    assert_eq!(body["error"]["code"], "rate_limited");
+}

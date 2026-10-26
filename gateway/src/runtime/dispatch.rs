@@ -162,6 +162,13 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
         Some(id) => id.clone(),
         None => start_codex_thread(&state.pool, &lease, turn.thread_id).await?,
     };
+    // A thread that was started by an earlier app-server process must be loaded again.
+    if !lease.is_thread_loaded(&codex_thread_id) {
+        lease
+            .request("thread/resume", json!({ "threadId": codex_thread_id }))
+            .await?;
+        lease.mark_thread_loaded(&codex_thread_id);
+    }
 
     // Subscribe before starting the turn so no notification can be missed.
     let mut events = lease.subscribe();
@@ -254,7 +261,10 @@ async fn start_codex_thread(
             .bind(thread_id)
             .fetch_one(pool)
             .await?;
-    stored.ok_or_else(|| DispatchError::Protocol("thread lost its codex id".to_string()))
+    let stored =
+        stored.ok_or_else(|| DispatchError::Protocol("thread lost its codex id".to_string()))?;
+    connection.mark_thread_loaded(&stored);
+    Ok(stored)
 }
 
 struct Outcome {

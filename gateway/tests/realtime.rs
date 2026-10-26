@@ -19,11 +19,17 @@ use uuid::Uuid;
 
 type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
-async fn connect(addr: SocketAddr, token: &str) -> Ws {
-    connect_async(format!("ws://{addr}/ws?token={token}"))
-        .await
-        .expect("websocket connect")
-        .0
+/// Gets a ticket for the session and opens the WebSocket with it.
+async fn connect(state: &AppState, addr: SocketAddr, token: &str) -> Ws {
+    let (status, body) = call(state, "POST", "/api/v1/ws-tickets", token, None).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    connect_async(format!(
+        "ws://{addr}/ws?ticket={}",
+        body["ticket"].as_str().unwrap()
+    ))
+    .await
+    .expect("websocket connect")
+    .0
 }
 
 async fn send(ws: &mut Ws, value: Value) {
@@ -85,7 +91,7 @@ async fn subscribed_browser_receives_turn_events(pool: PgPool) {
     let (_, thread_id) = setup(&state, &token, Some(&mock.url)).await;
     let addr = spawn_gateway(state.clone()).await;
 
-    let mut ws = connect(addr, &token).await;
+    let mut ws = connect(&state, addr, &token).await;
     send(
         &mut ws,
         json!({ "type": "subscribe", "threadId": thread_id }),
@@ -121,7 +127,7 @@ async fn approval_is_routed_to_the_browser_and_answered(pool: PgPool) {
     let (_, thread_id) = setup(&state, &token, Some(&mock.url)).await;
     let addr = spawn_gateway(state.clone()).await;
 
-    let mut ws = connect(addr, &token).await;
+    let mut ws = connect(&state, addr, &token).await;
     send(
         &mut ws,
         json!({ "type": "subscribe", "threadId": thread_id }),
@@ -182,14 +188,14 @@ async fn approval_answers_must_come_from_a_subscribed_session(pool: PgPool) {
     let (_, thread_id) = setup(&state, &token, Some(&mock.url)).await;
     let addr = spawn_gateway(state.clone()).await;
 
-    let mut watcher = connect(addr, &token).await;
+    let mut watcher = connect(&state, addr, &token).await;
     send(
         &mut watcher,
         json!({ "type": "subscribe", "threadId": thread_id }),
     )
     .await;
     next_of_type(&mut watcher, "subscribed").await;
-    let mut other = connect(addr, &token).await;
+    let mut other = connect(&state, addr, &token).await;
 
     post_turn(&state, &token, &thread_id, "APPROVAL run it").await;
     let request = next_of_type(&mut watcher, "approvalRequest").await;
@@ -237,7 +243,7 @@ async fn outsiders_cannot_subscribe_to_a_thread(pool: PgPool) {
     let (_, thread_id) = setup(&state, &owner, Some(&mock.url)).await;
     let addr = spawn_gateway(state.clone()).await;
 
-    let mut ws = connect(addr, &outsider).await;
+    let mut ws = connect(&state, addr, &outsider).await;
     send(
         &mut ws,
         json!({ "type": "subscribe", "threadId": thread_id }),

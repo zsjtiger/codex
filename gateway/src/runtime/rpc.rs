@@ -5,7 +5,7 @@
 //! who answer with `respond` or `respond_error`.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt,
     sync::{
         Arc, Mutex,
@@ -74,6 +74,8 @@ pub struct RpcConnection {
     closed: Arc<AtomicBool>,
     notifications: broadcast::Sender<Notification>,
     server_requests: broadcast::Sender<ServerRequest>,
+    /// Threads this process has started or resumed. A new process has none loaded.
+    loaded_threads: Mutex<HashSet<String>>,
 }
 
 impl RpcConnection {
@@ -102,6 +104,7 @@ impl RpcConnection {
             closed: Arc::new(AtomicBool::new(false)),
             notifications: notifications.clone(),
             server_requests: server_requests.clone(),
+            loaded_threads: Mutex::default(),
         });
         tokio::spawn(read_loop(
             stream,
@@ -121,6 +124,20 @@ impl RpcConnection {
             .send_frame(json!({ "method": "initialized" }))
             .await?;
         Ok(connection)
+    }
+
+    pub fn is_thread_loaded(&self, thread_id: &str) -> bool {
+        self.loaded_threads
+            .lock()
+            .expect("loaded_threads lock poisoned")
+            .contains(thread_id)
+    }
+
+    pub fn mark_thread_loaded(&self, thread_id: &str) {
+        self.loaded_threads
+            .lock()
+            .expect("loaded_threads lock poisoned")
+            .insert(thread_id.to_string());
     }
 
     pub fn is_closed(&self) -> bool {

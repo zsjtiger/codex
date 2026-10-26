@@ -314,6 +314,9 @@ async fn create_turn(
     let access = thread_access(&state.pool, id).await?;
     require_role(&state.pool, access.workspace_id, user.id, Role::Member).await?;
     validate::length("input", &req.input, 1, 100_000)?;
+    if !state.turn_limiter.allow(user.id) {
+        return Err(ApiError::TooManyRequests);
+    }
 
     let mut tx = state.pool.begin().await?;
     // Lock the thread so concurrent turns get distinct sequence numbers.
