@@ -11,6 +11,7 @@ use tokio::time::Instant;
 use tokio::time::timeout;
 
 /// Outcome of decoding one SSE event.
+#[derive(Debug)]
 pub(crate) enum SseStep {
     /// Keep reading the stream after emitting these events.
     Continue(Vec<ResponseEvent>),

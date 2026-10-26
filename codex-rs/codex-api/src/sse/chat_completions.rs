@@ -306,7 +306,13 @@ mod tests {
             ResponseEvent::OutputItemDone(ResponseItem::Reasoning { content: Some(content), .. })
                 if content == &vec![ReasoningItemContent::ReasoningText { text: "think".to_string() }]
         );
-        assert_matches!(&events[5], ResponseEvent::Completed { end_turn: Some(true), .. });
+        assert_matches!(
+            &events[5],
+            ResponseEvent::Completed {
+                end_turn: Some(true),
+                ..
+            }
+        );
     }
 
     #[test]

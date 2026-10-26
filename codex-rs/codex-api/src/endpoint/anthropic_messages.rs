@@ -154,7 +154,11 @@ pub(crate) fn build_anthropic_body(request: &ResponsesApiRequest) -> Value {
                 }
             }
             ResponseItem::Message { role, content, .. } => {
-                let role = if role == "assistant" { "assistant" } else { "user" };
+                let role = if role == "assistant" {
+                    "assistant"
+                } else {
+                    "user"
+                };
                 push_blocks(&mut messages, role, content_blocks(content));
             }
             ResponseItem::FunctionCall {
@@ -288,6 +292,7 @@ fn function_tools(request: &ResponsesApiRequest) -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::ResponsesApiTools;
     use pretty_assertions::assert_eq;
     use serde_json::value::RawValue;
 
@@ -342,14 +347,13 @@ mod tests {
                     internal_chat_message_metadata_passthrough: None,
                 },
             ],
-            tools: Some(ResponsesApiTools::from(
+            tools: Some(ResponsesApiTools::from(Arc::<RawValue>::from(
                 RawValue::from_string(
                     r#"[{"type":"function","name":"get_weather","description":"Look up weather","parameters":{"type":"object"}}]"#
                         .to_string(),
                 )
-                .unwrap()
-                .into(),
-            )),
+                .unwrap(),
+            ))),
             tool_choice: "auto".to_string(),
             parallel_tool_calls: true,
             reasoning: None,

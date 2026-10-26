@@ -1,4 +1,5 @@
 use super::responses::ResponsesOptions;
+use crate::auth::SharedAuthProvider;
 use crate::common::ResponseStream;
 use crate::common::ResponsesApiRequest;
 use crate::endpoint::session::EndpointSession;
@@ -15,7 +16,6 @@ use codex_protocol::models::ImageReference;
 use codex_protocol::models::ReasoningItemContent;
 use codex_protocol::models::ReasoningItemReasoningSummary;
 use codex_protocol::models::ResponseItem;
-use crate::auth::SharedAuthProvider;
 use http::HeaderValue;
 use http::Method;
 use serde_json::Value;
@@ -58,9 +58,10 @@ impl<T: HttpTransport> ChatCompletionsClient<T> {
             extra_headers,
             ..
         } = options;
-        let body = EncodedJsonBody::encode(&build_chat_completions_body(&request)).map_err(|e| {
-            ApiError::Stream(format!("failed to encode chat completions request: {e}"))
-        })?;
+        let body =
+            EncodedJsonBody::encode(&build_chat_completions_body(&request)).map_err(|e| {
+                ApiError::Stream(format!("failed to encode chat completions request: {e}"))
+            })?;
         let mut headers = extra_headers;
         headers.extend(build_session_headers(session_id, thread_id));
         let stream_response = self
@@ -116,7 +117,9 @@ pub(crate) fn build_chat_completions_body(request: &ResponsesApiRequest) -> Valu
             } => {
                 let text = reasoning_text(summary, content.as_deref());
                 if !text.is_empty() {
-                    pending_reasoning.get_or_insert_with(String::new).push_str(&text);
+                    pending_reasoning
+                        .get_or_insert_with(String::new)
+                        .push_str(&text);
                 }
             }
             ResponseItem::FunctionCall {
@@ -144,7 +147,9 @@ pub(crate) fn build_chat_completions_body(request: &ResponsesApiRequest) -> Valu
                     message["reasoning_content"] = Value::String(reasoning);
                 }
             }
-            ResponseItem::FunctionCallOutput { call_id, output, .. } => {
+            ResponseItem::FunctionCallOutput {
+                call_id, output, ..
+            } => {
                 messages.push(json!({
                     "role": "tool",
                     "tool_call_id": call_id.clone().unwrap_or_default(),
@@ -174,9 +179,12 @@ fn is_assistant(message: &Value) -> bool {
 }
 
 fn content_value(items: &[ContentItem]) -> Value {
-    let text_only = items
-        .iter()
-        .all(|item| matches!(item, ContentItem::InputText { .. } | ContentItem::OutputText { .. }));
+    let text_only = items.iter().all(|item| {
+        matches!(
+            item,
+            ContentItem::InputText { .. } | ContentItem::OutputText { .. }
+        )
+    });
     if text_only {
         return Value::String(
             items
@@ -264,7 +272,9 @@ mod tests {
             service_tier: None,
             input,
             tools: tools.map(|tools| {
-                ResponsesApiTools::from(RawValue::from_string(tools.to_string()).unwrap().into())
+                ResponsesApiTools::from(Arc::<RawValue>::from(
+                    RawValue::from_string(tools.to_string()).unwrap(),
+                ))
             }),
             tool_choice: "auto".to_string(),
             parallel_tool_calls: true,

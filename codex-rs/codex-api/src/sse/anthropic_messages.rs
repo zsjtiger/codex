@@ -124,9 +124,7 @@ impl SseDecoder for AnthropicMessagesDecoder {
                         input: String::new(),
                     },
                     Some("thinking" | "redacted_thinking") => ContentBlock::Thinking,
-                    _ => ContentBlock::Text(
-                        block["text"].as_str().unwrap_or_default().to_string(),
-                    ),
+                    _ => ContentBlock::Text(block["text"].as_str().unwrap_or_default().to_string()),
                 };
                 self.blocks.insert(index, content_block);
             }
@@ -139,10 +137,7 @@ impl SseDecoder for AnthropicMessagesDecoder {
                         text.push_str(piece);
                         events.push(ResponseEvent::OutputTextDelta(piece.to_string()));
                     }
-                    (
-                        Some("input_json_delta"),
-                        Some(ContentBlock::ToolUse { id, input, .. }),
-                    ) => {
+                    (Some("input_json_delta"), Some(ContentBlock::ToolUse { id, input, .. })) => {
                         let piece = delta["partial_json"].as_str().unwrap_or_default();
                         input.push_str(piece);
                         events.push(ResponseEvent::ToolCallInputDelta {
@@ -228,9 +223,7 @@ impl SseDecoder for AnthropicMessagesDecoder {
     }
 
     fn finish_without_terminal(&mut self) -> Result<Vec<ResponseEvent>, ApiError> {
-        Err(ApiError::Stream(
-            "stream closed before message_stop".into(),
-        ))
+        Err(ApiError::Stream("stream closed before message_stop".into()))
     }
 }
 
@@ -278,7 +271,10 @@ mod tests {
                 json!({"type": "content_block_delta", "index": 0,
                     "delta": {"type": "text_delta", "text": "Hi"}}),
             ),
-            ("content_block_stop", json!({"type": "content_block_stop", "index": 0})),
+            (
+                "content_block_stop",
+                json!({"type": "content_block_stop", "index": 0}),
+            ),
             (
                 "content_block_start",
                 json!({"type": "content_block_start", "index": 1,
@@ -294,7 +290,10 @@ mod tests {
                 json!({"type": "content_block_delta", "index": 1,
                     "delta": {"type": "input_json_delta", "partial_json": "\"Paris\"}"}}),
             ),
-            ("content_block_stop", json!({"type": "content_block_stop", "index": 1})),
+            (
+                "content_block_stop",
+                json!({"type": "content_block_stop", "index": 1}),
+            ),
             (
                 "message_delta",
                 json!({"type": "message_delta", "delta": {"stop_reason": "tool_use"},
