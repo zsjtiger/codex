@@ -44,6 +44,7 @@ export function Home(props: HomeProps) {
   const [recent, setRecent] = useState<Artifact[]>([]);
   const [showUsed, setShowUsed] = useState(false);
   const used = thread ? (toolUses[thread.id] ?? []) : [];
+  const showUsedPanel = showUsed && used.length > 0;
 
   useEffect(() => {
     if (thread) return;
@@ -64,7 +65,7 @@ export function Home(props: HomeProps) {
   };
 
   return (
-    <main className={thread && showUsed ? "home home-with-panel" : "home"}>
+    <main className={showUsedPanel ? "home home-with-panel" : "home"}>
       {error && (
         <p className="banner error" role="alert">
           {error}
@@ -74,19 +75,21 @@ export function Home(props: HomeProps) {
         </p>
       )}
 
-      {thread && showUsed && <UsedPanel uses={used} onClose={() => setShowUsed(false)} />}
+      {showUsedPanel && <UsedPanel uses={used} onClose={() => setShowUsed(false)} />}
 
       {thread ? (
         <div className="thread-view">
           <header className="thread-title">
             <span>{thread.title}</span>
-            <button
-              className="used-toggle"
-              aria-pressed={showUsed}
-              onClick={() => setShowUsed((open) => !open)}
-            >
-              Used{used.length > 0 ? ` · ${used.length}` : ""}
-            </button>
+            {used.length > 0 && (
+              <button
+                className="used-toggle"
+                aria-pressed={showUsed}
+                onClick={() => setShowUsed((open) => !open)}
+              >
+                Used · {used.length}
+              </button>
+            )}
           </header>
           <Conversation turns={turns} agentText={agentText} approvals={pending} onAnswer={onAnswer} />
           <div className="composer-dock">
