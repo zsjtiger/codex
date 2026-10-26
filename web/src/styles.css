@@ -319,3 +319,5 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 }
 .more-item .badge { margin-left: auto; }
 .more-divider { border: none; border-top: 1px solid var(--border); margin: 6px 4px; }
+.more-item-enabled { color: var(--text); cursor: pointer; }
+.more-item-enabled:hover { background: var(--hover); }

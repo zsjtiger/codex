@@ -13,7 +13,8 @@ interface SidebarProps {
   onSearch: () => void;
   onArtifacts: () => void;
   onCustomize: () => void;
-  activeView: "chat" | "artifacts" | "customize";
+  onScheduled: () => void;
+  activeView: "chat" | "artifacts" | "customize" | "scheduled";
   user: User;
   socketStatus: SocketStatus;
   onSignOut: () => void;
@@ -35,7 +36,7 @@ const statusLabel: Record<SocketStatus, string> = {
   closed: "Offline",
 };
 
-export function Sidebar({ open, onToggle, threads, activeId, onSelect, onNew, onSearch, onArtifacts, onCustomize, activeView, user, socketStatus, onSignOut }: SidebarProps) {
+export function Sidebar({ open, onToggle, threads, activeId, onSelect, onNew, onSearch, onArtifacts, onCustomize, onScheduled, activeView, user, socketStatus, onSignOut }: SidebarProps) {
   const [recentsOpen, setRecentsOpen] = useState(true);
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
@@ -70,12 +71,20 @@ export function Sidebar({ open, onToggle, threads, activeId, onSelect, onNew, on
 
       <nav className="nav">
         {navItems.map(({ label, Icon }) =>
-          label === "New" || label === "Search" || label === "Artifacts" || label === "Customize" ? (
+          label === "New" || label === "Search" || label === "Artifacts" || label === "Customize" || label === "Scheduled" ? (
             <button
               key={label}
-              className={`nav-item ${(label === "Artifacts" && activeView === "artifacts") || (label === "Customize" && activeView === "customize") ? "nav-item-active" : ""}`}
+              className={`nav-item ${(label === "Artifacts" && activeView === "artifacts") || (label === "Customize" && activeView === "customize") || (label === "Scheduled" && activeView === "scheduled") ? "nav-item-active" : ""}`}
               onClick={
-                label === "New" ? onNew : label === "Search" ? onSearch : label === "Artifacts" ? onArtifacts : onCustomize
+                label === "New"
+                  ? onNew
+                  : label === "Search"
+                    ? onSearch
+                    : label === "Artifacts"
+                      ? onArtifacts
+                      : label === "Customize"
+                        ? onCustomize
+                        : onScheduled
               }
             >
               <Icon />
@@ -99,7 +108,14 @@ export function Sidebar({ open, onToggle, threads, activeId, onSelect, onNew, on
                     <span>Projects</span>
                     <span className="badge">Beta</span>
                   </button>
-                  <button role="menuitem" className="more-item" disabled>
+                  <button
+                    role="menuitem"
+                    className="more-item more-item-enabled"
+                    onClick={() => {
+                      setMoreOpen(false);
+                      onScheduled();
+                    }}
+                  >
                     <ClockIcon width={16} height={16} />
                     <span>Scheduled</span>
                   </button>

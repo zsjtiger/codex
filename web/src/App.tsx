@@ -5,6 +5,7 @@ import { SignIn } from "./components/SignIn";
 import { SearchDialog } from "./components/SearchDialog";
 import { ArtifactsPage } from "./components/ArtifactsPage";
 import { CustomizePage } from "./components/CustomizePage";
+import { ScheduledPage } from "./components/ScheduledPage";
 import { SidebarIcon } from "./components/icons";
 import { useCodex } from "./state/useCodex";
 
@@ -13,7 +14,7 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia("(min-width: 761px)").matches);
   const codex = useCodex();
   const [searchOpen, setSearchOpen] = useState(false);
-  const [view, setView] = useState<"chat" | "artifacts" | "customize">("chat");
+  const [view, setView] = useState<"chat" | "artifacts" | "customize" | "scheduled">("chat");
 
   // Cmd/Ctrl+K opens search from anywhere in the app.
   useEffect(() => {
@@ -47,6 +48,7 @@ export function App() {
         onSearch={() => setSearchOpen(true)}
         onArtifacts={() => setView("artifacts")}
         onCustomize={() => setView("customize")}
+        onScheduled={() => setView("scheduled")}
         activeView={view}
         user={codex.user}
         socketStatus={codex.socketStatus}
@@ -68,6 +70,7 @@ export function App() {
         )}
         {view === "artifacts" && <ArtifactsPage onBack={() => setView("chat")} />}
         {view === "customize" && <CustomizePage onBack={() => setView("chat")} />}
+        {view === "scheduled" && <ScheduledPage onBack={() => setView("chat")} />}
         {view === "chat" && (
         <Home
           user={codex.user}
