@@ -15,7 +15,31 @@ type Block =
   | { type: "code"; lang: string; text: string }
   | { type: "math"; tex: string }
   | { type: "quote"; text: string }
+  | { type: "table"; header: string[]; align: TableAlign[]; rows: string[][] }
   | { type: "rule" };
+
+type TableAlign = "left" | "center" | "right" | null;
+
+/** Splits a GFM table row into trimmed cells, ignoring the optional outer pipes. */
+function splitRow(line: string): string[] {
+  let row = line.trim();
+  if (row.startsWith("|")) row = row.slice(1);
+  if (row.endsWith("|") && !row.endsWith("\\|")) row = row.slice(0, -1);
+  return row.split(/(?<!\\)\|/).map((cell) => cell.trim().replace(/\\\|/g, "|"));
+}
+
+const TABLE_DIVIDER = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
+
+function parseAlign(divider: string): TableAlign[] {
+  return splitRow(divider).map((cell) => {
+    const left = cell.startsWith(":");
+    const right = cell.endsWith(":");
+    if (left && right) return "center";
+    if (right) return "right";
+    if (left) return "left";
+    return null;
+  });
+}
 
 /** Turns heading text into a stable anchor, keeping CJK characters. */
 function slugify(text: string): string {
@@ -70,6 +94,19 @@ function parseBlocks(source: string): Block[] {
       if (i < lines.length) body.push(lines[i].trim().slice(0, -2));
       i++;
       blocks.push({ type: "math", tex: body.join("\n").trim() });
+      continue;
+    }
+
+    if (line.includes("|") && i + 1 < lines.length && TABLE_DIVIDER.test(lines[i + 1]) && lines[i + 1].includes("-")) {
+      const header = splitRow(line);
+      const align = parseAlign(lines[i + 1]);
+      const rows: string[][] = [];
+      i += 2;
+      while (i < lines.length && lines[i].trim() !== "" && lines[i].includes("|")) {
+        rows.push(splitRow(lines[i]));
+        i++;
+      }
+      blocks.push({ type: "table", header, align, rows });
       continue;
     }
 
@@ -197,6 +234,8 @@ function withBreaks(text: string, keyPrefix: string): ReactNode[] {
 export interface ChartSpec {
   type: "bar" | "line" | "pie";
   title?: string;
+  xTitle?: string;
+  yTitle?: string;
   labels: string[];
   series: { name: string; data: number[] }[];
 }
@@ -222,7 +261,14 @@ export function parseChart(source: string): ChartSpec | string {
     }
     if (series.data.length !== spec.labels.length) return "Each series must have one value per label.";
   }
-  return { type: spec.type, title: typeof spec.title === "string" ? spec.title : undefined, labels: spec.labels, series: spec.series };
+  return {
+    type: spec.type,
+    title: typeof spec.title === "string" ? spec.title : undefined,
+    xTitle: typeof spec.xTitle === "string" ? spec.xTitle : undefined,
+    yTitle: typeof spec.yTitle === "string" ? spec.yTitle : undefined,
+    labels: spec.labels,
+    series: spec.series,
+  };
 }
 
 function ChartView({ spec }: { spec: ChartSpec }) {
@@ -256,7 +302,17 @@ function ChartView({ spec }: { spec: ChartSpec }) {
       const x1 = cx + r * Math.cos(angle);
       const y1 = cy + r * Math.sin(angle);
       const large = span > Math.PI ? 1 : 0;
-      return <path key={index} d={`M${cx} ${cy} L${x0} ${y0} A${r} ${r} 0 ${large} 1 ${x1} ${y1} Z`} fill={color} />;
+      const mid = angle - span / 2;
+      const lx = cx + r * 0.6 * Math.cos(mid);
+      const ly = cy + r * 0.6 * Math.sin(mid);
+      return (
+        <g key={index}>
+          <path d={`M${cx} ${cy} L${x0} ${y0} A${r} ${r} 0 ${large} 1 ${x1} ${y1} Z`} fill={color} />
+          <text x={lx} y={ly + 4} textAnchor="middle" style={{ fill: "#fff", fontSize: 12, fontWeight: 600 }}>
+            {`${value} (${Math.round((value / total) * 100)}%)`}
+          </text>
+        </g>
+      );
     });
   } else {
     const max = Math.max(...spec.series.flatMap((s) => s.data), 0) || 1;
@@ -275,6 +331,20 @@ function ChartView({ spec }: { spec: ChartSpec }) {
         </g>
       );
     });
+    const axisTitles = (
+      <>
+        {spec.xTitle && (
+          <text x={left + plotW / 2} y={H - 6} textAnchor="middle" style={labelStyle}>
+            {spec.xTitle}
+          </text>
+        )}
+        {spec.yTitle && (
+          <text x={14} y={top + plotH / 2} textAnchor="middle" transform={`rotate(-90 14 ${top + plotH / 2})`} style={labelStyle}>
+            {spec.yTitle}
+          </text>
+        )}
+      </>
+    );
     const xLabels = spec.labels.map((label, index) => (
       <text key={index} x={left + groupW * (index + 0.5)} y={H - bottom + 18} textAnchor="middle" style={labelStyle}>
         {label}
@@ -290,8 +360,8 @@ function ChartView({ spec }: { spec: ChartSpec }) {
             series.data.map((value, gi) => {
               const h = (value / max) * plotH;
               return (
+                <g key={`${si}-${gi}`}>
                 <rect
-                  key={`${si}-${gi}`}
                   x={left + gi * groupW + groupW * 0.15 + si * barW}
                   y={top + plotH - h}
                   width={Math.max(barW - 2, 1)}
@@ -299,10 +369,20 @@ function ChartView({ spec }: { spec: ChartSpec }) {
                   rx={2}
                   fill={CHART_COLORS[si % CHART_COLORS.length]}
                 />
+                <text
+                  x={left + gi * groupW + groupW * 0.15 + si * barW + Math.max(barW - 2, 1) / 2}
+                  y={top + plotH - (value / max) * plotH - 4}
+                  textAnchor="middle"
+                  style={labelStyle}
+                >
+                  {value}
+                </text>
+                </g>
               );
             }),
           )}
           {xLabels}
+          {axisTitles}
         </>
       );
     } else {
@@ -319,12 +399,18 @@ function ChartView({ spec }: { spec: ChartSpec }) {
               <g key={si}>
                 <polyline fill="none" stroke={color} strokeWidth={2} points={points.map((p) => `${p.x},${p.y}`).join(" ")} />
                 {points.map((p, index) => (
-                  <circle key={index} cx={p.x} cy={p.y} r={3.5} fill={color} />
+                  <g key={index}>
+                    <circle cx={p.x} cy={p.y} r={3.5} fill={color} />
+                    <text x={p.x} y={p.y - 8} textAnchor="middle" style={labelStyle}>
+                      {series.data[index]}
+                    </text>
+                  </g>
                 ))}
               </g>
             );
           })}
           {xLabels}
+          {axisTitles}
         </>
       );
     }
@@ -400,6 +486,33 @@ export function MarkdownView({ source }: { source: string }) {
             return <div key={key} className="math-block" dangerouslySetInnerHTML={{ __html: renderTex(block.tex, true) }} />;
           case "quote":
             return <blockquote key={key}>{withBreaks(block.text, key)}</blockquote>;
+          case "table":
+            return (
+              <div key={key} className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      {block.header.map((cell, ci) => (
+                        <th key={ci} style={block.align[ci] ? { textAlign: block.align[ci] ?? undefined } : undefined}>
+                          {inline(cell, `${key}-h${ci}`)}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {block.rows.map((row, ri) => (
+                      <tr key={ri}>
+                        {block.header.map((_, ci) => (
+                          <td key={ci} style={block.align[ci] ? { textAlign: block.align[ci] ?? undefined } : undefined}>
+                            {inline(row[ci] ?? "", `${key}-${ri}-${ci}`)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
           case "rule":
             return <hr key={key} />;
         }

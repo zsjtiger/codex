@@ -423,3 +423,9 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .chart-legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 .chart-error { color: #8a2b1f; font-size: 13px; margin: 0 0 12px; }
+
+/* Tables inside rendered documents */
+.table-wrap { overflow-x: auto; margin: 0 0 14px; }
+.markdown table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.markdown th, .markdown td { border: 1px solid var(--border); padding: 6px 10px; vertical-align: top; }
+.markdown th { background: var(--hover); font-weight: 600; }
