@@ -178,6 +178,32 @@ pub async fn mock_app_server() -> MockServer {
                                     .unwrap();
                                     wait_for_response(&responses, APPROVAL_ID).await;
                                 }
+                                if input.contains("TOOL") {
+                                    out.send(
+                                        json!({
+                                            "method": "item/completed",
+                                            "params": {
+                                                "threadId": "thr_mock",
+                                                "turnId": turn_id,
+                                                "item": {"type": "webSearch", "id": "ws_1", "query": "alphafold weights", "action": null, "results": []}
+                                            }
+                                        })
+                                        .to_string(),
+                                    )
+                                    .unwrap();
+                                    out.send(
+                                        json!({
+                                            "method": "item/completed",
+                                            "params": {
+                                                "threadId": "thr_mock",
+                                                "turnId": turn_id,
+                                                "item": {"type": "agentMessage", "id": "msg_1", "text": "ignored", "delivery": null, "memoryCitation": null, "phase": null, "questions": null}
+                                            }
+                                        })
+                                        .to_string(),
+                                    )
+                                    .unwrap();
+                                }
                                 if input.contains("SLOW") {
                                     tokio::time::sleep(Duration::from_millis(400)).await;
                                 }

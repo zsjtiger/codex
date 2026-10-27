@@ -36,6 +36,15 @@ export interface Thread {
 
 export type TurnStatus = "queued" | "running" | "completed" | "failed" | "interrupted";
 
+/** A tool, search, or file action Codex completed in a thread. */
+export interface ToolUseRecord {
+  id: string;
+  item_id: string;
+  kind: string;
+  label: string;
+  created_at: string;
+}
+
 export interface Turn {
   id: string;
   thread_id: string;

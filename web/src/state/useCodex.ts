@@ -3,7 +3,7 @@ import { api, ApiError, loadStoredToken, setToken } from "../api/client";
 import { attachments as attachmentApi, interruptTurn, threads as threadApi } from "../api/resources";
 import type { Environment, LoginResponse, Thread, Turn, User, Workspace } from "../api/types";
 import { type Frame, GatewaySocket, type SocketStatus } from "../realtime/socket";
-import { type ToolUse, toolUseFromItem } from "./toolUses";
+import { type ToolUse, mergeToolUses, toolUseFromItem } from "./toolUses";
 
 export interface SendOptions {
   model?: string;
@@ -55,8 +55,13 @@ export function useCodex() {
   }, []);
 
   const loadTurns = useCallback(async (threadId: string) => {
-    const list = await api<Turn[]>("GET", `/threads/${threadId}/turns?limit=100`);
+    const [list, uses] = await Promise.all([
+      api<Turn[]>("GET", `/threads/${threadId}/turns?limit=100`),
+      threadApi.toolUses(threadId),
+    ]);
     if (activeRef.current === threadId) setTurns(list);
+    const stored = uses.map((use) => ({ id: use.item_id, kind: use.kind, label: use.label }));
+    setToolUses((prev) => ({ ...prev, [threadId]: mergeToolUses(stored, prev[threadId] ?? []) }));
   }, []);
 
   const handleFrame = useCallback(

@@ -73,6 +73,15 @@ pub struct ListPageQuery {
 }
 
 #[derive(Serialize, FromRow)]
+pub struct ToolUseView {
+    pub id: Uuid,
+    pub item_id: String,
+    pub kind: String,
+    pub label: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Serialize, FromRow)]
 pub struct TurnView {
     pub id: Uuid,
     pub thread_id: Uuid,
@@ -171,6 +180,7 @@ pub fn routes() -> Router<AppState> {
             get(get_thread).patch(update_thread).delete(delete_thread),
         )
         .route("/threads/{id}/turns", get(list_turns).post(create_turn))
+        .route("/threads/{id}/tool-uses", get(list_tool_uses))
         .route("/turns/{id}/interrupt", post(interrupt_turn))
 }
 
@@ -412,6 +422,28 @@ async fn list_turns(
         .bind(offset)
         .fetch_all(&state.pool)
         .await?;
+    Ok(Json(rows))
+}
+
+/// Tool, search, and file actions Codex completed in the thread, oldest first.
+async fn list_tool_uses(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+    Query(query): Query<ListPageQuery>,
+) -> Result<Json<Vec<ToolUseView>>, ApiError> {
+    let access = thread_access(&state.pool, id).await?;
+    require_role(&state.pool, access.workspace_id, user.id, Role::Member).await?;
+    let (limit, offset) = validate::page(query.limit, query.offset)?;
+    let rows = sqlx::query_as::<_, ToolUseView>(
+        "SELECT id, item_id, kind, label, created_at FROM thread_tool_uses
+         WHERE thread_id = $1 ORDER BY created_at, id LIMIT $2 OFFSET $3",
+    )
+    .bind(id)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&state.pool)
+    .await?;
     Ok(Json(rows))
 }
 

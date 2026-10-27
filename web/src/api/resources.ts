@@ -13,6 +13,7 @@ import type {
   SearchResults,
   Skill,
   Thread,
+  ToolUseRecord,
   Turn,
 } from "./types";
 
@@ -70,6 +71,7 @@ export const threads = {
   setProject: (id: string, projectId: string | null) =>
     api<Thread>("PATCH", `/threads/${id}`, { project_id: projectId }),
   turns: (id: string) => api<Turn[]>("GET", `/threads/${id}/turns?limit=100`),
+  toolUses: (id: string) => api<ToolUseRecord[]>("GET", `/threads/${id}/tool-uses?limit=100`),
   send: (id: string, body: { input: string; model?: string; effort?: string; attachment_ids?: string[] }) =>
     api<Turn>("POST", `/threads/${id}/turns`, body),
 };

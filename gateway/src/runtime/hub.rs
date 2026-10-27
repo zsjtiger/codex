@@ -121,6 +121,9 @@ impl Hub {
         if method == "mcpServer/startupStatus/updated" {
             record_connector_status(pool, thread_id, params).await;
         }
+        if method == "item/completed" {
+            record_tool_use(pool, thread_id, params).await;
+        }
         self.send_to(
             thread_id,
             &json!({ "type": "event", "threadId": thread_id, "method": method, "params": params }),
@@ -288,6 +291,90 @@ async fn record_connector_status(pool: &PgPool, thread_id: Uuid, params: &Value)
     }
 }
 
+/// Stores a completed tool, search, or file action so the conversation can list what Codex used.
+/// Re-delivered items are ignored.
+async fn record_tool_use(pool: &PgPool, thread_id: Uuid, params: &Value) {
+    let Some((item_id, kind, label)) = params.get("item").and_then(tool_use_from_item) else {
+        return;
+    };
+    let result = sqlx::query(
+        "INSERT INTO thread_tool_uses (thread_id, item_id, kind, label) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (thread_id, item_id) DO NOTHING",
+    )
+    .bind(thread_id)
+    .bind(item_id)
+    .bind(kind)
+    .bind(label)
+    .execute(pool)
+    .await;
+    if let Err(err) = result {
+        tracing::warn!(%err, "could not record tool use");
+    }
+}
+
+/// Maps a completed thread item to the (item id, kind, label) shown in the Used panel.
+/// Ordinary messages and reasoning return `None`.
+pub(crate) fn tool_use_from_item(item: &Value) -> Option<(String, &'static str, String)> {
+    let id = item
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())?;
+    let field = |key: &str| {
+        item.get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+    let (kind, label) = match item.get("type")?.as_str()? {
+        "webSearch" => ("Web search", field("query")),
+        "mcpToolCall" => ("Connector", field("server")),
+        "dynamicToolCall" => ("Tool", field("tool")),
+        "commandExecution" => ("Command", field("command")),
+        "fileChange" => {
+            let count = item
+                .get("changes")
+                .and_then(Value::as_array)
+                .map_or(0, Vec::len);
+            let noun = if count == 1 { "file" } else { "files" };
+            ("File change", format!("{count} {noun}"))
+        }
+        "imageView" => ("Image", field("path")),
+        "imageGeneration" => ("Image generation", field("revisedPrompt")),
+        _ => return None,
+    };
+    Some((truncate(id, 200), kind, truncate(&label, 500)))
+}
+
 fn truncate(text: &str, max: usize) -> String {
     text.chars().take(max).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tool_use_from_item;
+    use serde_json::json;
+
+    #[test]
+    fn maps_tool_items_and_ignores_messages() {
+        assert_eq!(
+            tool_use_from_item(&json!({"id": "a", "type": "webSearch", "query": "q"})),
+            Some(("a".to_string(), "Web search", "q".to_string()))
+        );
+        assert_eq!(
+            tool_use_from_item(&json!({"id": "b", "type": "fileChange", "changes": [{}]})),
+            Some(("b".to_string(), "File change", "1 file".to_string()))
+        );
+        assert_eq!(
+            tool_use_from_item(&json!({"id": "c", "type": "fileChange", "changes": [{}, {}]})),
+            Some(("c".to_string(), "File change", "2 files".to_string()))
+        );
+        assert_eq!(
+            tool_use_from_item(&json!({"id": "d", "type": "agentMessage", "text": "hi"})),
+            None
+        );
+        assert_eq!(
+            tool_use_from_item(&json!({"type": "webSearch", "query": "no id"})),
+            None
+        );
+    }
 }

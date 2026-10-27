@@ -5,6 +5,22 @@ export interface ToolUse {
   label: string;
 }
 
+/**
+ * Combines the stored list with actions seen live, keeping the stored order and adding any live
+ * action the server has not returned yet. Each item id appears once.
+ */
+export function mergeToolUses(stored: ToolUse[], live: ToolUse[]): ToolUse[] {
+  const merged = [...stored];
+  const seen = new Set(stored.map((use) => use.id));
+  for (const use of live) {
+    if (!seen.has(use.id)) {
+      seen.add(use.id);
+      merged.push(use);
+    }
+  }
+  return merged;
+}
+
 /** Maps a completed app-server thread item to a tool use, or null for ordinary messages. */
 export function toolUseFromItem(item: Record<string, any> | undefined): ToolUse | null {
   if (!item?.id || typeof item.type !== "string") return null;
