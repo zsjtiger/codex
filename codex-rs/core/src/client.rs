@@ -1780,6 +1780,7 @@ impl ResponsesHttpExecutor<'_> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Streams a turn over a non-Responses wire protocol.
     ///
     /// The core builds the same Responses-shaped request for every provider, and the codex-api
