@@ -27,6 +27,13 @@ attachment bytes, rate limiting, and resuming an interrupted turn with `thread/r
 | `GATEWAY_CODEX_BIN` | unset | Path to the `codex` binary. Environments with no `endpoint` get a local app-server |
 | `GATEWAY_CODEX_HOME` | unset | Root for per-environment `CODEX_HOME`s. Required with `GATEWAY_CODEX_BIN` |
 | `GATEWAY_IDLE_SECS` | `1800` | Stop a local app-server after this long without a lease |
+| `GATEWAY_STORAGE` | `local` | Attachment bytes: `local` (disk) or `s3` |
+| `GATEWAY_STORAGE_DIR` | `storage` | Directory for attachment bytes when `GATEWAY_STORAGE=local` |
+| `GATEWAY_S3_BUCKET` | unset | Bucket for attachment bytes. Required when `GATEWAY_STORAGE=s3` |
+| `GATEWAY_S3_PREFIX` | unset | Key prefix inside the bucket |
+| `GATEWAY_S3_ENDPOINT` | unset | Custom endpoint for S3-compatible services such as MinIO |
+| `GATEWAY_S3_REGION` | from AWS config | Region for the bucket |
+| `GATEWAY_S3_FORCE_PATH_STYLE` | `false` | Set `true` for MinIO and other services that need path-style URLs |
 
 Migrations in `migrations/` run automatically at startup. Each environment's
 app-server log is written to `<GATEWAY_CODEX_HOME>/<environment id>/app-server.log`.

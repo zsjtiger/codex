@@ -8,6 +8,8 @@ publish = false
 [workspace]
 
 [dependencies]
+aws-config = "1"
+aws-sdk-s3 = "1"
 axum = { version = "0.8", features = ["ws"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 hex = "0.4"
@@ -26,3 +28,4 @@ uuid = { version = "1", features = ["v4", "serde"] }
 [dev-dependencies]
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
+wiremock = "0.6"

@@ -13,6 +13,7 @@ pub mod routes;
 pub mod runtime;
 pub mod serde_helpers;
 pub mod state;
+pub mod storage;
 pub mod tickets;
 pub mod validate;
 pub mod ws;

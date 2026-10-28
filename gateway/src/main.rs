@@ -19,8 +19,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
 
+    let storage = codex_gateway::storage::ObjectStore::from_config(&config.storage).await;
     let state = AppState::new(pool, config.dev_login, config.runtime_config())
-        .with_turn_limit(config.turns_per_minute);
+        .with_turn_limit(config.turns_per_minute)
+        .with_object_store(storage);
     state.runtime.spawn_reaper();
     codex_gateway::runtime::schedule::spawn_scheduler(state.clone());
     let interrupted = dispatch::recover(&state).await?;

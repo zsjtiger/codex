@@ -152,12 +152,10 @@ async fn turn_input(
                 "{filename}: only text attachments can be sent with a message"
             )));
         }
-        let bytes = tokio::fs::read(state.storage.join(&storage_key))
-            .await
-            .map_err(|err| {
-                tracing::error!(%err, "could not read attachment for a turn");
-                ApiError::Internal
-            })?;
+        let bytes = state.storage.get(&storage_key).await.map_err(|err| {
+            tracing::error!(%err, "could not read attachment for a turn");
+            ApiError::Internal
+        })?;
         let content = String::from_utf8(bytes)
             .map_err(|_| ApiError::BadRequest(format!("{filename} is not valid UTF-8 text")))?;
         text.push_str(&format!(

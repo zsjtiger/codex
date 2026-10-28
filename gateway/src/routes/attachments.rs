@@ -35,7 +35,7 @@ pub struct AttachmentView {
     pub content_type: String,
     pub size_bytes: i64,
     pub sha256: Option<String>,
-    /// Object-storage key. Uploading the bytes is not implemented yet.
+    /// Key of the stored bytes in the attachment store.
     pub storage_key: String,
     /// True once the bytes have been uploaded to `/content`.
     pub uploaded: bool,
@@ -171,11 +171,12 @@ async fn delete(
     user: CurrentUser,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
-    let (workspace_id, uploaded_by): (Uuid, Option<Uuid>) =
-        sqlx::query_as("SELECT workspace_id, uploaded_by FROM attachments WHERE id = $1")
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await?;
+    let (workspace_id, uploaded_by, storage_key): (Uuid, Option<Uuid>, String) = sqlx::query_as(
+        "SELECT workspace_id, uploaded_by, storage_key FROM attachments WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?;
     let role = require_role(&state.pool, workspace_id, user.id, Role::Member).await?;
     if uploaded_by != Some(user.id) && role < Role::Admin {
         return Err(ApiError::Forbidden);
@@ -197,6 +198,11 @@ async fn delete(
     )
     .await?;
     tx.commit().await?;
+
+    // The row is gone, so the bytes are unreachable even if this fails. Log it for cleanup.
+    if let Err(err) = state.storage.delete(&storage_key).await {
+        tracing::warn!(%err, %storage_key, "could not delete attachment bytes");
+    }
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -245,15 +251,8 @@ async fn upload(
         }
     }
 
-    let path = state.storage.join(&storage_key);
-    if let Some(parent) = path.parent() {
-        tokio::fs::create_dir_all(parent).await.map_err(|err| {
-            tracing::error!(%err, "could not create attachment directory");
-            ApiError::Internal
-        })?;
-    }
-    tokio::fs::write(&path, &body).await.map_err(|err| {
-        tracing::error!(%err, "could not write attachment");
+    state.storage.put(&storage_key, body).await.map_err(|err| {
+        tracing::error!(%err, "could not store attachment");
         ApiError::Internal
     })?;
     sqlx::query("UPDATE attachments SET uploaded = true WHERE id = $1")
@@ -280,12 +279,10 @@ async fn download(
     if !uploaded {
         return Err(ApiError::NotFound);
     }
-    let bytes = tokio::fs::read(state.storage.join(&storage_key))
-        .await
-        .map_err(|err| {
-            tracing::error!(%err, "could not read attachment");
-            ApiError::Internal
-        })?;
+    let bytes = state.storage.get(&storage_key).await.map_err(|err| {
+        tracing::error!(%err, "could not read attachment");
+        ApiError::Internal
+    })?;
     // Quotes and control characters would break the header, so drop them from the name.
     let safe_name: String = filename
         .chars()

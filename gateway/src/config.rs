@@ -16,8 +16,8 @@ pub struct Config {
     pub codex_home: Option<PathBuf>,
     pub idle_timeout: Duration,
     pub turns_per_minute: usize,
-    /// Directory for attachment bytes.
-    pub storage_dir: PathBuf,
+    /// Where attachment bytes are kept.
+    pub storage: StorageConfig,
 }
 
 impl Config {
@@ -43,11 +43,9 @@ impl Config {
                 .map_err(|_| "GATEWAY_TURNS_PER_MINUTE must be a whole number".to_string())?,
             Err(_) => crate::state::DEFAULT_TURNS_PER_MINUTE,
         };
-        let storage_dir = std::env::var_os("GATEWAY_STORAGE_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("storage"));
+        let storage = StorageConfig::from_env()?;
         Ok(Self {
-            storage_dir,
+            storage,
             turns_per_minute,
             addr: std::env::var("GATEWAY_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".to_string()),
             database_url,
@@ -71,5 +69,116 @@ impl Config {
             local,
             idle_timeout: self.idle_timeout,
         }
+    }
+}
+
+/// Where attachment bytes are stored. Selected with `GATEWAY_STORAGE`: `local` (default) or `s3`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StorageConfig {
+    Local {
+        dir: PathBuf,
+    },
+    S3 {
+        bucket: String,
+        prefix: String,
+        /// Custom endpoint for S3-compatible services such as MinIO.
+        endpoint: Option<String>,
+        region: Option<String>,
+        force_path_style: bool,
+    },
+}
+
+impl StorageConfig {
+    fn from_env() -> Result<Self, String> {
+        Self::from_lookup(|name| std::env::var(name).ok())
+    }
+
+    /// Parses the storage variables through `lookup`, so the rules can be tested without touching
+    /// the process environment. Empty values count as unset.
+    fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Result<Self, String> {
+        let get = |name: &str| lookup(name).filter(|v| !v.is_empty());
+        match get("GATEWAY_STORAGE").as_deref().unwrap_or("local") {
+            "local" => Ok(Self::Local {
+                dir: get("GATEWAY_STORAGE_DIR")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| PathBuf::from("storage")),
+            }),
+            "s3" => {
+                let bucket = get("GATEWAY_S3_BUCKET").ok_or_else(|| {
+                    "GATEWAY_S3_BUCKET must be set when GATEWAY_STORAGE=s3".to_string()
+                })?;
+                let force_path_style = get("GATEWAY_S3_FORCE_PATH_STYLE")
+                    .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+                Ok(Self::S3 {
+                    bucket,
+                    prefix: get("GATEWAY_S3_PREFIX")
+                        .unwrap_or_default()
+                        .trim_matches('/')
+                        .to_string(),
+                    endpoint: get("GATEWAY_S3_ENDPOINT"),
+                    region: get("GATEWAY_S3_REGION"),
+                    force_path_style,
+                })
+            }
+            other => Err(format!(
+                "GATEWAY_STORAGE must be \"local\" or \"s3\", not {other:?}"
+            )),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn lookup(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let map: HashMap<String, String> = pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        move |name| map.get(name).cloned()
+    }
+
+    #[test]
+    fn local_is_the_default_and_s3_needs_a_bucket() {
+        assert_eq!(
+            StorageConfig::from_lookup(lookup(&[])),
+            Ok(StorageConfig::Local {
+                dir: PathBuf::from("storage")
+            })
+        );
+        assert_eq!(
+            StorageConfig::from_lookup(lookup(&[
+                ("GATEWAY_STORAGE", "local"),
+                ("GATEWAY_STORAGE_DIR", "/data")
+            ])),
+            Ok(StorageConfig::Local {
+                dir: PathBuf::from("/data")
+            })
+        );
+        assert!(StorageConfig::from_lookup(lookup(&[("GATEWAY_STORAGE", "s3")])).is_err());
+        assert!(StorageConfig::from_lookup(lookup(&[("GATEWAY_STORAGE", "gcs")])).is_err());
+    }
+
+    #[test]
+    fn s3_settings_are_read_and_prefixes_trimmed() {
+        assert_eq!(
+            StorageConfig::from_lookup(lookup(&[
+                ("GATEWAY_STORAGE", "s3"),
+                ("GATEWAY_S3_BUCKET", "docs"),
+                ("GATEWAY_S3_PREFIX", "/gateway/"),
+                ("GATEWAY_S3_ENDPOINT", "http://minio:9000"),
+                ("GATEWAY_S3_REGION", "us-east-1"),
+                ("GATEWAY_S3_FORCE_PATH_STYLE", "true"),
+            ])),
+            Ok(StorageConfig::S3 {
+                bucket: "docs".to_string(),
+                prefix: "gateway".to_string(),
+                endpoint: Some("http://minio:9000".to_string()),
+                region: Some("us-east-1".to_string()),
+                force_path_style: true,
+            })
+        );
     }
 }

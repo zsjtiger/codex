@@ -5,6 +5,7 @@ use sqlx::PgPool;
 use crate::{
     ratelimit::SlidingWindow,
     runtime::{Runtime, RuntimeConfig},
+    storage::ObjectStore,
     tickets::Tickets,
 };
 
@@ -19,7 +20,7 @@ pub struct AppState {
     /// Caps how many turns one user can create per minute.
     pub turn_limiter: Arc<SlidingWindow>,
     /// Where attachment bytes are stored, under the keys recorded in the database.
-    pub storage: PathBuf,
+    pub storage: Arc<ObjectStore>,
 }
 
 impl AppState {
@@ -34,12 +35,16 @@ impl AppState {
                 DEFAULT_TURNS_PER_MINUTE,
                 Duration::from_secs(60),
             )),
-            storage: PathBuf::from("storage"),
+            storage: Arc::new(ObjectStore::local("storage")),
         }
     }
 
-    pub fn with_storage(mut self, storage: PathBuf) -> Self {
-        self.storage = storage;
+    pub fn with_storage(self, dir: PathBuf) -> Self {
+        self.with_object_store(ObjectStore::local(dir))
+    }
+
+    pub fn with_object_store(mut self, store: ObjectStore) -> Self {
+        self.storage = Arc::new(store);
         self
     }
 
