@@ -132,11 +132,36 @@ struct TurnRow {
     codex_thread_id: Option<String>,
     environment_id: Option<Uuid>,
     endpoint: Option<String>,
+    skill_ids: Vec<Uuid>,
+}
+
+/// Puts the instructions of the skills chosen for a turn in front of the message, so the model follows
+/// them for this request. The stored message stays as the user typed it.
+async fn with_skills(
+    pool: &PgPool,
+    skill_ids: &[Uuid],
+    input: &str,
+) -> Result<String, sqlx::Error> {
+    if skill_ids.is_empty() {
+        return Ok(input.to_string());
+    }
+    let skills: Vec<(String, String)> =
+        sqlx::query_as("SELECT name, instructions FROM skills WHERE id = ANY($1) ORDER BY name")
+            .bind(skill_ids)
+            .fetch_all(pool)
+            .await?;
+    let mut text = String::from("Follow these skills for this request.\n");
+    for (name, instructions) in skills {
+        text.push_str(&format!("\n## Skill: {name}\n{instructions}\n"));
+    }
+    text.push_str("\n## Request\n");
+    text.push_str(input);
+    Ok(text)
 }
 
 async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> {
-    let row = sqlx::query_as::<_, (Uuid, Uuid, Option<Uuid>, String, Option<String>, Option<String>, Option<String>, Option<Uuid>, Option<String>)>(
-        "SELECT th.id, th.workspace_id, t.created_by, t.input, t.model, t.effort, th.codex_thread_id, th.environment_id, e.endpoint
+    let row = sqlx::query_as::<_, (Uuid, Uuid, Option<Uuid>, String, Option<String>, Option<String>, Option<String>, Option<Uuid>, Option<String>, Vec<Uuid>)>(
+        "SELECT th.id, th.workspace_id, t.created_by, t.input, t.model, t.effort, th.codex_thread_id, th.environment_id, e.endpoint, t.skill_ids
          FROM turns t
          JOIN threads th ON th.id = t.thread_id
          LEFT JOIN environments e ON e.id = th.environment_id
@@ -155,6 +180,7 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
         codex_thread_id: row.6,
         environment_id: row.7,
         endpoint: row.8,
+        skill_ids: row.9,
     };
     let environment_id = turn.environment_id.ok_or(DispatchError::NoEnvironment)?;
     let lease = state
@@ -189,7 +215,7 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
     let mut events = lease.subscribe();
     let mut params = json!({
         "threadId": codex_thread_id,
-        "input": [{ "type": "text", "text": turn.input }],
+        "input": [{ "type": "text", "text": with_skills(&state.pool, &turn.skill_ids, &turn.input).await? }],
     });
     if let Some(model) = &turn.model {
         params["model"] = json!(model);

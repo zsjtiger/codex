@@ -107,7 +107,12 @@ pub struct CreateTurn {
     effort: Option<String>,
     /// Uploaded text attachments whose contents are added to the turn input.
     attachment_ids: Option<Vec<Uuid>>,
+    /// Skills in this workspace to apply to this turn, chosen with "/name" in the composer.
+    skill_ids: Option<Vec<Uuid>>,
 }
+
+/// Most skills one turn can apply.
+const MAX_TURN_SKILLS: usize = 10;
 
 /// Largest total size of text attachments included in one turn.
 const MAX_INLINE_ATTACHMENT_BYTES: i64 = 200_000;
@@ -470,6 +475,28 @@ async fn create_turn(
     if let Some(effort) = &req.effort {
         validate::length("effort", effort, 1, 32)?;
     }
+    let mut skill_ids = req.skill_ids.clone().unwrap_or_default();
+    skill_ids.sort();
+    skill_ids.dedup();
+    if skill_ids.len() > MAX_TURN_SKILLS {
+        return Err(ApiError::BadRequest(format!(
+            "a turn can apply at most {MAX_TURN_SKILLS} skills"
+        )));
+    }
+    if !skill_ids.is_empty() {
+        let found: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM skills WHERE id = ANY($1) AND workspace_id = $2 AND kind = 'skill'",
+        )
+        .bind(&skill_ids)
+        .bind(access.workspace_id)
+        .fetch_one(&state.pool)
+        .await?;
+        if found != skill_ids.len() as i64 {
+            return Err(ApiError::BadRequest(
+                "some skills are not in this workspace".to_string(),
+            ));
+        }
+    }
     if !state.turn_limiter.allow(user.id) {
         return Err(ApiError::TooManyRequests);
     }
@@ -491,8 +518,8 @@ async fn create_turn(
             .fetch_one(&mut *tx)
             .await?;
     let turn = sqlx::query_as::<_, TurnView>(
-        "INSERT INTO turns (thread_id, seq, input, model, effort, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        "INSERT INTO turns (thread_id, seq, input, model, effort, created_by, skill_ids)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id, thread_id, seq, status, input, error, codex_turn_id, model, effort, created_by, created_at, completed_at",
     )
     .bind(id)
@@ -501,6 +528,7 @@ async fn create_turn(
     .bind(req.model.as_deref())
     .bind(req.effort.as_deref())
     .bind(user.id)
+    .bind(&skill_ids)
     .fetch_one(&mut *tx)
     .await?;
     sqlx::query("UPDATE threads SET last_activity_at = now(), updated_at = now() WHERE id = $1")

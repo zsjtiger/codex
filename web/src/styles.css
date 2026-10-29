@@ -451,3 +451,10 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .usage-row strong { font-weight: 600; font-variant-numeric: tabular-nums; }
 .usage-days { list-style: none; margin: 0; padding: 0; }
 .usage-days li { display: flex; justify-content: space-between; padding: 8px 0; font-size: 13px; font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--border); }
+
+/* "/" menu in the composer: skills and actions */
+.composer { position: relative; }
+.slash-menu { position: absolute; left: 12px; bottom: 100%; margin-bottom: 8px; min-width: 240px; max-height: 320px; overflow-y: auto; list-style: none; margin-top: 0; padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); z-index: 6; }
+.slash-item { padding: 8px 10px; border-radius: 8px; font-size: 14px; cursor: pointer; color: var(--text); }
+.slash-item-active { background: var(--hover); }
+.slash-empty { padding: 8px 10px; font-size: 13px; }

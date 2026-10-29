@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import type { Project } from "../api/types";
+import type { Project, Skill } from "../api/types";
 import type { SendOptions } from "../state/useCodex";
 import { ChevronIcon, PlusIcon } from "./icons";
 
@@ -14,8 +14,19 @@ interface ComposerProps {
   projects: Project[];
   projectId: string | null;
   onProjectChange?: (projectId: string | null) => void;
+  /** Enabled skills in the workspace. Typing "/" offers them. */
+  skills: Skill[];
   upload: (file: File) => Promise<string>;
   onError: (message: string) => void;
+}
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Skills whose "/name" appears as a word in the message. */
+function skillsInMessage(text: string, skills: Skill[]): string[] {
+  return skills
+    .filter((skill) => new RegExp(`(^|\\s)/${escapeRegExp(skill.name)}(?=\\s|$)`).test(text))
+    .map((skill) => skill.id);
 }
 
 interface Pending {
@@ -28,8 +39,10 @@ interface Pending {
  * files as attachments, and offers Stop while a turn is running.
  */
 export function Composer(props: ComposerProps) {
-  const { onSend, onStop, running, disabled, placeholder = "How can I help you today?", projects, projectId, onProjectChange, upload, onError } = props;
+  const { onSend, onStop, running, disabled, placeholder = "How can I help you today?", projects, projectId, onProjectChange, skills, upload, onError } = props;
   const [draft, setDraft] = useState("");
+  const [menuIndex, setMenuIndex] = useState(0);
+  const [menuDismissed, setMenuDismissed] = useState(false);
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
   const [pending, setPending] = useState<Pending[]>([]);
@@ -40,14 +53,39 @@ export function Composer(props: ComposerProps) {
 
   const submit = () => {
     if ((!draft.trim() && pending.length === 0) || disabled || uploading) return;
+    const skillIds = skillsInMessage(draft, skills);
     onSend(draft, {
       model: model.trim() || undefined,
       effort: effort || undefined,
       attachment_ids: pending.length ? pending.map((p) => p.id) : undefined,
+      skill_ids: skillIds.length ? skillIds : undefined,
     });
     setDraft("");
     setPending([]);
   };
+
+  // "/" at the start of an otherwise empty message opens the menu, filtered by what follows it.
+  const slash = /^\/(\S*)$/.exec(draft);
+  const menuOpen = slash !== null && !menuDismissed;
+  const query = (slash?.[1] ?? "").toLowerCase();
+  const menuItems: { key: string; label: string; run: () => void }[] = [
+    {
+      key: "attach",
+      label: "Add files",
+      run: () => {
+        setDraft("");
+        fileRef.current?.click();
+      },
+    },
+    ...skills
+      .filter((skill) => skill.name.toLowerCase().includes(query))
+      .map((skill) => ({
+        key: skill.id,
+        label: skill.name,
+        run: () => setDraft(`/${skill.name} `),
+      })),
+  ];
+  const highlighted = Math.min(menuIndex, Math.max(menuItems.length - 1, 0));
 
   const attach = async (file: File) => {
     if (file.size > MAX_ATTACHMENT_BYTES) {
@@ -94,14 +132,55 @@ export function Composer(props: ComposerProps) {
           rows={2}
           value={draft}
           disabled={disabled}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            setMenuDismissed(false);
+            setMenuIndex(0);
+          }}
           onKeyDown={(event) => {
+            if (menuOpen && menuItems.length > 0) {
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault();
+                const step = event.key === "ArrowDown" ? 1 : -1;
+                setMenuIndex((highlighted + step + menuItems.length) % menuItems.length);
+                return;
+              }
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                menuItems[highlighted].run();
+                return;
+              }
+            }
+            if (menuOpen && event.key === "Escape") {
+              setMenuDismissed(true);
+              return;
+            }
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault();
               submit();
             }
           }}
         />
+        {menuOpen && (
+          <ul className="slash-menu" role="listbox" aria-label="Skills and actions">
+            {menuItems.map((item, index) => (
+              <li
+                key={item.key}
+                role="option"
+                aria-selected={index === highlighted}
+                className={index === highlighted ? "slash-item slash-item-active" : "slash-item"}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  item.run();
+                }}
+                onMouseEnter={() => setMenuIndex(index)}
+              >
+                {item.label}
+              </li>
+            ))}
+            {menuItems.length === 1 && <li className="slash-empty muted">No matching skills</li>}
+          </ul>
+        )}
         <div className="composer-bar">
           <div className="add-menu">
             <button type="button" className="icon-button" aria-label="Attach" onClick={() => setAttachOpen(!attachOpen)} disabled={uploading}>

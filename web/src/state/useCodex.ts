@@ -9,6 +9,8 @@ export interface SendOptions {
   model?: string;
   effort?: string;
   attachment_ids?: string[];
+  /** Skills chosen with "/name" in the composer; their instructions apply to this turn. */
+  skill_ids?: string[];
 }
 
 export interface Approval {

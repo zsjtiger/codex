@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { artifacts as artifactApi, threads as threadApi } from "../api/resources";
-import type { Artifact, Project, Thread, Turn, User } from "../api/types";
+import { artifacts as artifactApi, skills as skillApi, threads as threadApi } from "../api/resources";
+import type { Artifact, Project, Skill, Thread, Turn, User } from "../api/types";
 import type { Approval, SendOptions } from "../state/useCodex";
 import type { ToolUse } from "../state/toolUses";
 import { Composer } from "./Composer";
@@ -42,6 +42,14 @@ export function Home(props: HomeProps) {
   const pending = approvals.filter((a) => a.threadId === thread?.id);
   const runningTurn = [...turns].reverse().find((t) => (t.status === "running" || t.status === "queued") && t.codex_turn_id);
   const [recent, setRecent] = useState<Artifact[]>([]);
+  const [skills, setSkills] = useState<Skill[]>([]);
+
+  useEffect(() => {
+    skillApi
+      .list(workspaceId, "skill")
+      .then((list) => setSkills(list.filter((skill) => skill.enabled)))
+      .catch(() => setSkills([]));
+  }, [workspaceId]);
   const [showUsed, setShowUsed] = useState(false);
   const used = thread ? (toolUses[thread.id] ?? []) : [];
   const showUsedPanel = showUsed && used.length > 0;
@@ -100,6 +108,7 @@ export function Home(props: HomeProps) {
               disabled={sending}
               placeholder="Reply…"
               projects={projects}
+          skills={skills}
               projectId={thread.project_id}
               onProjectChange={(id) => void setThreadProject(id)}
               upload={upload}
@@ -117,6 +126,7 @@ export function Home(props: HomeProps) {
             onSend={onSend}
             disabled={sending}
             projects={projects}
+          skills={skills}
             projectId={draftProjectId}
             onProjectChange={onDraftProject}
             upload={upload}
