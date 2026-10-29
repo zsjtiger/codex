@@ -445,12 +445,9 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .usage-ranges button { border: none; background: none; padding: 6px 12px; font-size: 13px; color: var(--text-muted); cursor: pointer; }
 .usage-ranges button + button { border-left: 1px solid var(--border); }
 .usage-ranges .range-active { background: var(--hover); color: var(--text); }
-.usage-totals { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px; }
-.usage-totals div { display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; }
-.usage-totals strong { font-size: 20px; font-weight: 600; }
-.usage-days { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.usage-days li { display: grid; grid-template-columns: 96px 1fr 84px; align-items: center; gap: 10px; font-size: 13px; }
-.usage-day-label { color: var(--text-muted); }
-.usage-bar-track { background: var(--hover); border-radius: 4px; height: 10px; overflow: hidden; }
-.usage-bar { display: block; height: 100%; background: var(--accent); border-radius: 4px; min-width: 2px; }
-.usage-day-total { text-align: right; font-variant-numeric: tabular-nums; }
+.usage-used { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+.usage-row { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 0; font-size: 14px; }
+.usage-row + .usage-row { border-top: 1px solid var(--border); }
+.usage-row strong { font-weight: 600; font-variant-numeric: tabular-nums; }
+.usage-days { list-style: none; margin: 0; padding: 0; }
+.usage-days li { display: flex; justify-content: space-between; padding: 8px 0; font-size: 13px; font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--border); }

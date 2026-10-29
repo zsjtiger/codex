@@ -6,7 +6,7 @@ const RANGES = [7, 30, 90];
 
 const format = (n: number) => n.toLocaleString();
 
-/** Shows the signed-in user's token usage for a chosen period, with a bar per day. */
+/** Shows the signed-in user's token usage for a chosen period. Only used amounts are shown. */
 export function UsageDialog({ onClose }: { onClose: () => void }) {
   const [days, setDays] = useState(30);
   const [report, setReport] = useState<UsageReport | null>(null);
@@ -25,23 +25,20 @@ export function UsageDialog({ onClose }: { onClose: () => void }) {
     };
   }, [days]);
 
-  const dayTotal = (day: UsageReport["daily"][number]) => day.input_tokens + day.output_tokens;
-  const peak = Math.max(1, ...(report?.daily.map(dayTotal) ?? [1]));
-
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div
         className="usage-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="Usage"
+        aria-label="Your usage"
         onMouseDown={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
           if (event.key === "Escape") onClose();
         }}
       >
         <header className="usage-header">
-          <h2>Usage</h2>
+          <h2>Your usage</h2>
           <button className="banner-close" onClick={onClose} aria-label="Close">
             ×
           </button>
@@ -60,35 +57,28 @@ export function UsageDialog({ onClose }: { onClose: () => void }) {
 
         {report && (
           <>
-            <div className="usage-totals">
-              <div>
-                <span className="muted">Input tokens</span>
-                <strong>{format(report.totals.input_tokens)}</strong>
+            <div className="usage-used">
+              <div className="usage-row">
+                <span>Input</span>
+                <strong>{format(report.totals.input_tokens)} tokens</strong>
               </div>
-              <div>
-                <span className="muted">Output tokens</span>
-                <strong>{format(report.totals.output_tokens)}</strong>
+              <div className="usage-row">
+                <span>Output</span>
+                <strong>{format(report.totals.output_tokens)} tokens</strong>
               </div>
             </div>
 
             {report.daily.length === 0 ? (
               <p className="muted">No usage in this period.</p>
             ) : (
-              <ol className="usage-days" aria-label="Daily usage">
-                {report.daily.map((day) => {
-                  const total = dayTotal(day);
-                  const label = new Date(day.day).toLocaleDateString();
-                  return (
-                    <li key={day.day} title={`${label}: ${format(total)} tokens`}>
-                      <span className="usage-day-label">{label}</span>
-                      <span className="usage-bar-track">
-                        <span className="usage-bar" style={{ width: `${(total / peak) * 100}%` }} />
-                      </span>
-                      <span className="usage-day-total">{format(total)}</span>
-                    </li>
-                  );
-                })}
-              </ol>
+              <ul className="usage-days" aria-label="Daily usage">
+                {report.daily.map((day) => (
+                  <li key={day.day}>
+                    <span className="muted">{new Date(day.day).toLocaleDateString()}</span>
+                    <span>{format(day.input_tokens + day.output_tokens)} tokens</span>
+                  </li>
+                ))}
+              </ul>
             )}
           </>
         )}
