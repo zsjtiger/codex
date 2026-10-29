@@ -154,3 +154,20 @@ export interface SearchResults {
   artifacts: { id: string; title: string; kind: ArtifactKind }[];
   projects: { id: string; name: string }[];
 }
+
+/** Token totals for a time window. The server returns counts in the same shape for totals and days. */
+export interface UsageTotals {
+  input_tokens: number;
+  output_tokens: number;
+}
+
+export interface UsageDay extends UsageTotals {
+  day: string;
+}
+
+export interface UsageReport {
+  from: string;
+  to: string;
+  totals: UsageTotals;
+  daily: UsageDay[];
+}

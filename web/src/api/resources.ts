@@ -15,6 +15,7 @@ import type {
   Thread,
   ToolUseRecord,
   Turn,
+  UsageReport,
 } from "./types";
 
 export const projects = {
@@ -100,4 +101,14 @@ export const connectors = {
   update: (id: string, body: { name?: string; url?: string; enabled?: boolean }) =>
     api<Connector>("PATCH", `/connectors/${id}`, body),
   remove: (id: string) => api<void>("DELETE", `/connectors/${id}`),
+};
+
+/** The signed-in user's own token usage over the last `days` days. */
+export const usage = {
+  mine: (days: number) => {
+    const to = new Date();
+    const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+    const query = `from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`;
+    return api<UsageReport>("GET", `/me/usage?${query}`);
+  },
 };

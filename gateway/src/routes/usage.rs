@@ -45,7 +45,9 @@ pub struct UsageReport {
 }
 
 pub fn routes() -> Router<AppState> {
-    Router::new().route("/workspaces/{id}/usage", get(report))
+    Router::new()
+        .route("/workspaces/{id}/usage", get(report))
+        .route("/me/usage", get(my_report))
 }
 
 /// Admin-only. Defaults to the last 30 days.
@@ -56,6 +58,25 @@ async fn report(
     Query(query): Query<UsageQuery>,
 ) -> Result<Json<UsageReport>, ApiError> {
     require_role(&state.pool, id, user.id, Role::Admin).await?;
+    let (from, to) = window(&query)?;
+    Ok(Json(
+        query_report(&state.pool, Scope::Workspace(id), from, to).await?,
+    ))
+}
+
+/// The signed-in user's own usage across all workspaces. Defaults to the last 30 days.
+async fn my_report(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Query(query): Query<UsageQuery>,
+) -> Result<Json<UsageReport>, ApiError> {
+    let (from, to) = window(&query)?;
+    Ok(Json(
+        query_report(&state.pool, Scope::User(user.id), from, to).await?,
+    ))
+}
+
+fn window(query: &UsageQuery) -> Result<(DateTime<Utc>, DateTime<Utc>), ApiError> {
     let to = query.to.unwrap_or_else(Utc::now);
     let from = query
         .from
@@ -63,40 +84,60 @@ async fn report(
     if from >= to {
         return Err(ApiError::BadRequest("from must be before to".to_string()));
     }
+    Ok((from, to))
+}
 
-    let totals = sqlx::query_as::<_, UsageTotals>(
+/// Whose usage a report covers. The column name below comes from this enum, never from input.
+enum Scope {
+    Workspace(Uuid),
+    User(Uuid),
+}
+
+async fn query_report(
+    pool: &PgPool,
+    scope: Scope,
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+) -> Result<UsageReport, sqlx::Error> {
+    let (column, id) = match scope {
+        Scope::Workspace(id) => ("workspace_id", id),
+        Scope::User(id) => ("user_id", id),
+    };
+    let totals_sql = format!(
         "SELECT COALESCE(SUM(input_tokens), 0)::bigint AS input_tokens,
                 COALESCE(SUM(output_tokens), 0)::bigint AS output_tokens
          FROM usage_records
-         WHERE workspace_id = $1 AND recorded_at >= $2 AND recorded_at < $3",
-    )
-    .bind(id)
-    .bind(from)
-    .bind(to)
-    .fetch_one(&state.pool)
-    .await?;
+         WHERE {column} = $1 AND recorded_at >= $2 AND recorded_at < $3"
+    );
+    let totals = sqlx::query_as::<_, UsageTotals>(&totals_sql)
+        .bind(id)
+        .bind(from)
+        .bind(to)
+        .fetch_one(pool)
+        .await?;
 
-    let daily = sqlx::query_as::<_, UsageDay>(
+    let daily_sql = format!(
         "SELECT date_trunc('day', recorded_at) AS day,
                 SUM(input_tokens)::bigint AS input_tokens,
                 SUM(output_tokens)::bigint AS output_tokens
          FROM usage_records
-         WHERE workspace_id = $1 AND recorded_at >= $2 AND recorded_at < $3
+         WHERE {column} = $1 AND recorded_at >= $2 AND recorded_at < $3
          GROUP BY 1
-         ORDER BY 1",
-    )
-    .bind(id)
-    .bind(from)
-    .bind(to)
-    .fetch_all(&state.pool)
-    .await?;
+         ORDER BY 1"
+    );
+    let daily = sqlx::query_as::<_, UsageDay>(&daily_sql)
+        .bind(id)
+        .bind(from)
+        .bind(to)
+        .fetch_all(pool)
+        .await?;
 
-    Ok(Json(UsageReport {
+    Ok(UsageReport {
         from,
         to,
         totals,
         daily,
-    }))
+    })
 }
 
 /// Records token usage for a finished turn. Called by the runtime, not over HTTP.

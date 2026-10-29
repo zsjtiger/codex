@@ -429,3 +429,28 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .markdown table { border-collapse: collapse; width: 100%; font-size: 14px; }
 .markdown th, .markdown td { border: 1px solid var(--border); padding: 6px 10px; vertical-align: top; }
 .markdown th { background: var(--hover); font-weight: 600; }
+
+/* Account menu and usage dialog */
+.sidebar-footer { position: relative; }
+.account-button { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; border: none; background: none; cursor: pointer; text-align: left; color: var(--text); padding: 0; font: inherit; }
+.account-button[aria-expanded="true"] { background: var(--hover); border-radius: 8px; }
+.account-menu { position: absolute; left: 8px; right: 8px; bottom: calc(100% + 6px); background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); padding: 6px; z-index: 6; }
+.account-menu-email { font-size: 13px; color: var(--text-muted); padding: 8px 10px; border-bottom: 1px solid var(--border); margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-menu-item { display: block; width: 100%; border: none; background: none; text-align: left; padding: 8px 10px; border-radius: 8px; font-size: 14px; color: var(--text); cursor: pointer; }
+.account-menu-item:hover { background: var(--hover); }
+.usage-dialog { background: var(--surface); color: var(--text); border-radius: var(--radius); width: min(520px, calc(100vw - 32px)); max-height: 80vh; overflow-y: auto; padding: 20px 22px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2); }
+.usage-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.usage-header h2 { font-size: 18px; font-weight: 600; margin: 0; }
+.usage-ranges { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 16px; }
+.usage-ranges button { border: none; background: none; padding: 6px 12px; font-size: 13px; color: var(--text-muted); cursor: pointer; }
+.usage-ranges button + button { border-left: 1px solid var(--border); }
+.usage-ranges .range-active { background: var(--hover); color: var(--text); }
+.usage-totals { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px; }
+.usage-totals div { display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; }
+.usage-totals strong { font-size: 20px; font-weight: 600; }
+.usage-days { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.usage-days li { display: grid; grid-template-columns: 96px 1fr 84px; align-items: center; gap: 10px; font-size: 13px; }
+.usage-day-label { color: var(--text-muted); }
+.usage-bar-track { background: var(--hover); border-radius: 4px; height: 10px; overflow: hidden; }
+.usage-bar { display: block; height: 100%; background: var(--accent); border-radius: 4px; min-width: 2px; }
+.usage-day-total { text-align: right; font-variant-numeric: tabular-nums; }

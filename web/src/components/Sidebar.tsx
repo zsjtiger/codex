@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Thread, User } from "../api/types";
 import type { SocketStatus } from "../realtime/socket";
+import { UsageDialog } from "./UsageDialog";
 import { ArtifactIcon, ChatIcon, ChevronIcon, ClockIcon, CustomizeIcon, MoreIcon, PlusIcon, ProjectIcon, SearchIcon, SidebarIcon } from "./icons";
 
 export type NavLabel = "New" | "Search" | "Projects" | "Artifacts" | "Scheduled" | "Customize";
@@ -47,6 +48,26 @@ export function Sidebar(props: SidebarProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
+  const accountRef = useRef<HTMLDivElement>(null);
+
+  // The account menu closes on Escape or a click elsewhere.
+  useEffect(() => {
+    if (!accountOpen) return;
+    const onPointer = (event: MouseEvent) => {
+      if (!accountRef.current?.contains(event.target as Node)) setAccountOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setAccountOpen(false);
+    };
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [accountOpen]);
 
   // The More menu closes on Escape or a click elsewhere.
   useEffect(() => {
@@ -149,16 +170,47 @@ export function Sidebar(props: SidebarProps) {
         </section>
       </div>
 
-      <footer className="sidebar-footer">
-        <div className="avatar">{(user.display_name || user.email).charAt(0).toUpperCase()}</div>
-        <div className="account">
-          <span className="account-name">{user.display_name}</span>
-          <span className="account-plan"> · {statusLabel[socketStatus]}</span>
-        </div>
-        <button className="icon-button" onClick={onSignOut} aria-label="Sign out" title="Sign out">
+      <footer className="sidebar-footer" ref={accountRef}>
+        {accountOpen && (
+          <div className="account-menu" role="menu">
+            <div className="account-menu-email">{user.email}</div>
+            <button
+              role="menuitem"
+              className="account-menu-item"
+              onClick={() => {
+                setAccountOpen(false);
+                setUsageOpen(true);
+              }}
+            >
+              Usage
+            </button>
+            <button
+              role="menuitem"
+              className="account-menu-item"
+              onClick={() => {
+                setAccountOpen(false);
+                onSignOut();
+              }}
+            >
+              Log out
+            </button>
+          </div>
+        )}
+        <button
+          className="account-button"
+          aria-haspopup="menu"
+          aria-expanded={accountOpen}
+          onClick={() => setAccountOpen(!accountOpen)}
+        >
+          <div className="avatar">{(user.display_name || user.email).charAt(0).toUpperCase()}</div>
+          <div className="account">
+            <span className="account-name">{user.display_name}</span>
+            <span className="account-plan"> · {statusLabel[socketStatus]}</span>
+          </div>
           <ChevronIcon />
         </button>
       </footer>
+      {usageOpen && <UsageDialog onClose={() => setUsageOpen(false)} />}
     </aside>
   );
 }
