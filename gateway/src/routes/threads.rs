@@ -95,6 +95,9 @@ pub struct TurnView {
     pub model: Option<String>,
     /// Reasoning effort requested for this turn, if one was chosen.
     pub effort: Option<String>,
+    /// The assistant's reply text, saved when the turn's messages complete.
+    #[sqlx(default)]
+    pub reply: Option<String>,
     pub created_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
@@ -170,7 +173,7 @@ async fn turn_input(
     Ok(text)
 }
 
-const TURN_COLUMNS: &str = "id, thread_id, seq, status, input, error, codex_turn_id, model, effort, created_by, created_at, completed_at";
+const TURN_COLUMNS: &str = "id, thread_id, seq, status, input, error, codex_turn_id, model, effort, reply, created_by, created_at, completed_at";
 
 pub fn routes() -> Router<AppState> {
     Router::new()

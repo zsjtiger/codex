@@ -39,7 +39,19 @@ async fn completed_tool_uses_are_stored_and_listed_in_order(pool: PgPool) {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{uses}");
-    // The agent message is ordinary conversation and must not appear.
+    // The reply is saved on its turn, so it survives a reload.
+    let (status, turns) = call(
+        &state,
+        "GET",
+        &format!("/api/v1/threads/{thread_id}/turns"),
+        &owner,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{turns}");
+    assert_eq!(turns[0]["reply"], "ignored", "{turns}");
+
+    // The agent message is ordinary conversation and must not appear as a tool use.
     assert_eq!(
         uses,
         json!([{

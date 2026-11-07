@@ -37,7 +37,8 @@ export function Conversation({ turns, agentText, approvals, onAnswer }: Conversa
   return (
     <div className="conversation">
       {turns.map((turn) => {
-        const reply = turn.codex_turn_id ? agentText[turn.codex_turn_id] : undefined;
+        // Live text while the turn streams; the saved reply after a reload.
+        const reply = (turn.codex_turn_id ? agentText[turn.codex_turn_id] : undefined) || turn.reply || undefined;
         return (
           <div className="turn" key={turn.id}>
             <div className="bubble user">{turn.input}</div>

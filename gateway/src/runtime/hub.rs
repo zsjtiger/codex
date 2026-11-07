@@ -123,6 +123,7 @@ impl Hub {
         }
         if method == "item/completed" {
             record_tool_use(pool, thread_id, params).await;
+            record_reply(pool, thread_id, params).await;
         }
         self.send_to(
             thread_id,
@@ -288,6 +289,36 @@ async fn record_connector_status(pool: &PgPool, thread_id: Uuid, params: &Value)
     .await;
     if let Err(err) = result {
         tracing::warn!(%err, "could not record connector status");
+    }
+}
+
+/// Appends the text of a completed assistant message to its turn, so the reply survives a reload.
+async fn record_reply(pool: &PgPool, thread_id: Uuid, params: &Value) {
+    let item = match params.get("item") {
+        Some(item) if item.get("type").and_then(Value::as_str) == Some("agentMessage") => item,
+        _ => return,
+    };
+    let (Some(codex_turn_id), Some(text)) = (
+        params.get("turnId").and_then(Value::as_str),
+        item.get("text")
+            .and_then(Value::as_str)
+            .filter(|t| !t.is_empty()),
+    ) else {
+        return;
+    };
+    let text = truncate(text, 200_000);
+    let result = sqlx::query(
+        "UPDATE turns SET reply = CASE WHEN reply IS NULL THEN $3
+                                       ELSE left(reply || E'\n\n' || $3, 200000) END
+         WHERE thread_id = $1 AND codex_turn_id = $2",
+    )
+    .bind(thread_id)
+    .bind(codex_turn_id)
+    .bind(text)
+    .execute(pool)
+    .await;
+    if let Err(err) = result {
+        tracing::warn!(%err, "could not record assistant reply");
     }
 }
 

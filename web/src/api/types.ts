@@ -47,6 +47,8 @@ export interface ToolUseRecord {
 
 export interface Turn {
   id: string;
+  /** The assistant's reply, kept on the turn once its messages complete. */
+  reply?: string | null;
   thread_id: string;
   seq: number;
   status: TurnStatus;
