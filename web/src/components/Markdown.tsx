@@ -17,6 +17,7 @@ import yaml from "highlight.js/lib/languages/yaml";
 import katex from "katex";
 import "katex/dist/katex.min.css";
 import { type ReactNode } from "react";
+import { usePreview } from "./Preview";
 
 // Only these languages are highlighted; other code blocks stay plain text.
 [
@@ -38,7 +39,7 @@ import { type ReactNode } from "react";
 ].forEach(([name, language]) => hljs.registerLanguage(name as string, language as Parameters<typeof hljs.registerLanguage>[1]));
 
 /** Highlighted code as HTML. highlight.js escapes the source, so the output is safe to insert. */
-function highlightCode(text: string, lang: string): { html: string; known: boolean } {
+export function highlightCode(text: string, lang: string): { html: string; known: boolean } {
   const language = lang.toLowerCase();
   if (!hljs.getLanguage(language)) return { html: "", known: false };
   return { html: hljs.highlight(text, { language, ignoreIllegals: true }).value, known: true };
@@ -483,6 +484,25 @@ function ChartView({ spec }: { spec: ChartSpec }) {
 
 /* ---------- Document rendering ---------- */
 
+/** A code block with its language and a button that opens the code in the side panel. */
+function CodeBlock({ lang, text }: { lang: string; text: string }) {
+  const { open } = usePreview();
+  const highlighted = highlightCode(text, lang);
+  return (
+    <div className="code-wrap">
+      <div className="code-head">
+        <span className="muted small">{lang || "code"}</span>
+        <button type="button" className="code-open" onClick={() => open({ kind: "code", title: lang || "Code", lang, text })}>
+          Open
+        </button>
+      </div>
+      <pre className={`code-block ${highlighted.known ? `language-${lang.toLowerCase()}` : ""}`}>
+        {highlighted.known ? <code dangerouslySetInnerHTML={{ __html: highlighted.html }} /> : <code>{text}</code>}
+      </pre>
+    </div>
+  );
+}
+
 /** Renders a Markdown document. Output is React elements only, so raw HTML stays as text. */
 export function MarkdownView({ source }: { source: string }) {
   const blocks = parseBlocks(source);
@@ -518,19 +538,7 @@ export function MarkdownView({ source }: { source: string }) {
                 </div>
               );
             }
-            const highlighted = highlightCode(block.text, block.lang);
-            if (highlighted.known) {
-              return (
-                <pre key={key} className={`code-block language-${block.lang.toLowerCase()}`}>
-                  <code dangerouslySetInnerHTML={{ __html: highlighted.html }} />
-                </pre>
-              );
-            }
-            return (
-              <pre key={key}>
-                <code>{block.text}</code>
-              </pre>
-            );
+            return <CodeBlock key={key} lang={block.lang} text={block.text} />;
           }
           case "math":
             return <div key={key} className="math-block" dangerouslySetInnerHTML={{ __html: renderTex(block.tex, true) }} />;

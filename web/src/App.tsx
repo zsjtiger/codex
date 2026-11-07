@@ -4,6 +4,7 @@ import type { Artifact, Project, ScheduledTask } from "./api/types";
 import { ArtifactsPage } from "./components/ArtifactsPage";
 import { CustomizePage } from "./components/CustomizePage";
 import { Home } from "./components/Home";
+import { PreviewProvider } from "./components/Preview";
 import { ProjectsPage } from "./components/ProjectsPage";
 import { ScheduledPage } from "./components/ScheduledPage";
 import { SearchDialog } from "./components/SearchDialog";
@@ -87,6 +88,7 @@ export function App() {
   const activeThread = codex.threads.find((t) => t.id === codex.activeId) ?? null;
 
   return (
+    <PreviewProvider>
     <div className="app">
       <Sidebar
         open={sidebarOpen}
@@ -185,5 +187,6 @@ export function App() {
         )}
       </div>
     </div>
+    </PreviewProvider>
   );
 }

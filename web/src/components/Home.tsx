@@ -4,6 +4,7 @@ import type { Artifact, Project, Skill, Thread, Turn, User } from "../api/types"
 import type { Activity, Approval, SendOptions } from "../state/useCodex";
 import type { ToolUse } from "../state/toolUses";
 import { Composer } from "./Composer";
+import { usePreview } from "./Preview";
 import { Conversation } from "./Conversation";
 import { ChevronIcon, SparkIcon } from "./icons";
 
@@ -44,6 +45,7 @@ export function Home(props: HomeProps) {
   const pending = approvals.filter((a) => a.threadId === thread?.id);
   const runningTurn = [...turns].reverse().find((t) => (t.status === "running" || t.status === "queued") && t.codex_turn_id);
   const [recent, setRecent] = useState<Artifact[]>([]);
+  const { open } = usePreview();
   const [skills, setSkills] = useState<Skill[]>([]);
 
   useEffect(() => {
@@ -154,7 +156,11 @@ export function Home(props: HomeProps) {
             {recent.length > 0 && (
               <div className="artifact-grid">
                 {recent.map((artifact) => (
-                  <button key={artifact.id} className="artifact-card" onClick={onOpenArtifacts}>
+                  <button
+                    key={artifact.id}
+                    className="artifact-card"
+                    onClick={() => open({ kind: "document", title: artifact.title, content: artifact.content })}
+                  >
                     <div className="artifact-preview" aria-hidden="true">
                       <div className="artifact-page" />
                     </div>
