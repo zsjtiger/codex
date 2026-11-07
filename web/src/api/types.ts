@@ -51,6 +51,8 @@ export interface Turn {
   reply?: string | null;
   /** The user's rating of the reply. */
   feedback?: "up" | "down" | null;
+  /** Files sent with the message. */
+  attachments?: AttachmentRef[];
   thread_id: string;
   seq: number;
   status: TurnStatus;
@@ -140,6 +142,14 @@ export interface ScheduledTask {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** An attachment as the conversation shows it. */
+export interface AttachmentRef {
+  id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
 }
 
 export interface Attachment {

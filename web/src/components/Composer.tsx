@@ -3,7 +3,15 @@ import type { Project, Skill } from "../api/types";
 import type { SendOptions } from "../state/useCodex";
 import { ChevronIcon, PlusIcon } from "./icons";
 
-const MAX_ATTACHMENT_BYTES = 200_000;
+/** Text files are sent to the model, so they are kept small. Word and PDF files are only shown. */
+const MAX_TEXT_ATTACHMENT_BYTES = 200_000;
+const MAX_BINARY_ATTACHMENT_BYTES = 20_000_000;
+
+function attachmentLimit(file: File): number {
+  const name = file.name.toLowerCase();
+  const binary = name.endsWith(".pdf") || name.endsWith(".docx");
+  return binary ? MAX_BINARY_ATTACHMENT_BYTES : MAX_TEXT_ATTACHMENT_BYTES;
+}
 
 interface ComposerProps {
   onSend: (text: string, options: SendOptions) => void;
@@ -88,8 +96,9 @@ export function Composer(props: ComposerProps) {
   const highlighted = Math.min(menuIndex, Math.max(menuItems.length - 1, 0));
 
   const attach = async (file: File) => {
-    if (file.size > MAX_ATTACHMENT_BYTES) {
-      onError(`${file.name} is larger than ${MAX_ATTACHMENT_BYTES / 1000} KB.`);
+    const limit = attachmentLimit(file);
+    if (file.size > limit) {
+      onError(`${file.name} is larger than ${limit / 1000} KB.`);
       return;
     }
     setUploading(true);
@@ -197,7 +206,7 @@ export function Composer(props: ComposerProps) {
                       fileRef.current?.click();
                     }}
                   >
-                    Attach a text file
+                    Attach a file
                   </button>
                 </li>
               </ul>
@@ -206,7 +215,7 @@ export function Composer(props: ComposerProps) {
               ref={fileRef}
               type="file"
               hidden
-              accept="text/*,.json,.md,.csv,.py,.ts,.tsx,.js,.rs,.go,.java,.c,.cpp,.h,.yaml,.yml,.toml"
+              accept="text/*,.json,.md,.csv,.py,.ts,.tsx,.js,.rs,.go,.java,.c,.cpp,.h,.yaml,.yml,.toml,.pdf,.docx"
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 event.target.value = "";

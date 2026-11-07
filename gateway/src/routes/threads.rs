@@ -81,8 +81,24 @@ pub struct ToolUseView {
     pub created_at: DateTime<Utc>,
 }
 
+/// An attachment as shown in the conversation.
+#[derive(Clone, Serialize, FromRow)]
+pub struct AttachmentRef {
+    pub id: Uuid,
+    pub filename: String,
+    pub content_type: String,
+    pub size_bytes: i64,
+}
+
 #[derive(Serialize, FromRow)]
 pub struct TurnView {
+    /// Attachments sent with the turn, for display. Filled in when the turn list is read.
+    #[sqlx(skip)]
+    pub attachments: Vec<AttachmentRef>,
+    /// Ids of the attachments; kept internally and not returned.
+    #[serde(skip)]
+    #[sqlx(default)]
+    pub attachment_ids: Vec<Uuid>,
     pub id: Uuid,
     pub thread_id: Uuid,
     pub seq: i32,
@@ -150,7 +166,11 @@ async fn turn_input(
             "some attachments are missing, not uploaded, or not yours".to_string(),
         ));
     }
-    let total: i64 = rows.iter().map(|row| row.2).sum();
+    let total: i64 = rows
+        .iter()
+        .filter(|row| is_text(&row.1))
+        .map(|row| row.2)
+        .sum();
     if total > MAX_INLINE_ATTACHMENT_BYTES {
         return Err(ApiError::BadRequest(format!(
             "attachments in one message can total at most {MAX_INLINE_ATTACHMENT_BYTES} bytes"
@@ -158,10 +178,13 @@ async fn turn_input(
     }
     let mut text = input.to_string();
     for (filename, content_type, _, storage_key) in rows {
-        if !(content_type.starts_with("text/") || content_type == "application/json") {
-            return Err(ApiError::BadRequest(format!(
-                "{filename}: only text attachments can be sent with a message"
-            )));
+        if !is_text(&content_type) {
+            // Binary files (PDF, Word, ...) are shown to the user but their contents are not
+            // sent to the model.
+            text.push_str(&format!(
+                "\n\nAttached file: {filename} ({content_type}). Its contents are not included in this message."
+            ));
+            continue;
         }
         let bytes = state.storage.get(&storage_key).await.map_err(|err| {
             tracing::error!(%err, "could not read attachment for a turn");
@@ -176,7 +199,12 @@ async fn turn_input(
     Ok(text)
 }
 
-const TURN_COLUMNS: &str = "id, thread_id, seq, status, input, error, codex_turn_id, model, effort, reply, feedback, created_by, created_at, completed_at";
+/// Text-like attachments are inlined into the message for the model.
+fn is_text(content_type: &str) -> bool {
+    content_type.starts_with("text/") || content_type == "application/json"
+}
+
+const TURN_COLUMNS: &str = "id, thread_id, seq, status, input, error, codex_turn_id, model, effort, reply, feedback, attachment_ids, created_by, created_at, completed_at";
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -426,12 +454,31 @@ async fn list_turns(
     let sql = format!(
         "SELECT {TURN_COLUMNS} FROM turns WHERE thread_id = $1 ORDER BY seq LIMIT $2 OFFSET $3"
     );
-    let rows = sqlx::query_as::<_, TurnView>(&sql)
+    let mut rows = sqlx::query_as::<_, TurnView>(&sql)
         .bind(id)
         .bind(limit)
         .bind(offset)
         .fetch_all(&state.pool)
         .await?;
+    let ids: Vec<Uuid> = rows
+        .iter()
+        .flat_map(|turn| turn.attachment_ids.iter().copied())
+        .collect();
+    if !ids.is_empty() {
+        let found = sqlx::query_as::<_, AttachmentRef>(
+            "SELECT id, filename, content_type, size_bytes FROM attachments WHERE id = ANY($1)",
+        )
+        .bind(&ids)
+        .fetch_all(&state.pool)
+        .await?;
+        for turn in &mut rows {
+            turn.attachments = turn
+                .attachment_ids
+                .iter()
+                .filter_map(|aid| found.iter().find(|a| a.id == *aid).cloned())
+                .collect();
+        }
+    }
     Ok(Json(rows))
 }
 
@@ -467,12 +514,18 @@ async fn create_turn(
     let access = thread_access(&state.pool, id).await?;
     require_role(&state.pool, access.workspace_id, user.id, Role::Member).await?;
     validate::length("input", &req.input, 1, 100_000)?;
+    let attachment_ids = req.attachment_ids.clone().unwrap_or_default();
+    if attachment_ids.len() > 20 {
+        return Err(ApiError::BadRequest(
+            "a message can include at most 20 attachments".to_string(),
+        ));
+    }
     let input = turn_input(
         &state,
         &user,
         access.workspace_id,
         &req.input,
-        req.attachment_ids.as_deref().unwrap_or(&[]),
+        &attachment_ids,
     )
     .await?;
     validate::length("input", &input, 1, 100_000)?;
@@ -525,9 +578,9 @@ async fn create_turn(
             .fetch_one(&mut *tx)
             .await?;
     let turn = sqlx::query_as::<_, TurnView>(
-        "INSERT INTO turns (thread_id, seq, input, model, effort, created_by, skill_ids)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING id, thread_id, seq, status, input, error, codex_turn_id, model, effort, created_by, created_at, completed_at",
+        "INSERT INTO turns (thread_id, seq, input, model, effort, created_by, skill_ids, attachment_ids)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id, thread_id, seq, status, input, error, codex_turn_id, model, effort, reply, feedback, attachment_ids, created_by, created_at, completed_at",
     )
     .bind(id)
     .bind(seq)
@@ -536,6 +589,7 @@ async fn create_turn(
     .bind(req.effort.as_deref())
     .bind(user.id)
     .bind(&skill_ids)
+    .bind(&attachment_ids)
     .fetch_one(&mut *tx)
     .await?;
     sqlx::query("UPDATE threads SET last_activity_at = now(), updated_at = now() WHERE id = $1")

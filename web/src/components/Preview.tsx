@@ -1,11 +1,14 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
+import * as mammoth from "mammoth";
+import { attachments as attachmentApi } from "../api/resources";
 import { MarkdownView, highlightCode } from "./Markdown";
 import { CopyIcon } from "./icons";
 
-/** What the side panel shows: a code block from a reply, or a document artifact. */
+/** What the side panel shows: a code block, a document artifact, or a file sent in a message. */
 export type PreviewItem =
   | { kind: "code"; title: string; lang: string; text: string }
-  | { kind: "document"; title: string; content: string };
+  | { kind: "document"; title: string; content: string }
+  | { kind: "file"; title: string; attachmentId: string; contentType: string };
 
 interface PreviewContextValue {
   open: (item: PreviewItem) => void;
@@ -27,13 +30,86 @@ export function PreviewProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** mammoth ships typings without its Markdown converter, which the library provides at runtime. */
+function convertWordToMarkdown(bytes: ArrayBuffer): Promise<string> {
+  const convert = (mammoth as unknown as { convertToMarkdown: (input: { arrayBuffer: ArrayBuffer }) => Promise<{ value: string }> })
+    .convertToMarkdown;
+  return convert({ arrayBuffer: bytes }).then((result) => result.value);
+}
+
+/** The kinds of file the panel can show, from the stored content type and name. */
+type FileKind = "pdf" | "word" | "markdown" | "text" | "other";
+
+function fileKind(contentType: string, title: string): FileKind {
+  const name = title.toLowerCase();
+  if (contentType === "application/pdf" || name.endsWith(".pdf")) return "pdf";
+  if (contentType.includes("wordprocessingml") || name.endsWith(".docx")) return "word";
+  if (contentType === "text/markdown" || name.endsWith(".md") || name.endsWith(".markdown")) return "markdown";
+  if (contentType.startsWith("text/") || contentType === "application/json") return "text";
+  return "other";
+}
+
+/** Loads an uploaded file and shows it: PDF in the browser's viewer, Word as Markdown, text as text. */
+function FilePreview({ attachmentId, title, contentType }: { attachmentId: string; title: string; contentType: string }) {
+  const [state, setState] = useState<{ status: "loading" } | { status: "error"; message: string } | { status: "ready"; view: ReactViewState }>({
+    status: "loading",
+  });
+
+  useEffect(() => {
+    let current = true;
+    let objectUrl: string | null = null;
+    setState({ status: "loading" });
+    attachmentApi
+      .download(attachmentId)
+      .then(async (bytes) => {
+        const kind = fileKind(contentType, title);
+        let view: ReactViewState;
+        if (kind === "pdf") {
+          objectUrl = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+          view = { kind, url: objectUrl };
+        } else if (kind === "word") {
+          const result = await convertWordToMarkdown(bytes);
+          view = { kind, markdown: result };
+        } else {
+          const text = new TextDecoder().decode(bytes);
+          view = { kind, text };
+        }
+        if (current) setState({ status: "ready", view });
+      })
+      .catch((err) => {
+        if (current) setState({ status: "error", message: err instanceof Error ? err.message : "Could not open the file." });
+      });
+    return () => {
+      current = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [attachmentId, contentType, title]);
+
+  if (state.status === "loading") return <p className="muted">Loading…</p>;
+  if (state.status === "error") return <p className="banner error">{state.message}</p>;
+  const { view } = state;
+  if (view.kind === "pdf") return <iframe className="preview-frame" src={view.url} title={title} />;
+  if (view.kind === "word") return <MarkdownView source={view.markdown} />;
+  if (view.kind === "markdown") return <MarkdownView source={view.text} />;
+  if (view.kind === "text") return <pre className="preview-text">{view.text}</pre>;
+  return <p className="muted">This file type cannot be previewed.</p>;
+}
+
+type ReactViewState =
+  | { kind: "pdf"; url: string }
+  | { kind: "word"; markdown: string }
+  | { kind: "markdown"; text: string }
+  | { kind: "text"; text: string }
+  | { kind: "other" };
+
 function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
-  const text = item.kind === "code" ? item.text : item.content;
-  const label = item.kind === "code" ? item.lang || "code" : "document";
+  const text = item.kind === "code" ? item.text : item.kind === "document" ? item.content : null;
+  const label = item.kind === "code" ? item.lang || "code" : item.kind === "document" ? "document" : contentLabel(item.contentType, item.title);
   const highlighted = item.kind === "code" ? highlightCode(item.text, item.lang) : null;
 
   const copy = async () => {
+    if (text === null) return;
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
@@ -50,15 +126,19 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
           <span className="preview-name">{item.title}</span>
           <span className="muted small">{label}</span>
         </div>
-        <button type="button" className="icon-button" onClick={copy} aria-label={copied ? "Copied" : "Copy"} title={copied ? "Copied" : "Copy"}>
-          <CopyIcon />
-        </button>
+        {text !== null && (
+          <button type="button" className="icon-button" onClick={copy} aria-label={copied ? "Copied" : "Copy"} title={copied ? "Copied" : "Copy"}>
+            <CopyIcon />
+          </button>
+        )}
         <button type="button" className="banner-close" onClick={onClose} aria-label="Close">
           ×
         </button>
       </header>
       <div className="preview-body">
-        {item.kind === "document" ? (
+        {item.kind === "file" ? (
+          <FilePreview attachmentId={item.attachmentId} title={item.title} contentType={item.contentType} />
+        ) : item.kind === "document" ? (
           <MarkdownView source={item.content} />
         ) : highlighted?.known ? (
           <pre className="code-block">
@@ -72,4 +152,9 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
       </div>
     </aside>
   );
+}
+
+function contentLabel(contentType: string, title: string): string {
+  const kind = fileKind(contentType, title);
+  return { pdf: "PDF", word: "Word", markdown: "Markdown", text: "text", other: "file" }[kind];
 }

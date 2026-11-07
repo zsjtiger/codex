@@ -3,6 +3,7 @@ import { MarkdownView } from "./Markdown";
 import { CopyIcon, RetryIcon, SpeakIcon, ThumbDownIcon, ThumbUpIcon } from "./icons";
 import type { Activity, Approval } from "../state/useCodex";
 import { ChevronIcon } from "./icons";
+import { usePreview } from "./Preview";
 import type { Turn } from "../api/types";
 
 /** "just now", "5 min ago", "3 h ago", or the date for older replies. */
@@ -124,6 +125,21 @@ function activitySummary(activity: Activity, running: boolean): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/** A file sent with a message. Clicking it opens the file in the side panel. */
+function FileChip({ id, name, contentType }: { id: string; name: string; contentType: string }) {
+  const { open } = usePreview();
+  return (
+    <button
+      type="button"
+      className="file-chip"
+      onClick={() => open({ kind: "file", title: name, attachmentId: id, contentType })}
+      title={name}
+    >
+      <span className="file-chip-name">{name}</span>
+    </button>
+  );
+}
+
 /** Collapsible record of how a reply was produced: the reasoning and each step taken. */
 function ThinkingBlock({ activity, running }: { activity: Activity; running: boolean }) {
   const [open, setOpen] = useState(false);
@@ -173,6 +189,13 @@ export function Conversation({ turns, agentText, activity, approvals, onAnswer, 
         return (
           <div className="turn" key={turn.id}>
             <div className="bubble user">{turn.input}</div>
+            {turn.attachments && turn.attachments.length > 0 && (
+              <div className="turn-files">
+                {turn.attachments.map((file) => (
+                  <FileChip key={file.id} id={file.id} name={file.filename} contentType={file.content_type} />
+                ))}
+              </div>
+            )}
             {live && (live.reasoning || live.steps.length > 0) && <ThinkingBlock activity={live} running={running} />}
             {reply && (
               <>

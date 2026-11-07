@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, loadStoredToken, setToken } from "../api/client";
-import { attachments as attachmentApi, interruptTurn, rateTurn, threads as threadApi } from "../api/resources";
+import { attachments as attachmentApi, contentTypeOf, interruptTurn, rateTurn, threads as threadApi } from "../api/resources";
 import type { Environment, LoginResponse, Thread, Turn, User, Workspace } from "../api/types";
 import { type Frame, GatewaySocket, type SocketStatus } from "../realtime/socket";
 import { type ToolUse, mergeToolUses, toolUseFromItem } from "./toolUses";
@@ -270,7 +270,7 @@ export function useCodex() {
       if (!ws) throw new Error("No workspace yet.");
       const meta = await attachmentApi.create(ws.id, {
         filename: file.name,
-        content_type: file.type || "application/octet-stream",
+        content_type: contentTypeOf(file),
         size_bytes: file.size,
       });
       await attachmentApi.upload(meta.id, file);

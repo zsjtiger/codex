@@ -82,11 +82,33 @@ export const interruptTurn = (id: string) => api<void>("POST", `/turns/${id}/int
 /** Rates a reply. `null` clears the rating. */
 export const rateTurn = (id: string, rating: "up" | "down" | null) => api<void>("PUT", `/turns/${id}/feedback`, { rating });
 
+/** The content type to record for a file. Browsers leave it empty for some types (e.g. .md). */
+export function contentTypeOf(file: { name: string; type: string }): string {
+  if (file.type) return file.type;
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".md") || name.endsWith(".markdown")) return "text/markdown";
+  if (name.endsWith(".pdf")) return "application/pdf";
+  if (name.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  return "application/octet-stream";
+}
+
 export const attachments = {
   create: (ws: string, body: { filename: string; content_type: string; size_bytes: number }) =>
     api<Attachment>("POST", `/workspaces/${ws}/attachments`, body),
+  /** The stored bytes of an attachment, for previewing. */
+  download: async (id: string): Promise<ArrayBuffer> => {
+    const headers: Record<string, string> = {};
+    const token = getToken();
+    if (token) headers.authorization = `Bearer ${token}`;
+    const response = await fetch(`/api/v1/attachments/${id}/content`, { headers });
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      throw new ApiError(response.status, data?.error?.code ?? "error", data?.error?.message ?? response.statusText);
+    }
+    return response.arrayBuffer();
+  },
   upload: async (id: string, file: File) => {
-    const headers: Record<string, string> = { "content-type": file.type || "application/octet-stream" };
+    const headers: Record<string, string> = { "content-type": contentTypeOf(file) };
     const token = getToken();
     if (token) headers.authorization = `Bearer ${token}`;
     const response = await fetch(`/api/v1/attachments/${id}/content`, { method: "PUT", headers, body: file });
