@@ -13,6 +13,12 @@ export interface SendOptions {
   skill_ids?: string[];
 }
 
+/** What Codex is doing in one turn while it runs: its reasoning and the steps it has taken. */
+export interface Activity {
+  reasoning: string;
+  steps: ToolUse[];
+}
+
 export interface Approval {
   requestId: string;
   threadId: string;
@@ -38,6 +44,8 @@ export function useCodex() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [agentText, setAgentText] = useState<Record<string, string>>({});
   const [toolUses, setToolUses] = useState<Record<string, ToolUse[]>>({});
+  // Live thinking for each codex turn: reasoning text and the steps (searches, commands, ...) so far.
+  const [activity, setActivity] = useState<Record<string, Activity>>({});
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [socketStatus, setSocketStatus] = useState<SocketStatus>("closed");
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +80,22 @@ export function useCodex() {
         case "event": {
           const method = frame.method as string;
           const params = frame.params as Record<string, any>;
+          const turnKey = params.turnId as string | undefined;
+          if (turnKey && (method === "item/reasoning/summaryTextDelta" || method === "item/reasoning/textDelta")) {
+            const delta = String(params.delta ?? "");
+            setActivity((prev) => {
+              const current = prev[turnKey] ?? { reasoning: "", steps: [] };
+              return { ...prev, [turnKey]: { ...current, reasoning: current.reasoning + delta } };
+            });
+          }
+          const step = method === "item/started" || method === "item/completed" ? toolUseFromItem(params.item) : null;
+          if (turnKey && step) {
+            setActivity((prev) => {
+              const current = prev[turnKey] ?? { reasoning: "", steps: [] };
+              if (current.steps.some((existing) => existing.id === step.id)) return prev;
+              return { ...prev, [turnKey]: { ...current, steps: [...current.steps, step] } };
+            });
+          }
           if (method === "item/completed" && params.item?.type === "agentMessage") {
             const key = params.turnId as string;
             const text = params.item.text as string;
@@ -284,6 +308,7 @@ export function useCodex() {
     turns,
     agentText,
     toolUses,
+    activity,
     approvals,
     socketStatus,
     error,

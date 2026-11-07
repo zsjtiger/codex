@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { MarkdownView } from "./Markdown";
 import { CopyIcon, RetryIcon, SpeakIcon, ThumbDownIcon, ThumbUpIcon } from "./icons";
-import type { Approval } from "../state/useCodex";
+import type { Activity, Approval } from "../state/useCodex";
+import { ChevronIcon } from "./icons";
 import type { Turn } from "../api/types";
 
 /** "just now", "5 min ago", "3 h ago", or the date for older replies. */
@@ -104,24 +105,75 @@ function describe(approval: Approval): string {
   return approval.method;
 }
 
+/** Short labels for what a turn did, in the order it first did them. */
+const STEP_VERBS: Record<string, string> = {
+  "Web search": "Searching the web",
+  Command: "running a command",
+  Connector: "using a connector",
+  Tool: "using a tool",
+  "File change": "changing files",
+  Image: "viewing an image",
+  "Image generation": "generating an image",
+};
+
+/** The collapsed "Thinking" line: what the model has been doing this turn, or just "Thinking". */
+function activitySummary(activity: Activity, running: boolean): string {
+  const verbs = [...new Set(activity.steps.map((step) => STEP_VERBS[step.kind] ?? step.kind))];
+  if (verbs.length === 0) return running ? "Thinking" : "Thought process";
+  const text = verbs.join(", ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** Collapsible record of how a reply was produced: the reasoning and each step taken. */
+function ThinkingBlock({ activity, running }: { activity: Activity; running: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="thinking">
+      <button type="button" className="thinking-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className={running ? "thinking-dots thinking-dots-live" : "thinking-dots"}>···</span>
+        <span>{activitySummary(activity, running)}</span>
+        <ChevronIcon className={open ? "thinking-chevron thinking-chevron-open" : "thinking-chevron"} />
+      </button>
+      {open && (
+        <div className="thinking-body">
+          {activity.reasoning && <div className="thinking-reasoning">{activity.reasoning}</div>}
+          {activity.steps.length > 0 && (
+            <ul className="thinking-steps">
+              {activity.steps.map((step) => (
+                <li key={step.id}>
+                  <span className="muted">{step.kind}</span> {step.label}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface ConversationProps {
   turns: Turn[];
   agentText: Record<string, string>;
+  activity: Record<string, Activity>;
   approvals: Approval[];
   onAnswer: (approval: Approval, result: unknown) => void;
   onFeedback: (turnId: string, rating: "up" | "down" | null) => void;
   onRegenerate: (input: string) => void;
 }
 
-export function Conversation({ turns, agentText, approvals, onAnswer, onFeedback, onRegenerate }: ConversationProps) {
+export function Conversation({ turns, agentText, activity, approvals, onAnswer, onFeedback, onRegenerate }: ConversationProps) {
   return (
     <div className="conversation">
       {turns.map((turn) => {
         // Live text while the turn streams; the saved reply after a reload.
         const reply = (turn.codex_turn_id ? agentText[turn.codex_turn_id] : undefined) || turn.reply || undefined;
+        const live = turn.codex_turn_id ? activity[turn.codex_turn_id] : undefined;
+        const running = turn.status === "running" || turn.status === "queued";
         return (
           <div className="turn" key={turn.id}>
             <div className="bubble user">{turn.input}</div>
+            {live && (live.reasoning || live.steps.length > 0) && <ThinkingBlock activity={live} running={running} />}
             {reply && (
               <>
                 <div className="bubble agent">

@@ -472,3 +472,17 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .home-thread .thread-view { flex: 1; min-height: 0; height: 100%; }
 .thread-scroll { flex: 1; min-height: 0; overflow-y: auto; }
 .home-thread .composer-dock { flex-shrink: 0; position: static; }
+
+/* Thinking: what the model did before its reply */
+.thinking { margin: 0 0 10px; font-size: 14px; color: var(--text-muted); }
+.thinking-toggle { display: inline-flex; align-items: center; gap: 8px; border: none; background: none; padding: 4px 0; cursor: pointer; color: var(--text-muted); font: inherit; }
+.thinking-toggle:hover { color: var(--text); }
+.thinking-dots { color: var(--accent); letter-spacing: 1px; }
+.thinking-dots-live { animation: thinking-pulse 1.2s ease-in-out infinite; }
+@keyframes thinking-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+.thinking-chevron { width: 14px; height: 14px; transition: transform 0.15s; }
+.thinking-chevron-open { transform: rotate(180deg); }
+.thinking-body { margin: 6px 0 4px 4px; padding-left: 12px; border-left: 2px solid var(--border); }
+.thinking-reasoning { white-space: pre-wrap; line-height: 1.55; margin-bottom: 8px; }
+.thinking-steps { list-style: none; margin: 0; padding: 0; }
+.thinking-steps li { padding: 3px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
