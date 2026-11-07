@@ -1,3 +1,4 @@
+import { MarkdownView } from "./Markdown";
 import type { Approval } from "../state/useCodex";
 import type { Turn } from "../api/types";
 
@@ -42,7 +43,11 @@ export function Conversation({ turns, agentText, approvals, onAnswer }: Conversa
         return (
           <div className="turn" key={turn.id}>
             <div className="bubble user">{turn.input}</div>
-            {reply && <div className="bubble agent">{reply}</div>}
+            {reply && (
+              <div className="bubble agent">
+                <MarkdownView source={reply} />
+              </div>
+            )}
             <div className={`turn-status status-${turn.status}`}>
               {turn.status === "completed" ? "Done" : turn.status}
               {turn.error && <span className="turn-error"> · {turn.error}</span>}
