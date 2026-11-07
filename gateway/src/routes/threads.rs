@@ -2,7 +2,7 @@ use axum::{
     Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::{get, post},
+    routing::{get, post, put},
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -98,6 +98,9 @@ pub struct TurnView {
     /// The assistant's reply text, saved when the turn's messages complete.
     #[sqlx(default)]
     pub reply: Option<String>,
+    /// The user's rating of the reply: "up", "down", or unset.
+    #[sqlx(default)]
+    pub feedback: Option<String>,
     pub created_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
@@ -173,7 +176,7 @@ async fn turn_input(
     Ok(text)
 }
 
-const TURN_COLUMNS: &str = "id, thread_id, seq, status, input, error, codex_turn_id, model, effort, reply, created_by, created_at, completed_at";
+const TURN_COLUMNS: &str = "id, thread_id, seq, status, input, error, codex_turn_id, model, effort, reply, feedback, created_by, created_at, completed_at";
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -188,6 +191,7 @@ pub fn routes() -> Router<AppState> {
         .route("/threads/{id}/turns", get(list_turns).post(create_turn))
         .route("/threads/{id}/tool-uses", get(list_tool_uses))
         .route("/turns/{id}/interrupt", post(interrupt_turn))
+        .route("/turns/{id}/feedback", put(set_feedback))
 }
 
 const COLUMNS: &str = "id, workspace_id, environment_id, project_id, created_by, title, state, codex_thread_id, \
@@ -542,6 +546,39 @@ async fn create_turn(
 
     crate::runtime::dispatch::spawn_drain(state.clone(), turn.thread_id);
     Ok((StatusCode::CREATED, Json(turn)))
+}
+
+#[derive(Deserialize)]
+pub struct SetFeedback {
+    rating: Option<String>,
+}
+
+/// Records whether a reply was helpful: "up" or "down". `null` clears the rating.
+async fn set_feedback(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<SetFeedback>,
+) -> Result<StatusCode, ApiError> {
+    if !matches!(req.rating.as_deref(), None | Some("up") | Some("down")) {
+        return Err(ApiError::BadRequest(
+            "rating must be \"up\", \"down\", or null".to_string(),
+        ));
+    }
+    let workspace_id: Uuid = sqlx::query_scalar(
+        "SELECT th.workspace_id FROM turns t JOIN threads th ON th.id = t.thread_id WHERE t.id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+    require_role(&state.pool, workspace_id, user.id, Role::Member).await?;
+    sqlx::query("UPDATE turns SET feedback = $2 WHERE id = $1")
+        .bind(id)
+        .bind(req.rating)
+        .execute(&state.pool)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Asks app-server to stop a running turn. The turn finishes as `interrupted` once

@@ -79,6 +79,9 @@ export const threads = {
 
 export const interruptTurn = (id: string) => api<void>("POST", `/turns/${id}/interrupt`);
 
+/** Rates a reply. `null` clears the rating. */
+export const rateTurn = (id: string, rating: "up" | "down" | null) => api<void>("PUT", `/turns/${id}/feedback`, { rating });
+
 export const attachments = {
   create: (ws: string, body: { filename: string; content_type: string; size_bytes: number }) =>
     api<Attachment>("POST", `/workspaces/${ws}/attachments`, body),

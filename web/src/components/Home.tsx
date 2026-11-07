@@ -30,6 +30,7 @@ interface HomeProps {
   onSend: (text: string, options: SendOptions) => void;
   onStop: (turnId: string) => void;
   onAnswer: (approval: Approval, result: unknown) => void;
+  onFeedback: (turnId: string, rating: "up" | "down" | null) => void;
   onOpenArtifacts: () => void;
   upload: (file: File) => Promise<string>;
   error: string | null;
@@ -38,7 +39,7 @@ interface HomeProps {
 }
 
 export function Home(props: HomeProps) {
-  const { user, workspaceId, thread, turns, agentText, toolUses, approvals, sending, projects, draftProjectId, onDraftProject, onThreadChanged, onSend, onStop, onAnswer, onOpenArtifacts, upload, error, onError, onDismissError } = props;
+  const { user, workspaceId, thread, turns, agentText, toolUses, approvals, sending, projects, draftProjectId, onDraftProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
   const pending = approvals.filter((a) => a.threadId === thread?.id);
   const runningTurn = [...turns].reverse().find((t) => (t.status === "running" || t.status === "queued") && t.codex_turn_id);
   const [recent, setRecent] = useState<Artifact[]>([]);
@@ -99,7 +100,14 @@ export function Home(props: HomeProps) {
               </button>
             )}
           </header>
-          <Conversation turns={turns} agentText={agentText} approvals={pending} onAnswer={onAnswer} />
+          <Conversation
+            turns={turns}
+            agentText={agentText}
+            approvals={pending}
+            onAnswer={onAnswer}
+            onFeedback={onFeedback}
+            onRegenerate={(input) => onSend(input, {})}
+          />
           <div className="composer-dock">
             <Composer
               onSend={onSend}

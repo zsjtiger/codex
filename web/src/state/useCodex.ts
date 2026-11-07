@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, loadStoredToken, setToken } from "../api/client";
-import { attachments as attachmentApi, interruptTurn, threads as threadApi } from "../api/resources";
+import { attachments as attachmentApi, interruptTurn, rateTurn, threads as threadApi } from "../api/resources";
 import type { Environment, LoginResponse, Thread, Turn, User, Workspace } from "../api/types";
 import { type Frame, GatewaySocket, type SocketStatus } from "../realtime/socket";
 import { type ToolUse, mergeToolUses, toolUseFromItem } from "./toolUses";
@@ -255,6 +255,20 @@ export function useCodex() {
     [],
   );
 
+  const setFeedback = useCallback(
+    async (turnId: string, rating: "up" | "down" | null) => {
+      setTurns((prev) => prev.map((turn) => (turn.id === turnId ? { ...turn, feedback: rating } : turn)));
+      try {
+        await rateTurn(turnId, rating);
+      } catch (err) {
+        fail(err);
+        const threadId = activeRef.current;
+        if (threadId) await loadTurns(threadId).catch(fail);
+      }
+    },
+    [fail, loadTurns],
+  );
+
   const answerApproval = useCallback((approval: Approval, result: unknown) => {
     socketRef.current?.answerApproval(approval.requestId, result);
     setApprovals((prev) => prev.filter((a) => a.requestId !== approval.requestId));
@@ -287,6 +301,7 @@ export function useCodex() {
     newChat: () => void selectThread(null),
     sendMessage,
     answerApproval,
+    setFeedback,
   };
 }
 

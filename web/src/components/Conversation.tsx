@@ -1,6 +1,83 @@
+import { useEffect, useRef, useState } from "react";
 import { MarkdownView } from "./Markdown";
+import { CopyIcon, RetryIcon, SpeakIcon, ThumbDownIcon, ThumbUpIcon } from "./icons";
 import type { Approval } from "../state/useCodex";
 import type { Turn } from "../api/types";
+
+/** "just now", "5 min ago", "3 h ago", or the date for older replies. */
+function relativeTime(iso: string): string {
+  const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} h ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+interface ReplyActionsProps {
+  turn: Turn;
+  reply: string;
+  onFeedback: (turnId: string, rating: "up" | "down" | null) => void;
+  onRegenerate: (input: string) => void;
+}
+
+/** Copy, read aloud, rate, and regenerate for an assistant reply. */
+function ReplyActions({ turn, reply, onFeedback, onRegenerate }: ReplyActionsProps) {
+  const [copied, setCopied] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const timer = useRef<number | undefined>(undefined);
+
+  useEffect(() => () => window.speechSynthesis?.cancel(), []);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(reply);
+      setCopied(true);
+      window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard access can be refused; the reply stays selectable.
+    }
+  };
+
+  const speak = () => {
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+    if (speaking) {
+      synth.cancel();
+      setSpeaking(false);
+      return;
+    }
+    const utterance = new SpeechSynthesisUtterance(reply);
+    utterance.onend = () => setSpeaking(false);
+    utterance.onerror = () => setSpeaking(false);
+    setSpeaking(true);
+    synth.speak(utterance);
+  };
+
+  const rate = (rating: "up" | "down") => onFeedback(turn.id, turn.feedback === rating ? null : rating);
+  const when = turn.completed_at ?? turn.created_at;
+
+  return (
+    <div className="reply-actions">
+      <button type="button" className="reply-action" onClick={copy} aria-label={copied ? "Copied" : "Copy"} title={copied ? "Copied" : "Copy"}>
+        <CopyIcon />
+      </button>
+      <button type="button" className={`reply-action ${speaking ? "reply-action-on" : ""}`} onClick={speak} aria-pressed={speaking} aria-label="Read aloud" title="Read aloud">
+        <SpeakIcon />
+      </button>
+      <button type="button" className={`reply-action ${turn.feedback === "up" ? "reply-action-on" : ""}`} onClick={() => rate("up")} aria-pressed={turn.feedback === "up"} aria-label="Good response" title="Good response">
+        <ThumbUpIcon />
+      </button>
+      <button type="button" className={`reply-action ${turn.feedback === "down" ? "reply-action-on" : ""}`} onClick={() => rate("down")} aria-pressed={turn.feedback === "down"} aria-label="Bad response" title="Bad response">
+        <ThumbDownIcon />
+      </button>
+      <button type="button" className="reply-action" onClick={() => onRegenerate(turn.input)} aria-label="Retry" title="Retry">
+        <RetryIcon />
+      </button>
+      <span className="reply-time muted">{relativeTime(when)}</span>
+    </div>
+  );
+}
 
 /** Answers offered for each approval kind. Each result is the app-server response shape. */
 function choicesFor(method: string): { label: string; result: unknown }[] {
@@ -32,9 +109,11 @@ interface ConversationProps {
   agentText: Record<string, string>;
   approvals: Approval[];
   onAnswer: (approval: Approval, result: unknown) => void;
+  onFeedback: (turnId: string, rating: "up" | "down" | null) => void;
+  onRegenerate: (input: string) => void;
 }
 
-export function Conversation({ turns, agentText, approvals, onAnswer }: ConversationProps) {
+export function Conversation({ turns, agentText, approvals, onAnswer, onFeedback, onRegenerate }: ConversationProps) {
   return (
     <div className="conversation">
       {turns.map((turn) => {
@@ -44,9 +123,12 @@ export function Conversation({ turns, agentText, approvals, onAnswer }: Conversa
           <div className="turn" key={turn.id}>
             <div className="bubble user">{turn.input}</div>
             {reply && (
-              <div className="bubble agent">
-                <MarkdownView source={reply} />
-              </div>
+              <>
+                <div className="bubble agent">
+                  <MarkdownView source={reply} />
+                </div>
+                {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} />}
+              </>
             )}
             <div className={`turn-status status-${turn.status}`}>
               {turn.status === "completed" ? "Done" : turn.status}

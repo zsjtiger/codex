@@ -174,6 +174,7 @@ export function App() {
             onSend={(text, options) => void codex.sendMessage(text, options)}
             onStop={(turnId) => void codex.interrupt(turnId)}
             onAnswer={codex.answerApproval}
+            onFeedback={codex.setFeedback}
             onOpenArtifacts={() => setView("artifacts")}
             upload={codex.uploadAttachment}
             error={error}

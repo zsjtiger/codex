@@ -61,3 +61,18 @@ export const WaveIcon = (p: IconProps) => (
 export const SparkIcon = (p: IconProps) => (
   <svg {...base({ width: 26, height: 26, ...p })} fill="currentColor" stroke="none"><path d="M12 2l1.6 6.4L20 10l-6.4 1.6L12 18l-1.6-6.4L4 10l6.4-1.6z" /></svg>
 );
+export const CopyIcon = (p: IconProps) => (
+  <svg {...base(p)}><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>
+);
+export const SpeakIcon = (p: IconProps) => (
+  <svg {...base(p)}><path d="M4 9v6h4l5 4V5L8 9H4z" /><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /></svg>
+);
+export const ThumbUpIcon = (p: IconProps) => (
+  <svg {...base(p)}><path d="M7 11v9H4v-9h3zM7 11l4-8c1.5 0 2.5 1 2.4 2.5L13 9h5.5a2 2 0 0 1 2 2.3l-1.2 6.5A2 2 0 0 1 17.3 20H7" /></svg>
+);
+export const ThumbDownIcon = (p: IconProps) => (
+  <svg {...base(p)}><path d="M17 13V4h3v9h-3zM17 13l-4 8c-1.5 0-2.5-1-2.4-2.5L11 15H5.5a2 2 0 0 1-2-2.3l1.2-6.5A2 2 0 0 1 6.7 4H17" /></svg>
+);
+export const RetryIcon = (p: IconProps) => (
+  <svg {...base(p)}><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6" /><path d="M3.5 4v4.5H8" /></svg>
+);
