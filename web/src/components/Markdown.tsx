@@ -1,6 +1,48 @@
+import hljs from "highlight.js/lib/core";
+import bash from "highlight.js/lib/languages/bash";
+import c from "highlight.js/lib/languages/c";
+import cpp from "highlight.js/lib/languages/cpp";
+import css from "highlight.js/lib/languages/css";
+import go from "highlight.js/lib/languages/go";
+import java from "highlight.js/lib/languages/java";
+import javascript from "highlight.js/lib/languages/javascript";
+import json from "highlight.js/lib/languages/json";
+import markdown from "highlight.js/lib/languages/markdown";
+import python from "highlight.js/lib/languages/python";
+import rust from "highlight.js/lib/languages/rust";
+import sql from "highlight.js/lib/languages/sql";
+import typescript from "highlight.js/lib/languages/typescript";
+import xml from "highlight.js/lib/languages/xml";
+import yaml from "highlight.js/lib/languages/yaml";
 import katex from "katex";
 import "katex/dist/katex.min.css";
 import { type ReactNode } from "react";
+
+// Only these languages are highlighted; other code blocks stay plain text.
+[
+  ["bash", bash],
+  ["c", c],
+  ["cpp", cpp],
+  ["css", css],
+  ["go", go],
+  ["java", java],
+  ["javascript", javascript],
+  ["json", json],
+  ["markdown", markdown],
+  ["python", python],
+  ["rust", rust],
+  ["sql", sql],
+  ["typescript", typescript],
+  ["xml", xml],
+  ["yaml", yaml],
+].forEach(([name, language]) => hljs.registerLanguage(name as string, language as Parameters<typeof hljs.registerLanguage>[1]));
+
+/** Highlighted code as HTML. highlight.js escapes the source, so the output is safe to insert. */
+function highlightCode(text: string, lang: string): { html: string; known: boolean } {
+  const language = lang.toLowerCase();
+  if (!hljs.getLanguage(language)) return { html: "", known: false };
+  return { html: hljs.highlight(text, { language, ignoreIllegals: true }).value, known: true };
+}
 
 export interface Heading {
   id: string;
@@ -474,6 +516,14 @@ export function MarkdownView({ source }: { source: string }) {
                     <code>{block.text}</code>
                   </pre>
                 </div>
+              );
+            }
+            const highlighted = highlightCode(block.text, block.lang);
+            if (highlighted.known) {
+              return (
+                <pre key={key} className={`code-block language-${block.lang.toLowerCase()}`}>
+                  <code dangerouslySetInnerHTML={{ __html: highlighted.html }} />
+                </pre>
               );
             }
             return (

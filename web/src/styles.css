@@ -486,3 +486,21 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .thinking-reasoning { white-space: pre-wrap; line-height: 1.55; margin-bottom: 8px; }
 .thinking-steps { list-style: none; margin: 0; padding: 0; }
 .thinking-steps li { padding: 3px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Syntax colours for highlighted code blocks (works in light and dark themes) */
+.code-block .hljs-keyword, .code-block .hljs-built_in, .code-block .hljs-selector-tag { color: #9333ea; }
+.code-block .hljs-string, .code-block .hljs-regexp, .code-block .hljs-addition { color: #15803d; }
+.code-block .hljs-number, .code-block .hljs-literal, .code-block .hljs-symbol { color: #b45309; }
+.code-block .hljs-title, .code-block .hljs-title.function_, .code-block .hljs-section { color: #1d4ed8; }
+.code-block .hljs-comment, .code-block .hljs-quote { color: var(--text-muted); font-style: italic; }
+.code-block .hljs-type, .code-block .hljs-class .hljs-title, .code-block .hljs-attr { color: #0e7490; }
+.code-block .hljs-variable, .code-block .hljs-params, .code-block .hljs-meta { color: var(--text); }
+.code-block .hljs-deletion { color: #b91c1c; }
+@media (prefers-color-scheme: dark) {
+  .code-block .hljs-keyword, .code-block .hljs-built_in, .code-block .hljs-selector-tag { color: #c4b5fd; }
+  .code-block .hljs-string, .code-block .hljs-regexp, .code-block .hljs-addition { color: #86efac; }
+  .code-block .hljs-number, .code-block .hljs-literal, .code-block .hljs-symbol { color: #fcd34d; }
+  .code-block .hljs-title, .code-block .hljs-title.function_, .code-block .hljs-section { color: #93c5fd; }
+  .code-block .hljs-type, .code-block .hljs-class .hljs-title, .code-block .hljs-attr { color: #67e8f9; }
+  .code-block .hljs-deletion { color: #fca5a5; }
+}
