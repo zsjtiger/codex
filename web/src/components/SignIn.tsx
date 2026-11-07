@@ -2,52 +2,94 @@ import { useState } from "react";
 import { ApiError } from "../api/client";
 import { SparkIcon } from "./icons";
 
-export function SignIn({ onSignIn }: { onSignIn: (email: string) => Promise<void> }) {
+interface SignInProps {
+  onSignIn: (username: string, password: string) => Promise<void>;
+  onRegister: (details: { username: string; email: string; password: string; display_name: string }) => Promise<void>;
+}
+
+/** Sign in with a username and password, or create an account. */
+export function SignIn({ onSignIn, onRegister }: SignInProps) {
+  const [mode, setMode] = useState<"signin" | "register">("signin");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const registering = mode === "register";
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (registering) {
+        await onRegister({ username: username.trim(), email: email.trim(), password, display_name: displayName.trim() || username.trim() });
+      } else {
+        await onSignIn(username.trim(), password);
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Sign-in failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <main className="signin">
       <form
         className="signin-card"
-        onSubmit={async (event) => {
+        onSubmit={(event) => {
           event.preventDefault();
-          setBusy(true);
-          setError(null);
-          try {
-            await onSignIn(email.trim());
-          } catch (err) {
-            setError(
-              err instanceof ApiError && err.status === 404
-                ? "Development sign-in is disabled on this gateway. Start it with GATEWAY_DEV_LOGIN=1."
-                : err instanceof Error
-                  ? err.message
-                  : "Sign-in failed.",
-            );
-          } finally {
-            setBusy(false);
-          }
+          void submit();
         }}
       >
         <SparkIcon className="signin-mark" />
-        <h1>Sign in</h1>
+        <h1>{registering ? "Create account" : "Sign in"}</h1>
         <label className="signin-field">
-          <span>Email</span>
+          <span>Username</span>
           <input
-            type="email"
             required
-            autoComplete="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="you@example.com"
+            autoComplete="username"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            placeholder="your-name"
+            pattern="[A-Za-z0-9_.\-]{3,32}"
+            title="3-32 letters, digits, _, . or -"
           />
         </label>
-        <button className="primary" type="submit" disabled={busy || !email.trim()}>
-          {busy ? "Signing in…" : "Continue"}
+        {registering && (
+          <>
+            <label className="signin-field">
+              <span>Email</span>
+              <input type="email" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
+            </label>
+            <label className="signin-field">
+              <span>Display name</span>
+              <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Optional" />
+            </label>
+          </>
+        )}
+        <label className="signin-field">
+          <span>Password</span>
+          <input
+            type="password"
+            required
+            minLength={8}
+            autoComplete={registering ? "new-password" : "current-password"}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+        </label>
+        <button className="primary" type="submit" disabled={busy || !username.trim() || !password}>
+          {busy ? "Please wait…" : registering ? "Create account" : "Sign in"}
         </button>
         {error && <p className="banner error">{error}</p>}
-        <p className="signin-note">Development sign-in: the gateway does not check a password.</p>
+        <p className="signin-note">
+          {registering ? "Already have an account? " : "No account yet? "}
+          <button type="button" className="link-button" onClick={() => { setMode(registering ? "signin" : "register"); setError(null); }}>
+            {registering ? "Sign in" : "Create one"}
+          </button>
+        </p>
       </form>
     </main>
   );

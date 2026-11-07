@@ -68,7 +68,7 @@ export function App() {
   };
 
   if (codex.checking) return <div className="loading">Loading…</div>;
-  if (!codex.user || !workspaceId) return <SignIn onSignIn={codex.signIn} />;
+  if (!codex.user || !workspaceId) return <SignIn onSignIn={codex.signIn} onRegister={codex.register} />;
 
   const error = notice ?? codex.error;
   const dismiss = () => {

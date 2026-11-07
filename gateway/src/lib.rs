@@ -8,6 +8,7 @@ pub mod auth;
 pub mod authz;
 pub mod config;
 pub mod error;
+pub mod password;
 pub mod ratelimit;
 pub mod routes;
 pub mod runtime;

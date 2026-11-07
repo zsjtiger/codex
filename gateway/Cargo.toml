@@ -8,6 +8,7 @@ publish = false
 [workspace]
 
 [dependencies]
+argon2 = "0.5"
 aws-config = "1"
 aws-sdk-s3 = "1"
 axum = { version = "0.8", features = ["ws"] }

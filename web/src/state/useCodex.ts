@@ -181,9 +181,19 @@ export function useCodex() {
   }, [bootstrap, fail]);
 
   const signIn = useCallback(
-    async (email: string) => {
+    async (username: string, password: string) => {
       setError(null);
-      const session = await api<LoginResponse>("POST", "/auth/sessions", { email });
+      const session = await api<LoginResponse>("POST", "/auth/sessions", { username, password });
+      setToken(session.token);
+      await bootstrap();
+    },
+    [bootstrap],
+  );
+
+  const register = useCallback(
+    async (details: { username: string; email: string; password: string; display_name: string }) => {
+      setError(null);
+      const session = await api<LoginResponse>("POST", "/auth/users", details);
       setToken(session.token);
       await bootstrap();
     },
@@ -321,6 +331,7 @@ export function useCodex() {
     uploadAttachment,
     reportError: fail,
     signIn,
+    register,
     signOut,
     selectThread,
     newChat: () => void selectThread(null),
