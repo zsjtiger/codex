@@ -556,7 +556,8 @@ async fn text_attachments_are_added_to_the_turn_input(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
-    let (status, _) = call(
+    // Binary files are accepted: they are listed on the message, but their contents stay out of the model input.
+    let (status, image_turn) = call(
         &state,
         "POST",
         &turns,
@@ -564,11 +565,7 @@ async fn text_attachments_are_added_to_the_turn_input(pool: PgPool) {
         Some(json!({ "input": "hi", "attachment_ids": [image_id] })),
     )
     .await;
-    assert_eq!(
-        status,
-        StatusCode::BAD_REQUEST,
-        "non-text attachments are refused"
-    );
+    assert_eq!(status, StatusCode::CREATED, "{image_turn}");
 
     let (status, turn) = call(
         &state,
