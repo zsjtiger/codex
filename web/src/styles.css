@@ -466,3 +466,9 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .reply-action:hover { background: var(--hover); color: var(--text); }
 .reply-action-on { color: var(--accent); }
 .reply-time { font-size: 13px; margin-left: 6px; }
+
+/* Thread page: the reply list scrolls, and the composer stays at the bottom of the window */
+.home-thread { flex: 1; min-height: 0; padding-bottom: 0; align-items: stretch; }
+.home-thread .thread-view { flex: 1; min-height: 0; height: 100%; }
+.thread-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+.home-thread .composer-dock { flex-shrink: 0; position: static; }

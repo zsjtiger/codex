@@ -74,7 +74,7 @@ export function Home(props: HomeProps) {
   };
 
   return (
-    <main className={showUsedPanel ? "home home-with-panel" : "home"}>
+    <main className={["home", thread ? "home-thread" : "", showUsedPanel ? "home-with-panel" : ""].filter(Boolean).join(" ")}>
       {error && (
         <p className="banner error" role="alert">
           {error}
@@ -100,14 +100,16 @@ export function Home(props: HomeProps) {
               </button>
             )}
           </header>
-          <Conversation
-            turns={turns}
-            agentText={agentText}
-            approvals={pending}
-            onAnswer={onAnswer}
-            onFeedback={onFeedback}
-            onRegenerate={(input) => onSend(input, {})}
-          />
+          <div className="thread-scroll">
+            <Conversation
+              turns={turns}
+              agentText={agentText}
+              approvals={pending}
+              onAnswer={onAnswer}
+              onFeedback={onFeedback}
+              onRegenerate={(input) => onSend(input, {})}
+            />
+          </div>
           <div className="composer-dock">
             <Composer
               onSend={onSend}
