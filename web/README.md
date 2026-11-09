@@ -5,8 +5,12 @@ in `../gateway` over HTTP and WebSocket.
 
 ## Status
 
-Skeleton only: one page that opens `/ws` and sends a sample JSON-RPC `initialize`
-frame. Nothing is rendered from Codex events yet.
+The app covers the workspace features of the gateway: sign-in with a username and
+password, conversations with live replies (Markdown, math, charts, code highlighting),
+the "Used" panel, file attachments (Markdown, Word, PDF) with a side preview, the
+composer's `/` skill menu, Projects, Artifacts, Scheduled tasks, Customize (skills,
+connectors, plugins), search, and a personal usage dialog. Real model runs need a
+codex runtime configured on the gateway; see `../gateway/README.md`.
 
 ## Run
 
@@ -18,13 +22,19 @@ npm run dev                      # http://localhost:5173, proxies /api, /healthz
 
 Set `GATEWAY_URL` to point the dev proxy elsewhere.
 
-## Layout (planned)
+## Layout
 
 ```
 src/
-├── api/        # REST client and TanStack Query hooks
-├── realtime/   # WebSocket connection, JSON-RPC, reconnection
-├── store/      # Zustand store and event reducer
-├── features/   # threads, approvals, files, terminal
-└── components/ # shared UI
+├── api/          REST client (`client.ts`), typed resources and shared types
+├── realtime/     WebSocket connection to the gateway (`socket.ts`)
+├── state/        `useCodex.ts` holds app state and handles live events;
+│                 `toolUses.ts` maps app-server items to the "Used" panel
+├── components/   screens and widgets: Home, Conversation, Composer, Sidebar,
+│                 SignIn, Preview (side panel), Markdown (safe renderer, KaTeX,
+│                 charts, highlighting), and the Artifacts, Projects, Scheduled,
+│                 Customize, Search and Usage dialogs
+├── data/         mock data used by some views
+└── styles.css    all styles, with light and dark theme variables
 ```
+
