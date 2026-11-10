@@ -128,12 +128,14 @@ export function App() {
           <ProjectsPage
             workspaceId={workspaceId}
             projects={projects}
+            threads={codex.threads}
             reload={reloadProjects}
             canEdit={(p: Project) => canEditOwned(p.created_by)}
             onStartChat={(projectId) => {
               codex.setDraftProjectId(projectId);
               newChat();
             }}
+            onOpenThread={openThread}
             onBack={() => setView("chat")}
             onError={onError}
           />
