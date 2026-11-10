@@ -7,6 +7,7 @@ import type {
   ArtifactKind,
   Attachment,
   ProjectFileHit,
+  ScheduledRun,
   Connector,
   Frequency,
   Project,
@@ -61,6 +62,7 @@ export const scheduled = {
   update: (id: string, body: Partial<TaskInput> & { enabled?: boolean }) =>
     api<ScheduledTask>("PATCH", `/scheduled-tasks/${id}`, body),
   remove: (id: string) => api<void>("DELETE", `/scheduled-tasks/${id}`),
+  runs: (id: string) => api<ScheduledRun[]>("GET", `/scheduled-tasks/${id}/runs`),
   runNow: (id: string) => api<{ thread_id: string }>("POST", `/scheduled-tasks/${id}/run`),
 };
 

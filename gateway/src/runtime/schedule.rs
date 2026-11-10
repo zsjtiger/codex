@@ -119,6 +119,11 @@ pub async fn start_run(
     .bind(thread_id)
     .execute(&mut **tx)
     .await?;
+    sqlx::query("INSERT INTO scheduled_task_runs (task_id, thread_id) VALUES ($1, $2)")
+        .bind(task.id)
+        .bind(thread_id)
+        .execute(&mut **tx)
+        .await?;
     Ok(thread_id)
 }
 

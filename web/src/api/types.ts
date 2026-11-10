@@ -125,6 +125,14 @@ export interface Artifact {
 
 export type Frequency = "hourly" | "daily" | "weekdays" | "weekly";
 
+/** One run of a scheduled task: the chat it started, when it started. */
+export interface ScheduledRun {
+  id: string;
+  thread_id: string | null;
+  started_at: string;
+  title: string | null;
+}
+
 export interface ScheduledTask {
   id: string;
   workspace_id: string;

@@ -79,6 +79,41 @@ pub fn routes() -> Router<AppState> {
             get(get_one).patch(update).delete(delete),
         )
         .route("/scheduled-tasks/{id}/run", post(run_now))
+        .route("/scheduled-tasks/{id}/runs", get(list_runs))
+}
+
+#[derive(Serialize, FromRow)]
+pub struct RunView {
+    pub id: Uuid,
+    pub thread_id: Option<Uuid>,
+    pub started_at: DateTime<Utc>,
+    /// Title of the chat the run started, if it still exists.
+    pub title: Option<String>,
+}
+
+/// The latest runs of a task, newest first.
+async fn list_runs(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<RunView>>, ApiError> {
+    let workspace_id: Uuid =
+        sqlx::query_scalar("SELECT workspace_id FROM scheduled_tasks WHERE id = $1")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await?;
+    require_role(&state.pool, workspace_id, user.id, Role::Member).await?;
+    let runs = sqlx::query_as::<_, RunView>(
+        "SELECT r.id, r.thread_id, r.started_at, t.title
+         FROM scheduled_task_runs r LEFT JOIN threads t ON t.id = r.thread_id
+         WHERE r.task_id = $1
+         ORDER BY r.started_at DESC
+         LIMIT 50",
+    )
+    .bind(id)
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(runs))
 }
 
 const COLUMNS: &str = "id, workspace_id, name, prompt, frequency, time_of_day, weekday, environment_id, project_id, \
