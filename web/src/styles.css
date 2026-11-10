@@ -477,19 +477,23 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .thinking { margin: 0 0 10px; font-size: 14px; color: var(--text-muted); }
 .thinking-toggle { display: inline-flex; align-items: center; gap: 8px; border: none; background: none; padding: 4px 0; cursor: pointer; color: var(--text-muted); font: inherit; }
 .thinking-toggle:hover { color: var(--text); }
-/* Live indicator: three dots that rise in turn while a reply is being thought about */
-.thinking-dots { display: inline-flex; align-items: center; gap: 3px; width: 18px; height: 14px; }
-.thinking-dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); opacity: 0.35; }
-.thinking-dots-live i { animation: dot-rise 1.2s ease-in-out infinite; }
-.thinking-dots-live i:nth-child(2) { animation-delay: 0.15s; }
-.thinking-dots-live i:nth-child(3) { animation-delay: 0.3s; }
-@keyframes dot-rise {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
-  30% { transform: translateY(-4px); opacity: 1; }
+/* Live indicator: three dots orbiting a centre while a reply is being thought about */
+.thinking-dots { position: relative; display: inline-block; width: 16px; height: 16px; flex-shrink: 0; }
+.thinking-dots i { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: var(--accent); }
+.thinking-dots i:nth-child(1) { transform: rotate(0deg) translateY(-6px); }
+.thinking-dots i:nth-child(2) { transform: rotate(120deg) translateY(-6px); }
+.thinking-dots i:nth-child(3) { transform: rotate(240deg) translateY(-6px); }
+.thinking-dots-live { animation: dots-spin 1.6s linear infinite; }
+.thinking-dots-live i { animation: dot-fade 1.6s ease-in-out infinite; }
+.thinking-dots-live i:nth-child(2) { animation-delay: -0.53s; }
+.thinking-dots-live i:nth-child(3) { animation-delay: -1.07s; }
+@keyframes dots-spin { to { transform: rotate(360deg); } }
+@keyframes dot-fade {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .thinking-dots-live i { animation: none; }
-  .thinking-dots-live i { opacity: 0.7; }
+  .thinking-dots-live, .thinking-dots-live i { animation: none; }
 }
 .thinking-chevron { width: 14px; height: 14px; transition: transform 0.15s; }
 .thinking-chevron-open { transform: rotate(180deg); }
