@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { artifacts as artifactApi, skills as skillApi, threads as threadApi } from "../api/resources";
-import type { Artifact, Project, Skill, Thread, Turn, User } from "../api/types";
+import type { Artifact, Environment, Project, Skill, Thread, Turn, User } from "../api/types";
 import type { Activity, Approval, SendOptions } from "../state/useCodex";
 import type { ToolUse } from "../state/toolUses";
 import { Composer } from "./Composer";
@@ -22,6 +22,7 @@ interface HomeProps {
   turns: Turn[];
   agentText: Record<string, string>;
   toolUses: Record<string, ToolUse[]>;
+  environment: Environment | null;
   activity: Record<string, Activity>;
   approvals: Approval[];
   sending: boolean;
@@ -41,7 +42,7 @@ interface HomeProps {
 }
 
 export function Home(props: HomeProps) {
-  const { user, workspaceId, thread, turns, agentText, toolUses, activity, approvals, sending, projects, draftProjectId, onDraftProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
+  const { user, workspaceId, thread, turns, agentText, toolUses, activity, environment, approvals, sending, projects, draftProjectId, onDraftProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
   const pending = approvals.filter((a) => a.threadId === thread?.id);
   const runningTurn = [...turns].reverse().find((t) => (t.status === "running" || t.status === "queued") && t.codex_turn_id);
   const [recent, setRecent] = useState<Artifact[]>([]);
@@ -116,6 +117,7 @@ export function Home(props: HomeProps) {
           </div>
           <div className="composer-dock">
             <Composer
+              environmentId={environment?.id ?? null}
               onSend={onSend}
               onStop={runningTurn ? () => onStop(runningTurn.id) : undefined}
               running={Boolean(runningTurn)}
@@ -137,6 +139,7 @@ export function Home(props: HomeProps) {
             <span>{`${greeting(new Date())}, ${user.display_name}`}</span>
           </h1>
           <Composer
+            environmentId={environment?.id ?? null}
             onSend={onSend}
             disabled={sending}
             projects={projects}

@@ -167,6 +167,7 @@ export function App() {
             turns={codex.turns}
             agentText={codex.agentText}
             toolUses={codex.toolUses}
+            environment={codex.environment}
             activity={codex.activity}
             approvals={codex.approvals}
             sending={codex.sending}

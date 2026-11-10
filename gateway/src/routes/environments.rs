@@ -52,6 +52,61 @@ pub fn routes() -> Router<AppState> {
             "/environments/{id}",
             get(get_one).patch(update).delete(delete),
         )
+        .route("/environments/{id}/models", get(models))
+}
+
+#[derive(Serialize)]
+pub struct ModelOption {
+    /// The name to pass as `model` when starting a turn.
+    pub model: String,
+    pub display_name: String,
+    pub is_default: bool,
+    /// Reasoning efforts this model accepts, for the effort menu.
+    pub efforts: Vec<String>,
+}
+
+/// Models the environment's codex runtime offers, as reported by app-server's `model/list`.
+/// Hidden models are left out. Members can read the list.
+async fn models(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<ModelOption>>, ApiError> {
+    let env = load(&state.pool, id).await?;
+    require_role(&state.pool, env.workspace_id, user.id, Role::Member).await?;
+    let lease = state
+        .runtime
+        .lease(id, env.endpoint.as_deref())
+        .await
+        .map_err(|err| ApiError::BadRequest(err.to_string()))?;
+    let response = lease
+        .request("model/list", serde_json::json!({}))
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("could not list models: {err}")))?;
+    let options = response["data"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|m| !m["hidden"].as_bool().unwrap_or(false))
+        .map(|m| ModelOption {
+            model: m["model"].as_str().unwrap_or_default().to_string(),
+            display_name: m["displayName"].as_str().unwrap_or_default().to_string(),
+            is_default: m["isDefault"].as_bool().unwrap_or(false),
+            efforts: m["supportedReasoningEfforts"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|e| {
+                    e["reasoningEffort"]
+                        .as_str()
+                        .or_else(|| e.as_str())
+                        .map(str::to_string)
+                })
+                .collect(),
+        })
+        .filter(|m| !m.model.is_empty())
+        .collect();
+    Ok(Json(options))
 }
 
 const COLUMNS: &str = "id, workspace_id, name, status, endpoint, created_at, updated_at";

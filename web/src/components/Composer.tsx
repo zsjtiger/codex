@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { type ModelOption, environments as environmentApi } from "../api/resources";
 import type { Project, Skill } from "../api/types";
 import type { SendOptions } from "../state/useCodex";
 import { ChevronIcon, PlusIcon } from "./icons";
@@ -14,6 +15,8 @@ function attachmentLimit(file: File): number {
 }
 
 interface ComposerProps {
+  /** The environment whose codex runtime offers the models. */
+  environmentId?: string | null;
   onSend: (text: string, options: SendOptions) => void;
   onStop?: () => void;
   running?: boolean;
@@ -47,12 +50,32 @@ interface Pending {
  * files as attachments, and offers Stop while a turn is running.
  */
 export function Composer(props: ComposerProps) {
-  const { onSend, onStop, running, disabled, placeholder = "How can I help you today?", projects, projectId, onProjectChange, skills, upload, onError } = props;
+  const { environmentId, onSend, onStop, running, disabled, placeholder = "How can I help you today?", projects, projectId, onProjectChange, skills, upload, onError } = props;
   const [draft, setDraft] = useState("");
   const [menuIndex, setMenuIndex] = useState(0);
   const [menuDismissed, setMenuDismissed] = useState(false);
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
+  const [models, setModels] = useState<ModelOption[]>([]);
+
+  useEffect(() => {
+    let current = true;
+    if (!environmentId) return;
+    environmentApi
+      .models(environmentId)
+      .then((list) => current && setModels(list))
+      .catch(() => current && setModels([]));
+    return () => {
+      current = false;
+    };
+  }, [environmentId]);
+
+  // Effort options follow the chosen model. A default model uses the first listed model's.
+  const chosen = models.find((m) => m.model === model) ?? models.find((m) => m.is_default);
+  const efforts = chosen?.efforts ?? ["low", "medium", "high"];
+  useEffect(() => {
+    if (effort && !efforts.includes(effort)) setEffort("");
+  }, [efforts, effort]);
   const [pending, setPending] = useState<Pending[]>([]);
   const [uploading, setUploading] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -266,19 +289,21 @@ export function Composer(props: ComposerProps) {
           <span />
         )}
         <div className="composer-options-right">
-          <input
-            className="pill-input"
-            value={model}
-            onChange={(event) => setModel(event.target.value)}
-            placeholder="Model (default)"
-            aria-label="Model"
-            maxLength={100}
-          />
+          <select className="pill-select" value={model} onChange={(event) => setModel(event.target.value)} aria-label="Model">
+            <option value="">Model (default)</option>
+            {models.map((option) => (
+              <option key={option.model} value={option.model}>
+                {option.display_name || option.model}
+              </option>
+            ))}
+          </select>
           <select className="pill-select" value={effort} onChange={(event) => setEffort(event.target.value)} aria-label="Reasoning effort">
             <option value="">Effort (default)</option>
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
+            {efforts.map((level) => (
+              <option key={level} value={level}>
+                {level.charAt(0).toUpperCase() + level.slice(1)}
+              </option>
+            ))}
           </select>
         </div>
       </div>

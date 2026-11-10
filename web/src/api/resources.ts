@@ -66,6 +66,18 @@ export const scheduled = {
 export const search = (ws: string, q: string) =>
   api<SearchResults>("GET", `/workspaces/${ws}/search?q=${encodeURIComponent(q)}`);
 
+/** A model the environment's codex runtime offers. */
+export interface ModelOption {
+  model: string;
+  display_name: string;
+  is_default: boolean;
+  efforts: string[];
+}
+
+export const environments = {
+  models: (id: string) => api<ModelOption[]>("GET", `/environments/${id}/models`),
+};
+
 export const threads = {
   create: (ws: string, body: { title: string; environment_id: string; project_id?: string | null }) =>
     api<Thread>("POST", `/workspaces/${ws}/threads`, body),
