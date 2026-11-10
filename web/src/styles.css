@@ -477,7 +477,7 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .thinking { margin: 0 0 10px; font-size: 14px; color: var(--text-muted); }
 .thinking-toggle { display: inline-flex; align-items: center; gap: 8px; border: none; background: none; padding: 4px 0; cursor: pointer; color: var(--text-muted); font: inherit; }
 .thinking-toggle:hover { color: var(--text); }
-/* Live indicators: three dots that rise in turn, and a shimmer across the running label */
+/* Live indicator: three dots that rise in turn while a reply is being thought about */
 .thinking-dots { display: inline-flex; align-items: center; gap: 3px; width: 18px; height: 14px; }
 .thinking-dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); opacity: 0.35; }
 .thinking-dots-live i { animation: dot-rise 1.2s ease-in-out infinite; }
@@ -487,17 +487,8 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
   0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
   30% { transform: translateY(-4px); opacity: 1; }
 }
-.status-shimmer {
-  background: linear-gradient(90deg, var(--unread) 0%, var(--unread) 35%, var(--text) 50%, var(--unread) 65%, var(--unread) 100%);
-  background-size: 250% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: shimmer 1.8s linear infinite;
-}
-@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) {
-  .thinking-dots-live i, .status-shimmer { animation: none; }
+  .thinking-dots-live i { animation: none; }
   .thinking-dots-live i { opacity: 0.7; }
 }
 .thinking-chevron { width: 14px; height: 14px; transition: transform 0.15s; }

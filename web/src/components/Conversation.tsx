@@ -210,11 +210,7 @@ export function Conversation({ turns, agentText, activity, approvals, onAnswer, 
               </>
             )}
             <div className={`turn-status status-${turn.status}`}>
-              {turn.status === "running" || turn.status === "queued" ? (
-                <span className="status-shimmer">{turn.status}</span>
-              ) : (
-                turn.status === "completed" ? "Done" : turn.status
-              )}
+              {turn.status === "completed" ? "Done" : turn.status === "running" || turn.status === "queued" ? null : turn.status}
               {turn.error && <span className="turn-error"> · {turn.error}</span>}
             </div>
           </div>
