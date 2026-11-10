@@ -101,24 +101,31 @@ export function contentTypeOf(file: { name: string; type: string }): string {
   if (name.endsWith(".md") || name.endsWith(".markdown")) return "text/markdown";
   if (name.endsWith(".pdf")) return "application/pdf";
   if (name.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (name.endsWith(".pptx")) return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+  if (name.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
   return "application/octet-stream";
+}
+
+/** GETs a path under the API and returns its bytes, with the session token when there is one. */
+async function fetchBytes(path: string): Promise<ArrayBuffer> {
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers.authorization = `Bearer ${token}`;
+  const response = await fetch(`/api/v1${path}`, { headers });
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new ApiError(response.status, data?.error?.code ?? "error", data?.error?.message ?? response.statusText);
+  }
+  return response.arrayBuffer();
 }
 
 export const attachments = {
   create: (ws: string, body: { filename: string; content_type: string; size_bytes: number }) =>
     api<Attachment>("POST", `/workspaces/${ws}/attachments`, body),
   /** The stored bytes of an attachment, for previewing. */
-  download: async (id: string): Promise<ArrayBuffer> => {
-    const headers: Record<string, string> = {};
-    const token = getToken();
-    if (token) headers.authorization = `Bearer ${token}`;
-    const response = await fetch(`/api/v1/attachments/${id}/content`, { headers });
-    if (!response.ok) {
-      const data = await response.json().catch(() => null);
-      throw new ApiError(response.status, data?.error?.code ?? "error", data?.error?.message ?? response.statusText);
-    }
-    return response.arrayBuffer();
-  },
+  download: (id: string): Promise<ArrayBuffer> => fetchBytes(`/attachments/${id}/content`),
+  /** An Office document (pptx, docx, xlsx) converted to PDF by the gateway, for previewing. */
+  previewPdf: (id: string): Promise<ArrayBuffer> => fetchBytes(`/attachments/${id}/preview`),
   upload: async (id: string, file: File) => {
     const headers: Record<string, string> = { "content-type": contentTypeOf(file) };
     const token = getToken();

@@ -38,11 +38,13 @@ function convertWordToMarkdown(bytes: ArrayBuffer): Promise<string> {
 }
 
 /** The kinds of file the panel can show, from the stored content type and name. */
-type FileKind = "pdf" | "word" | "markdown" | "text" | "other";
+type FileKind = "pdf" | "word" | "slides" | "sheet" | "markdown" | "text" | "other";
 
 function fileKind(contentType: string, title: string): FileKind {
   const name = title.toLowerCase();
   if (contentType === "application/pdf" || name.endsWith(".pdf")) return "pdf";
+  if (contentType.includes("presentationml") || name.endsWith(".pptx")) return "slides";
+  if (contentType.includes("spreadsheetml") || name.endsWith(".xlsx")) return "sheet";
   if (contentType.includes("wordprocessingml") || name.endsWith(".docx")) return "word";
   if (contentType === "text/markdown" || name.endsWith(".md") || name.endsWith(".markdown")) return "markdown";
   if (contentType.startsWith("text/") || contentType === "application/json") return "text";
@@ -59,20 +61,21 @@ function FilePreview({ attachmentId, title, contentType }: { attachmentId: strin
     let current = true;
     let objectUrl: string | null = null;
     setState({ status: "loading" });
-    attachmentApi
-      .download(attachmentId)
+    const kind = fileKind(contentType, title);
+    // Slides and sheets are converted to PDF by the gateway; the original bytes are not needed.
+    const load = kind === "slides" || kind === "sheet" ? attachmentApi.previewPdf(attachmentId) : attachmentApi.download(attachmentId);
+    load
       .then(async (bytes) => {
-        const kind = fileKind(contentType, title);
         let view: ReactViewState;
-        if (kind === "pdf") {
+        if (kind === "pdf" || kind === "slides" || kind === "sheet") {
           objectUrl = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
-          view = { kind, url: objectUrl };
+          view = { kind: "pdf", url: objectUrl };
         } else if (kind === "word") {
           const result = await convertWordToMarkdown(bytes);
           view = { kind, markdown: result };
         } else {
           const text = new TextDecoder().decode(bytes);
-          view = { kind, text };
+          view = { kind: kind === "markdown" ? "markdown" : "text", text };
         }
         if (current) setState({ status: "ready", view });
       })
@@ -156,5 +159,5 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
 
 function contentLabel(contentType: string, title: string): string {
   const kind = fileKind(contentType, title);
-  return { pdf: "PDF", word: "Word", markdown: "Markdown", text: "text", other: "file" }[kind];
+  return { pdf: "PDF", word: "Word", slides: "PowerPoint", sheet: "Excel", markdown: "Markdown", text: "text", other: "file" }[kind];
 }

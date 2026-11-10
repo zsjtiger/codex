@@ -7,6 +7,7 @@
 
 pub mod dispatch;
 pub mod hub;
+pub mod outputs;
 pub mod rpc;
 pub mod schedule;
 

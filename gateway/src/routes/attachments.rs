@@ -66,6 +66,67 @@ pub fn routes() -> Router<AppState> {
                 .get(download)
                 .layer(DefaultBodyLimit::max(MAX_ATTACHMENT_BYTES as usize)),
         )
+        .route("/attachments/{id}/preview", get(preview))
+}
+
+/// Office formats LibreOffice can convert to PDF for the side preview.
+const OFFICE_EXTENSIONS: &[&str] = &["pptx", "docx", "xlsx"];
+
+/// Shows an Office document as PDF. Converted on each request with LibreOffice; the
+/// original bytes are never changed.
+async fn preview(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Response, ApiError> {
+    let (workspace_id, storage_key, filename, uploaded): (Uuid, String, String, bool) = sqlx::query_as(
+        "SELECT workspace_id, storage_key, filename, uploaded FROM attachments WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?;
+    require_role(&state.pool, workspace_id, user.id, Role::Member).await?;
+    let ext = filename.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    if !uploaded || !OFFICE_EXTENSIONS.contains(&ext.as_str()) {
+        return Err(ApiError::NotFound);
+    }
+    let bytes = state.storage.get(&storage_key).await.map_err(|err| {
+        tracing::error!(%err, "could not read attachment");
+        ApiError::Internal
+    })?;
+    let pdf = convert_to_pdf(&ext, bytes).await.map_err(|err| {
+        tracing::error!(%err, "could not convert attachment for preview");
+        ApiError::Internal
+    })?;
+    Ok(([(header::CONTENT_TYPE, "application/pdf")], pdf).into_response())
+}
+
+/// Runs LibreOffice in a fresh folder with its own profile. The input name is fixed, so
+/// the uploaded filename never reaches the command line.
+async fn convert_to_pdf(ext: &str, bytes: Vec<u8>) -> Result<Vec<u8>, String> {
+    let dir = std::env::temp_dir().join("codex-previews").join(Uuid::new_v4().to_string());
+    std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+    let input = dir.join(format!("document.{ext}"));
+    let result = async {
+        std::fs::write(&input, &bytes).map_err(|err| err.to_string())?;
+        let run = tokio::process::Command::new("soffice")
+            .arg(format!("-env:UserInstallation=file://{}/profile", dir.display()))
+            .args(["--headless", "--convert-to", "pdf", "--outdir"])
+            .arg(&dir)
+            .arg(&input)
+            .output();
+        let output = tokio::time::timeout(std::time::Duration::from_secs(120), run)
+            .await
+            .map_err(|_| "conversion timed out".to_string())?
+            .map_err(|err| format!("could not start soffice: {err}"))?;
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).into_owned());
+        }
+        std::fs::read(dir.join("document.pdf")).map_err(|err| err.to_string())
+    }
+    .await;
+    let _ = std::fs::remove_dir_all(&dir);
+    result
 }
 
 const COLUMNS: &str = "id, workspace_id, thread_id, uploaded_by, filename, content_type, size_bytes, \

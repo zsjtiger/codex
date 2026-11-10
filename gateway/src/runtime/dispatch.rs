@@ -10,7 +10,7 @@ use sqlx::PgPool;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
-use super::{Notification, RpcError, RuntimeError};
+use super::{Notification, RpcError, RuntimeError, outputs};
 use crate::{routes::usage::record_usage, state::AppState};
 
 /// Longest a single turn may run before the gateway gives up waiting for it.
@@ -216,10 +216,19 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
 
     // Subscribe before starting the turn so no notification can be missed.
     let mut events = lease.subscribe();
+    // Local turns are told where to save files for the user; those files are kept with the reply.
+    let output_dir = (turn.endpoint.is_none()).then(|| outputs::output_dir(turn_id));
+    let mut text = with_skills(&state.pool, &turn.skill_ids, &turn.input).await?;
+    if let Some(dir) = &output_dir {
+        if let Err(err) = std::fs::create_dir_all(dir) {
+            tracing::warn!(%err, "could not create the turn's output folder");
+        }
+        text = format!("{}\n\n{text}", outputs::prompt_note(dir));
+    }
     let mut params = json!({
         "threadId": codex_thread_id,
         "approvalPolicy": APPROVAL_POLICY,
-        "input": [{ "type": "text", "text": with_skills(&state.pool, &turn.skill_ids, &turn.input).await? }],
+        "input": [{ "type": "text", "text": text }],
     });
     if let Some(model) = &turn.model {
         params["model"] = json!(model);
@@ -269,6 +278,10 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
     .bind(thread_state)
     .execute(&state.pool)
     .await?;
+
+    if let Some(dir) = &output_dir {
+        outputs::collect(state, turn.workspace_id, turn.thread_id, turn_id, dir).await?;
+    }
 
     let (input_tokens, output_tokens) = outcome.usage;
     if input_tokens > 0 || output_tokens > 0 {

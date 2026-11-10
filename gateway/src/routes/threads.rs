@@ -99,6 +99,10 @@ pub struct TurnView {
     #[serde(skip)]
     #[sqlx(default)]
     pub attachment_ids: Vec<Uuid>,
+    /// Files the agent produced for the turn; shown after the attachments sent with it.
+    #[serde(skip)]
+    #[sqlx(default)]
+    pub output_attachment_ids: Vec<Uuid>,
     pub id: Uuid,
     pub thread_id: Uuid,
     pub seq: i32,
@@ -204,7 +208,7 @@ fn is_text(content_type: &str) -> bool {
     content_type.starts_with("text/") || content_type == "application/json"
 }
 
-const TURN_COLUMNS: &str = "id, thread_id, seq, status, input, error, codex_turn_id, model, effort, reply, feedback, attachment_ids, created_by, created_at, completed_at";
+const TURN_COLUMNS: &str = "id, thread_id, seq, status, input, error, codex_turn_id, model, effort, reply, feedback, attachment_ids, output_attachment_ids, created_by, created_at, completed_at";
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -462,7 +466,7 @@ async fn list_turns(
         .await?;
     let ids: Vec<Uuid> = rows
         .iter()
-        .flat_map(|turn| turn.attachment_ids.iter().copied())
+        .flat_map(|turn| turn.attachment_ids.iter().chain(&turn.output_attachment_ids).copied())
         .collect();
     if !ids.is_empty() {
         let found = sqlx::query_as::<_, AttachmentRef>(
@@ -475,6 +479,7 @@ async fn list_turns(
             turn.attachments = turn
                 .attachment_ids
                 .iter()
+                .chain(&turn.output_attachment_ids)
                 .filter_map(|aid| found.iter().find(|a| a.id == *aid).cloned())
                 .collect();
         }
