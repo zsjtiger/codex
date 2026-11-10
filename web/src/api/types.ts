@@ -180,6 +180,12 @@ export interface MemoryNote {
   updated_at: string;
 }
 
+export interface MemoryImportResult {
+  added: number;
+  duplicates: number;
+  skipped: number;
+}
+
 export interface MemoryView {
   enabled: boolean;
   notes: MemoryNote[];

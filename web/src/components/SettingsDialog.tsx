@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { memory as memoryApi } from "../api/resources";
-import type { MemoryNote, User } from "../api/types";
+import type { MemoryImportResult, MemoryNote, User } from "../api/types";
+
+/** Asked of claude.ai or Codex so their memory can be pasted here. */
+const IMPORT_PROMPT =
+  "List everything you remember about me as concise bullet points, one fact per line, each starting with \"- \". " +
+  "Include my preferences, my work and projects, and recurring context. Output only the list.";
 
 interface SettingsDialogProps {
   user: User;
@@ -18,6 +23,9 @@ export function SettingsDialog({ user, onClose, onError }: SettingsDialogProps) 
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [pasted, setPasted] = useState("");
+  const [importResult, setImportResult] = useState<MemoryImportResult | null>(null);
 
   useEffect(() => {
     if (section !== "memory") return;
@@ -80,6 +88,29 @@ export function SettingsDialog({ user, onClose, onError }: SettingsDialogProps) 
       await reload();
     } catch (err) {
       onError(err instanceof Error ? err.message : "Could not delete the note.");
+    }
+  };
+
+  const runImport = async (input: string | File) => {
+    setBusy(true);
+    setImportResult(null);
+    try {
+      const result = await memoryApi.importNotes(input);
+      setImportResult(result);
+      setPasted("");
+      await reload();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Could not import the memory.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(IMPORT_PROMPT);
+    } catch {
+      // Clipboard access can be refused; the prompt stays selectable.
     }
   };
 
@@ -162,6 +193,63 @@ export function SettingsDialog({ user, onClose, onError }: SettingsDialogProps) 
                       <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Add a note, e.g. I prefer short answers" maxLength={2000} aria-label="New memory note" />
                       <button className="primary" type="submit" disabled={busy || !draft.trim()}>Add</button>
                     </form>
+                  </div>
+                </div>
+
+                <div className="settings-row settings-row-top">
+                  <div className="settings-grow">
+                    <div className="detail-label">Import memory from other AI providers</div>
+                    <div className="muted small">
+                      Bring notes from claude.ai or Codex. Duplicates are skipped.
+                    </div>
+                    {!importOpen && (
+                      <div>
+                        <button onClick={() => setImportOpen(true)}>Start import</button>
+                      </div>
+                    )}
+                    {importOpen && (
+                      <div className="import-panel">
+                        <div className="muted small">1. Copy this prompt and send it to claude.ai or Codex:</div>
+                        <div className="import-prompt">
+                          <code>{IMPORT_PROMPT}</code>
+                          <button onClick={() => void copyPrompt()}>Copy</button>
+                        </div>
+                        <div className="muted small">2. Paste the answer here, or upload a file:</div>
+                        <textarea
+                          value={pasted}
+                          onChange={(e) => setPasted(e.target.value)}
+                          rows={5}
+                          placeholder="- Prefers short answers&#10;- Works on a robotics team"
+                          aria-label="Pasted memory"
+                        />
+                        <div className="import-actions">
+                          <button className="primary" disabled={busy || !pasted.trim()} onClick={() => void runImport(pasted)}>
+                            Import text
+                          </button>
+                          <label className="import-file">
+                            Upload file (.zip, .md or .txt)
+                            <input
+                              type="file"
+                              accept=".zip,.md,.markdown,.txt"
+                              hidden
+                              disabled={busy}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                e.target.value = "";
+                                if (file) void runImport(file);
+                              }}
+                            />
+                          </label>
+                          <span className="muted small">Codex keeps memory in MEMORY.md under its memories folder.</span>
+                        </div>
+                        {importResult && (
+                          <p className="banner small">
+                            Added {importResult.added} notes. {importResult.duplicates} were already saved
+                            {importResult.skipped > 0 ? `; ${importResult.skipped} left out because memory is full` : ""}.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 

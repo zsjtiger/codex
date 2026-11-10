@@ -6,6 +6,7 @@ import type {
   Artifact,
   ArtifactKind,
   Attachment,
+  MemoryImportResult,
   MemoryNote,
   MemoryView,
   ProjectFileHit,
@@ -64,6 +65,18 @@ export const memory = {
   edit: (id: string, content: string) => api<MemoryNote>("PATCH", `/me/memory/${id}`, { content }),
   remove: (id: string) => api<void>("DELETE", `/me/memory/${id}`),
   setEnabled: (enabled: boolean) => api<void>("PUT", "/me/memory/enabled", { enabled }),
+  /** Imports notes from pasted text (a string) or a file (a zip, .md or .txt). */
+  importNotes: async (input: string | File): Promise<MemoryImportResult> => {
+    const headers: Record<string, string> = { "content-type": typeof input === "string" ? "text/plain" : contentTypeOf(input) };
+    const token = getToken();
+    if (token) headers.authorization = `Bearer ${token}`;
+    const response = await fetch("/api/v1/me/memory/import", { method: "POST", headers, body: input });
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      throw new ApiError(response.status, data?.error?.code ?? "error", data?.error?.message ?? response.statusText);
+    }
+    return response.json();
+  },
 };
 
 export const scheduled = {

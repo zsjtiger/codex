@@ -684,3 +684,14 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .memory-add { display: flex; gap: 8px; margin-top: 8px; }
 .memory-add input { flex: 1; min-width: 0; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; font-size: 14px; }
 @media (max-width: 640px) { .settings-body { grid-template-columns: 1fr; } .settings-nav { flex-direction: row; border-right: none; border-bottom: 1px solid var(--border); } }
+
+/* Memory import panel in Settings. */
+.import-panel { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.import-prompt {
+  display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--hover);
+}
+.import-prompt code { flex: 1; white-space: pre-wrap; font-size: 13px; }
+.import-prompt button, .import-file { padding: 5px 10px; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: pointer; color: var(--text); }
+.import-panel textarea { width: 100%; box-sizing: border-box; border-radius: 8px; border: 1px solid var(--border); padding: 8px; font: inherit; font-size: 14px; background: var(--surface); color: var(--text); }
+.import-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.import-actions .primary { padding: 6px 12px; font-size: 13px; border-radius: 8px; }
