@@ -146,7 +146,11 @@ function ThinkingBlock({ activity, running }: { activity: Activity; running: boo
   return (
     <div className="thinking">
       <button type="button" className="thinking-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span className={running ? "thinking-dots thinking-dots-live" : "thinking-dots"}>···</span>
+        <span className={running ? "thinking-dots thinking-dots-live" : "thinking-dots"} aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
         <span>{activitySummary(activity, running)}</span>
         <ChevronIcon className={open ? "thinking-chevron thinking-chevron-open" : "thinking-chevron"} />
       </button>
@@ -206,7 +210,11 @@ export function Conversation({ turns, agentText, activity, approvals, onAnswer, 
               </>
             )}
             <div className={`turn-status status-${turn.status}`}>
-              {turn.status === "completed" ? "Done" : turn.status}
+              {turn.status === "running" || turn.status === "queued" ? (
+                <span className="status-shimmer">{turn.status}</span>
+              ) : (
+                turn.status === "completed" ? "Done" : turn.status
+              )}
               {turn.error && <span className="turn-error"> · {turn.error}</span>}
             </div>
           </div>
