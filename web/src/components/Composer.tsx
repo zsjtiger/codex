@@ -25,6 +25,8 @@ interface ComposerProps {
   projects: Project[];
   projectId: string | null;
   onProjectChange?: (projectId: string | null) => void;
+  /** Creates a project from the picker and returns its id. */
+  onCreateProject?: (name: string) => Promise<string>;
   /** Enabled skills in the workspace. Typing "/" offers them. */
   skills: Skill[];
   upload: (file: File) => Promise<string>;
@@ -50,7 +52,7 @@ interface Pending {
  * files as attachments, and offers Stop while a turn is running.
  */
 export function Composer(props: ComposerProps) {
-  const { environmentId, onSend, onStop, running, disabled, placeholder = "How can I help you today?", projects, projectId, onProjectChange, skills, upload, onError } = props;
+  const { environmentId, onSend, onStop, running, disabled, placeholder = "How can I help you today?", projects, projectId, onProjectChange, onCreateProject, skills, upload, onError } = props;
   const [draft, setDraft] = useState("");
   const [menuIndex, setMenuIndex] = useState(0);
   const [menuDismissed, setMenuDismissed] = useState(false);
@@ -80,6 +82,8 @@ export function Composer(props: ComposerProps) {
   const [pending, setPending] = useState<Pending[]>([]);
   const [uploading, setUploading] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [projectQuery, setProjectQuery] = useState("");
+  const [newProjectName, setNewProjectName] = useState<string | null>(null);
   const [attachOpen, setAttachOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -266,24 +270,77 @@ export function Composer(props: ComposerProps) {
         {onProjectChange ? (
           <div className="add-menu">
             <button type="button" className="pill" onClick={() => setPickerOpen(!pickerOpen)} aria-expanded={pickerOpen}>
-              {projectName ?? "No project"} <ChevronIcon />
+              {projectName ?? "Project"} <ChevronIcon />
             </button>
             {pickerOpen && (
-              <ul className="add-menu-list composer-menu" role="menu">
-                <li role="menuitem">
-                  <button type="button" className="menu-action" onClick={() => { onProjectChange(null); setPickerOpen(false); }}>
-                    No project
-                  </button>
-                </li>
-                {projects.map((project) => (
-                  <li key={project.id} role="menuitem">
-                    <button type="button" className="menu-action" onClick={() => { onProjectChange(project.id); setPickerOpen(false); }}>
-                      {project.name}
+              <div className="add-menu-list composer-menu project-picker" role="menu">
+                <input
+                  className="project-search"
+                  placeholder="Search projects"
+                  aria-label="Search projects"
+                  value={projectQuery}
+                  onChange={(event) => setProjectQuery(event.target.value)}
+                  autoFocus
+                />
+                <div className="project-picker-list">
+                  {projects
+                    .filter((project) => project.name.toLowerCase().includes(projectQuery.trim().toLowerCase()))
+                    .map((project) => (
+                      <button
+                        key={project.id}
+                        type="button"
+                        role="menuitem"
+                        className={`menu-action ${project.id === projectId ? "menu-action-current" : ""}`}
+                        onClick={() => {
+                          onProjectChange(project.id);
+                          setPickerOpen(false);
+                        }}
+                      >
+                        {project.name}
+                      </button>
+                    ))}
+                  {projectQuery.trim() === "" && (
+                    <button type="button" role="menuitem" className="menu-action" onClick={() => { onProjectChange(null); setPickerOpen(false); }}>
+                      No project
                     </button>
-                  </li>
-                ))}
-                {projects.length === 0 && <li className="menu-note">Create a project in Projects first.</li>}
-              </ul>
+                  )}
+                </div>
+                <div className="project-picker-footer">
+                  {onCreateProject && newProjectName === null && (
+                    <button type="button" role="menuitem" className="menu-action" onClick={() => setNewProjectName("")}>
+                      + New project
+                    </button>
+                  )}
+                  {onCreateProject && newProjectName !== null && (
+                    <form
+                      className="project-new-form"
+                      onSubmit={async (event) => {
+                        event.preventDefault();
+                        const name = newProjectName.trim();
+                        if (!name) return;
+                        try {
+                          const id = await onCreateProject(name);
+                          onProjectChange(id);
+                          setNewProjectName(null);
+                          setPickerOpen(false);
+                        } catch (err) {
+                          onError?.(err instanceof Error ? err.message : "Could not create the project.");
+                        }
+                      }}
+                    >
+                      <input
+                        autoFocus
+                        value={newProjectName}
+                        onChange={(event) => setNewProjectName(event.target.value)}
+                        placeholder="Project name"
+                        maxLength={100}
+                        aria-label="New project name"
+                      />
+                      <button type="submit" className="primary" disabled={!newProjectName.trim()}>Create</button>
+                    </form>
+                  )}
+                </div>
+              </div>
             )}
           </div>
         ) : (

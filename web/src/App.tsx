@@ -176,6 +176,11 @@ export function App() {
             projects={projects}
             draftProjectId={codex.draftProjectId}
             onDraftProject={codex.setDraftProjectId}
+            onCreateProject={async (name: string) => {
+              const created = await projectApi.create(workspaceId, { name, instructions: "" });
+              await reloadProjects();
+              return created.id;
+            }}
             onThreadChanged={() => void codex.refreshThreads()}
             onSend={(text, options) => void codex.sendMessage(text, options)}
             onStop={(turnId) => void codex.interrupt(turnId)}

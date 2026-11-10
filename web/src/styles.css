@@ -617,3 +617,18 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .detail-row .link-button { font-size: 14px; }
 .detail-actions { padding-top: 14px; }
 .detail-actions button { font-size: 13px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); cursor: pointer; color: var(--text); }
+
+/* Composer project picker: search, the project list, and a New project row. */
+.project-picker { width: 280px; padding: 8px; }
+.project-search {
+  width: 100%; box-sizing: border-box; padding: 7px 10px; margin-bottom: 6px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; font-size: 13px;
+}
+.project-picker-list { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; }
+.project-picker-footer { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 6px; }
+.project-new-form { display: flex; gap: 6px; padding: 4px; }
+.project-new-form input {
+  flex: 1; min-width: 0; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; font-size: 13px;
+}
+.project-new-form button { padding: 6px 10px; font-size: 13px; border-radius: 8px; }
+.menu-action-current { font-weight: 600; }

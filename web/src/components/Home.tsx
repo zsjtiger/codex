@@ -29,6 +29,7 @@ interface HomeProps {
   projects: Project[];
   draftProjectId: string | null;
   onDraftProject: (projectId: string | null) => void;
+  onCreateProject: (name: string) => Promise<string>;
   onThreadChanged: () => void;
   onSend: (text: string, options: SendOptions) => void;
   onStop: (turnId: string) => void;
@@ -42,7 +43,7 @@ interface HomeProps {
 }
 
 export function Home(props: HomeProps) {
-  const { user, workspaceId, thread, turns, agentText, toolUses, activity, environment, approvals, sending, projects, draftProjectId, onDraftProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
+  const { user, workspaceId, thread, turns, agentText, toolUses, activity, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
   const pending = approvals.filter((a) => a.threadId === thread?.id);
   const runningTurn = [...turns].reverse().find((t) => (t.status === "running" || t.status === "queued") && t.codex_turn_id);
   const [recent, setRecent] = useState<Artifact[]>([]);
@@ -156,6 +157,7 @@ export function Home(props: HomeProps) {
           skills={skills}
               projectId={thread.project_id}
               onProjectChange={(id) => void setThreadProject(id)}
+              onCreateProject={onCreateProject}
               upload={upload}
               onError={onError}
             />
@@ -175,6 +177,7 @@ export function Home(props: HomeProps) {
           skills={skills}
             projectId={draftProjectId}
             onProjectChange={onDraftProject}
+            onCreateProject={onCreateProject}
             upload={upload}
             onError={onError}
           />
