@@ -65,8 +65,10 @@ pub struct ModelOption {
     pub efforts: Vec<String>,
 }
 
-/// Models the environment's codex runtime offers, as reported by app-server's `model/list`.
-/// Hidden models are left out. Members can read the list.
+/// The model the environment's codex is configured to use, and only that one. The name comes
+/// from `config/read`. Its details come from `model/list` when codex lists it; otherwise the
+/// configured name is shown on its own, since codex may not list models from custom providers.
+/// Members can read the list.
 async fn models(
     State(state): State<AppState>,
     user: CurrentUser,
@@ -79,34 +81,42 @@ async fn models(
         .lease(id, env.endpoint.as_deref())
         .await
         .map_err(|err| ApiError::BadRequest(err.to_string()))?;
-    let response = lease
+    let config = lease
+        .request("config/read", serde_json::json!({ "cwd": null }))
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("could not read the configuration: {err}")))?;
+    let Some(configured) = config["config"]["model"].as_str().filter(|m| !m.is_empty()) else {
+        return Ok(Json(Vec::new()));
+    };
+    let listed = lease
         .request("model/list", serde_json::json!({}))
         .await
-        .map_err(|err| ApiError::BadRequest(format!("could not list models: {err}")))?;
-    let options = response["data"]
+        .unwrap_or(serde_json::Value::Null);
+    let details = listed["data"]
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|m| !m["hidden"].as_bool().unwrap_or(false))
-        .map(|m| ModelOption {
-            model: m["model"].as_str().unwrap_or_default().to_string(),
-            display_name: m["displayName"].as_str().unwrap_or_default().to_string(),
-            is_default: m["isDefault"].as_bool().unwrap_or(false),
+        .find(|m| m["model"].as_str() == Some(configured));
+    let option = match details {
+        Some(m) => ModelOption {
+            model: configured.to_string(),
+            display_name: m["displayName"].as_str().unwrap_or(configured).to_string(),
+            is_default: true,
             efforts: m["supportedReasoningEfforts"]
                 .as_array()
                 .into_iter()
                 .flatten()
-                .filter_map(|e| {
-                    e["reasoningEffort"]
-                        .as_str()
-                        .or_else(|| e.as_str())
-                        .map(str::to_string)
-                })
+                .filter_map(|e| e["reasoningEffort"].as_str().map(str::to_string))
                 .collect(),
-        })
-        .filter(|m| !m.model.is_empty())
-        .collect();
-    Ok(Json(options))
+        },
+        None => ModelOption {
+            model: configured.to_string(),
+            display_name: configured.to_string(),
+            is_default: true,
+            efforts: Vec::new(),
+        },
+    };
+    Ok(Json(vec![option]))
 }
 
 const COLUMNS: &str = "id, workspace_id, name, status, endpoint, created_at, updated_at";

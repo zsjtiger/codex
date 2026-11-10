@@ -72,7 +72,8 @@ export function Composer(props: ComposerProps) {
 
   // Effort options follow the chosen model. A default model uses the first listed model's.
   const chosen = models.find((m) => m.model === model) ?? models.find((m) => m.is_default);
-  const efforts = chosen?.efforts ?? ["low", "medium", "high"];
+  // Models that list no efforts (for example custom providers) get the standard three.
+  const efforts = chosen?.efforts.length ? chosen.efforts : ["low", "medium", "high"];
   useEffect(() => {
     if (effort && !efforts.includes(effort)) setEffort("");
   }, [efforts, effort]);
