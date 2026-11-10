@@ -102,7 +102,7 @@ export function Sidebar(props: SidebarProps) {
           <button className="icon-button" onClick={onToggle} aria-label="Toggle sidebar">
             <SidebarIcon />
           </button>
-          <span className="brand-name">Claude</span>
+          <span className="brand-name">Baize</span>
         </div>
       </div>
 
