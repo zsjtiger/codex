@@ -140,6 +140,24 @@ function FileChip({ id, name, contentType }: { id: string; name: string; content
   );
 }
 
+/** A shell command run during a turn. Collapsed by default, like a tool call in a chat log. */
+function CommandStep({ command }: { command: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="command-step">
+      <button type="button" className="command-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span>Bash</span>
+        <ChevronIcon className={open ? "thinking-chevron thinking-chevron-open" : "thinking-chevron"} />
+      </button>
+      {open && (
+        <pre className="command-body">
+          <code>{command}</code>
+        </pre>
+      )}
+    </div>
+  );
+}
+
 /** Collapsible record of how a reply was produced: the reasoning and each step taken. */
 function ThinkingBlock({ activity, running }: { activity: Activity; running: boolean }) {
   const [open, setOpen] = useState(false);
@@ -159,11 +177,17 @@ function ThinkingBlock({ activity, running }: { activity: Activity; running: boo
           {activity.reasoning && <div className="thinking-reasoning">{activity.reasoning}</div>}
           {activity.steps.length > 0 && (
             <ul className="thinking-steps">
-              {activity.steps.map((step) => (
-                <li key={step.id}>
-                  <span className="muted">{step.kind}</span> {step.label}
-                </li>
-              ))}
+              {activity.steps.map((step) =>
+                step.kind === "Command" ? (
+                  <li key={step.id}>
+                    <CommandStep command={step.label} />
+                  </li>
+                ) : (
+                  <li key={step.id}>
+                    <span className="muted">{step.kind}</span> {step.label}
+                  </li>
+                ),
+              )}
             </ul>
           )}
         </div>

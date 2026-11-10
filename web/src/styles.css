@@ -540,3 +540,9 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .file-chip-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
 .preview-frame { width: 100%; height: 75vh; border: 0; border-radius: 8px; background: var(--hover); }
 .preview-text { white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.55; margin: 0; }
+
+/* Shell commands in the thinking block: collapsed until opened */
+.command-step { margin: 2px 0; }
+.command-toggle { display: inline-flex; align-items: center; gap: 6px; border: none; background: none; padding: 4px 0; color: var(--text); font: inherit; font-size: 14px; cursor: pointer; }
+.command-toggle:hover { color: var(--accent); }
+.command-body { margin: 4px 0 6px; padding: 10px 12px; max-height: 180px; overflow: auto; background: var(--hover); border-radius: 8px; font-size: 13px; white-space: pre-wrap; word-break: break-all; }
