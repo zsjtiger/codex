@@ -135,6 +135,9 @@ struct TurnRow {
     skill_ids: Vec<Uuid>,
 }
 
+/// Approval policy sent to codex for every thread and turn. See `start_codex_thread`.
+const APPROVAL_POLICY: &str = "on-request";
+
 /// Puts the instructions of the skills chosen for a turn in front of the message, so the model follows
 /// them for this request. The stored message stays as the user typed it.
 async fn with_skills(
@@ -215,6 +218,7 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
     let mut events = lease.subscribe();
     let mut params = json!({
         "threadId": codex_thread_id,
+        "approvalPolicy": APPROVAL_POLICY,
         "input": [{ "type": "text", "text": with_skills(&state.pool, &turn.skill_ids, &turn.input).await? }],
     });
     if let Some(model) = &turn.model {
@@ -337,7 +341,9 @@ async fn start_codex_thread(
     workspace_id: Uuid,
     instructions: Option<String>,
 ) -> Result<String, DispatchError> {
-    let mut params = json!({});
+    // Ask for approval when a command needs it, so the browser can answer. With "never",
+    // codex would run or fail such commands without asking anyone.
+    let mut params = json!({ "approvalPolicy": APPROVAL_POLICY });
     if let Some(instructions) = instructions {
         params["developerInstructions"] = json!(instructions);
     }
