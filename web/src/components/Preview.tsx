@@ -3,6 +3,7 @@ import * as mammoth from "mammoth";
 import { attachments as attachmentApi } from "../api/resources";
 import { MarkdownView, highlightCode } from "./Markdown";
 import { CopyIcon } from "./icons";
+import { PdfView } from "./PdfView";
 
 /** What the side panel shows: a code block, a document artifact, or a file sent in a message. */
 export type PreviewItem =
@@ -59,7 +60,6 @@ function FilePreview({ attachmentId, title, contentType }: { attachmentId: strin
 
   useEffect(() => {
     let current = true;
-    let objectUrl: string | null = null;
     setState({ status: "loading" });
     const kind = fileKind(contentType, title);
     // Slides and sheets are converted to PDF by the gateway; the original bytes are not needed.
@@ -68,8 +68,7 @@ function FilePreview({ attachmentId, title, contentType }: { attachmentId: strin
       .then(async (bytes) => {
         let view: ReactViewState;
         if (kind === "pdf" || kind === "slides" || kind === "sheet") {
-          objectUrl = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
-          view = { kind: "pdf", url: objectUrl };
+          view = { kind: "pdf", data: bytes };
         } else if (kind === "word") {
           const result = await convertWordToMarkdown(bytes);
           view = { kind, markdown: result };
@@ -84,14 +83,13 @@ function FilePreview({ attachmentId, title, contentType }: { attachmentId: strin
       });
     return () => {
       current = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [attachmentId, contentType, title]);
 
   if (state.status === "loading") return <p className="muted">Loading…</p>;
   if (state.status === "error") return <p className="banner error">{state.message}</p>;
   const { view } = state;
-  if (view.kind === "pdf") return <iframe className="preview-frame" src={view.url} title={title} />;
+  if (view.kind === "pdf") return <PdfView data={view.data} />;
   if (view.kind === "word") return <MarkdownView source={view.markdown} />;
   if (view.kind === "markdown") return <MarkdownView source={view.text} />;
   if (view.kind === "text") return <pre className="preview-text">{view.text}</pre>;
@@ -99,7 +97,7 @@ function FilePreview({ attachmentId, title, contentType }: { attachmentId: strin
 }
 
 type ReactViewState =
-  | { kind: "pdf"; url: string }
+  | { kind: "pdf"; data: ArrayBuffer }
   | { kind: "word"; markdown: string }
   | { kind: "markdown"; text: string }
   | { kind: "text"; text: string }

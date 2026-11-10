@@ -12,6 +12,7 @@
     "highlight.js": "11.10.0",
     "katex": "0.19.1",
     "mammoth": "1.8.0",
+    "pdfjs-dist": "4.10.38",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
