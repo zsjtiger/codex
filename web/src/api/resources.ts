@@ -6,6 +6,8 @@ import type {
   Artifact,
   ArtifactKind,
   Attachment,
+  MemoryNote,
+  MemoryView,
   ProjectFileHit,
   ScheduledRun,
   Connector,
@@ -55,6 +57,14 @@ export interface TaskInput {
   weekday?: number | null;
   project_id?: string | null;
 }
+
+export const memory = {
+  get: () => api<MemoryView>("GET", "/me/memory"),
+  add: (content: string) => api<MemoryNote>("POST", "/me/memory", { content }),
+  edit: (id: string, content: string) => api<MemoryNote>("PATCH", `/me/memory/${id}`, { content }),
+  remove: (id: string) => api<void>("DELETE", `/me/memory/${id}`),
+  setEnabled: (enabled: boolean) => api<void>("PUT", "/me/memory/enabled", { enabled }),
+};
 
 export const scheduled = {
   list: (ws: string) => api<ScheduledTask[]>("GET", `/workspaces/${ws}/scheduled-tasks`),

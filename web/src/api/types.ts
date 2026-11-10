@@ -172,6 +172,19 @@ export interface Attachment {
   read_bytes?: number | null;
 }
 
+/** A note in the user's saved memory. */
+export interface MemoryNote {
+  id: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MemoryView {
+  enabled: boolean;
+  notes: MemoryNote[];
+}
+
 /** A project file that matched a search: its name, the project, and the text around the match. */
 export interface ProjectFileHit {
   id: string;

@@ -7,6 +7,7 @@ mod attachments;
 mod auth;
 mod connectors;
 mod environments;
+mod memory;
 mod members;
 mod projects;
 mod scheduled;
@@ -32,6 +33,7 @@ pub fn router() -> Router<AppState> {
         .merge(search::routes())
         .merge(scheduled::routes())
         .merge(connectors::routes())
+        .merge(memory::routes())
         .merge(crate::audit::routes());
     Router::new().nest("/api/v1", api)
 }

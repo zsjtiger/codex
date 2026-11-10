@@ -222,6 +222,9 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
     if let Some(context) = project_files_context(state, turn.thread_id).await {
         text = format!("{context}\n\n{text}");
     }
+    if let Some(context) = memory_context(&state.pool, turn.created_by).await {
+        text = format!("{context}\n\n{text}");
+    }
     if let Some(dir) = &output_dir {
         if let Err(err) = std::fs::create_dir_all(dir) {
             tracing::warn!(%err, "could not create the turn's output folder");
@@ -300,6 +303,35 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
         .await?;
     }
     Ok(())
+}
+
+/// Most saved memory text added to one turn, in bytes.
+const MEMORY_BUDGET: usize = 8_000;
+
+/// The user's saved memory notes, when memory is on. `None` when there is nothing to add.
+async fn memory_context(pool: &PgPool, user_id: Option<Uuid>) -> Option<String> {
+    let user_id = user_id?;
+    let enabled: Option<bool> = sqlx::query_scalar("SELECT memory_enabled FROM user_settings WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
+        .ok()?;
+    if !enabled.unwrap_or(true) {
+        return None;
+    }
+    let notes: Vec<String> = sqlx::query_scalar("SELECT content FROM user_memories WHERE user_id = $1 ORDER BY created_at")
+        .bind(user_id)
+        .fetch_all(pool)
+        .await
+        .ok()?;
+    let mut out = String::new();
+    for note in notes {
+        if out.len() + note.len() + 3 > MEMORY_BUDGET {
+            break;
+        }
+        out.push_str(&format!("\n- {note}"));
+    }
+    (!out.is_empty()).then(|| format!("Saved memory about the user (use it when relevant):{out}"))
 }
 
 /// Most project file text added to one turn, in bytes.

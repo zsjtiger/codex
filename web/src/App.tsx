@@ -6,6 +6,7 @@ import { CustomizePage } from "./components/CustomizePage";
 import { Home } from "./components/Home";
 import { PreviewProvider } from "./components/Preview";
 import { ProjectsPage } from "./components/ProjectsPage";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { ScheduledPage } from "./components/ScheduledPage";
 import { SearchDialog } from "./components/SearchDialog";
 import { SignIn } from "./components/SignIn";
@@ -25,6 +26,7 @@ function loadHidden(): NavLabel[] {
 
 export function App() {
   // Open on wide screens; start closed on narrow ones, where it overlays the page.
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia("(min-width: 761px)").matches);
   const [view, setView] = useState<View>("chat");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -92,6 +94,7 @@ export function App() {
     <div className="app">
       <Sidebar
         open={sidebarOpen}
+        onOpenSettings={() => setSettingsOpen(true)}
         onToggle={() => setSidebarOpen(!sidebarOpen)}
         threads={codex.threads}
         activeId={codex.activeId}
@@ -106,6 +109,7 @@ export function App() {
         socketStatus={codex.socketStatus}
         onSignOut={() => void codex.signOut()}
       />
+      {settingsOpen && <SettingsDialog user={codex.user!} onClose={() => setSettingsOpen(false)} onError={onError} />}
       {searchOpen && (
         <SearchDialog
           workspaceId={workspaceId}

@@ -25,6 +25,7 @@ const viewFor: Partial<Record<NavLabel, View>> = {
 
 interface SidebarProps {
   open: boolean;
+  onOpenSettings: () => void;
   onToggle: () => void;
   threads: Thread[];
   activeId: string | null;
@@ -43,7 +44,7 @@ interface SidebarProps {
 const statusLabel: Record<SocketStatus, string> = { open: "Live", connecting: "Connecting…", closed: "Offline" };
 
 export function Sidebar(props: SidebarProps) {
-  const { open, onToggle, threads, activeId, activeView, onSelect, onNew, onSearch, onView, hidden, onHiddenChange, user, socketStatus, onSignOut } = props;
+  const { open, onOpenSettings, onToggle, threads, activeId, activeView, onSelect, onNew, onSearch, onView, hidden, onHiddenChange, user, socketStatus, onSignOut } = props;
   const [recentsOpen, setRecentsOpen] = useState(true);
   const [moreOpen, setMoreOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -174,6 +175,16 @@ export function Sidebar(props: SidebarProps) {
         {accountOpen && (
           <div className="account-menu" role="menu">
             <div className="account-menu-email">{user.email}</div>
+            <button
+              role="menuitem"
+              className="account-menu-item"
+              onClick={() => {
+                setAccountOpen(false);
+                onOpenSettings();
+              }}
+            >
+              Settings
+            </button>
             <button
               role="menuitem"
               className="account-menu-item"
