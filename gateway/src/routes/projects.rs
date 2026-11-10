@@ -95,6 +95,7 @@ async fn save_thread_to_project(
             markdown.push_str(&format!("## Assistant\n\n{reply}\n\n"));
         }
     }
+    let text = markdown.clone();
     let bytes = markdown.into_bytes();
     if bytes.len() as i64 > crate::routes::attachments::MAX_ATTACHMENT_BYTES {
         return Err(ApiError::BadRequest("the chat is too long to save to a project".to_string()));
@@ -117,8 +118,8 @@ async fn save_thread_to_project(
             ApiError::Internal
         })?;
     let sql = format!(
-        "INSERT INTO attachments (id, workspace_id, thread_id, project_id, uploaded_by, filename, content_type, size_bytes, sha256, storage_key, uploaded)
-         VALUES ($1, $2, NULL, $3, $4, $5, 'text/markdown', $6, $7, $8, true)
+        "INSERT INTO attachments (id, workspace_id, thread_id, project_id, uploaded_by, filename, content_type, size_bytes, sha256, storage_key, uploaded, extracted_text)
+         VALUES ($1, $2, NULL, $3, $4, $5, 'text/markdown', $6, $7, $8, true, $9)
          RETURNING {}",
         crate::routes::attachments::COLUMNS
     );
@@ -131,6 +132,7 @@ async fn save_thread_to_project(
         .bind(size)
         .bind(&sha)
         .bind(&storage_key)
+        .bind(&text)
         .fetch_one(&state.pool)
         .await?;
     Ok((StatusCode::CREATED, Json(view)))

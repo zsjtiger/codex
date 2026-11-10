@@ -40,6 +40,8 @@ pub struct AttachmentView {
     /// True once the bytes have been uploaded to `/content`.
     pub uploaded: bool,
     pub created_at: DateTime<Utc>,
+    /// Bytes of text read from the file, for project files. `None` when no text was read.
+    pub read_bytes: Option<i32>,
 }
 
 #[derive(Deserialize)]
@@ -69,6 +71,65 @@ pub fn routes() -> Router<AppState> {
                 .layer(DefaultBodyLimit::max(MAX_ATTACHMENT_BYTES as usize)),
         )
         .route("/attachments/{id}/preview", get(preview))
+        .route("/workspaces/{id}/project-files/search", get(search_project_files))
+}
+
+#[derive(Deserialize)]
+pub struct SearchQuery {
+    q: String,
+}
+
+#[derive(Serialize)]
+pub struct ProjectFileHit {
+    pub id: Uuid,
+    pub filename: String,
+    pub project_id: Uuid,
+    pub project_name: String,
+    /// The text around the first match, or `None` when only the file name matched.
+    pub snippet: Option<String>,
+}
+
+/// Finds project files whose name or text contains the query, ignoring case.
+async fn search_project_files(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+    Query(query): Query<SearchQuery>,
+) -> Result<Json<Vec<ProjectFileHit>>, ApiError> {
+    require_role(&state.pool, id, user.id, Role::Member).await?;
+    let term = query.q.trim();
+    if term.chars().count() < 2 {
+        return Ok(Json(Vec::new()));
+    }
+    if term.chars().count() > 200 {
+        return Err(ApiError::BadRequest("the search text is too long".to_string()));
+    }
+    // Escape the LIKE wildcards so the search text is matched literally.
+    let escaped = term.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+    let pattern = format!("%{escaped}%");
+    let rows: Vec<(Uuid, String, Uuid, String, Option<String>)> = sqlx::query_as(
+        "SELECT a.id, a.filename, a.project_id, p.name, a.extracted_text
+         FROM attachments a JOIN projects p ON p.id = a.project_id
+         WHERE a.workspace_id = $1 AND a.uploaded AND a.project_id IS NOT NULL
+           AND (a.filename ILIKE $2 OR a.extracted_text ILIKE $2)
+         ORDER BY a.created_at DESC
+         LIMIT 20",
+    )
+    .bind(id)
+    .bind(&pattern)
+    .fetch_all(&state.pool)
+    .await?;
+    let hits = rows
+        .into_iter()
+        .map(|(file_id, filename, project_id, project_name, text)| ProjectFileHit {
+            id: file_id,
+            filename,
+            project_id,
+            project_name,
+            snippet: text.as_deref().and_then(|t| crate::extract::snippet(t, term)),
+        })
+        .collect();
+    Ok(Json(hits))
 }
 
 /// Office formats LibreOffice can convert to PDF for the side preview.
@@ -132,7 +193,7 @@ async fn convert_to_pdf(ext: &str, bytes: Vec<u8>) -> Result<Vec<u8>, String> {
 }
 
 pub(crate) const COLUMNS: &str = "id, workspace_id, thread_id, uploaded_by, filename, content_type, size_bytes, \
-                       sha256, storage_key, uploaded, created_at";
+                       sha256, storage_key, uploaded, created_at, octet_length(extracted_text) AS read_bytes";
 
 async fn create(
     State(state): State<AppState>,
@@ -297,15 +358,18 @@ async fn upload(
     Path(id): Path<Uuid>,
     body: Bytes,
 ) -> Result<StatusCode, ApiError> {
-    let (workspace_id, uploaded_by, size_bytes, storage_key, sha256, uploaded): (
+    let (workspace_id, uploaded_by, size_bytes, storage_key, sha256, uploaded, filename, content_type, project_id): (
         Uuid,
         Option<Uuid>,
         i64,
         String,
         Option<String>,
         bool,
+        String,
+        String,
+        Option<Uuid>,
     ) = sqlx::query_as(
-        "SELECT workspace_id, uploaded_by, size_bytes, storage_key, sha256, uploaded FROM attachments WHERE id = $1",
+        "SELECT workspace_id, uploaded_by, size_bytes, storage_key, sha256, uploaded, filename, content_type, project_id FROM attachments WHERE id = $1",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -333,12 +397,19 @@ async fn upload(
         }
     }
 
+    // Project files keep their text so chats can read it and search can find it.
+    let text = if project_id.is_some() {
+        crate::extract::extract(&filename, &content_type, &body).await
+    } else {
+        None
+    };
     state.storage.put(&storage_key, body).await.map_err(|err| {
         tracing::error!(%err, "could not store attachment");
         ApiError::Internal
     })?;
-    sqlx::query("UPDATE attachments SET uploaded = true WHERE id = $1")
+    sqlx::query("UPDATE attachments SET uploaded = true, extracted_text = $2 WHERE id = $1")
         .bind(id)
+        .bind(text)
         .execute(&state.pool)
         .await?;
     Ok(StatusCode::NO_CONTENT)

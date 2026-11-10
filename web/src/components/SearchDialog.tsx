@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { search } from "../api/resources";
-import type { SearchResults, Thread } from "../api/types";
+import { attachments as attachmentApi, search } from "../api/resources";
+import type { ProjectFileHit, SearchResults, Thread } from "../api/types";
 import { ChatIcon, PlusIcon, SearchIcon } from "./icons";
 
 interface SearchDialogProps {
@@ -23,6 +23,7 @@ type Row = { key: string; label: string; detail?: string; onRun: () => void };
 export function SearchDialog({ workspaceId, threads, onOpenThread, onOpenArtifacts, onOpenProjects, onNew, onClose, onError }: SearchDialogProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResults | null>(null);
+  const [fileHits, setFileHits] = useState<ProjectFileHit[]>([]);
   const [highlight, setHighlight] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -35,6 +36,7 @@ export function SearchDialog({ workspaceId, threads, onOpenThread, onOpenArtifac
     const q = query.trim();
     if (!q) {
       setResults(null);
+      setFileHits([]);
       return;
     }
     let current = true;
@@ -42,6 +44,10 @@ export function SearchDialog({ workspaceId, threads, onOpenThread, onOpenArtifac
       search(workspaceId, q)
         .then((found) => current && setResults(found))
         .catch((err) => current && onError(err instanceof Error ? err.message : "Search failed."));
+      attachmentApi
+        .searchProjectFiles(workspaceId, q)
+        .then((hits) => current && setFileHits(hits))
+        .catch(() => current && setFileHits([]));
     }, 200);
     return () => {
       current = false;
@@ -65,6 +71,10 @@ export function SearchDialog({ workspaceId, threads, onOpenThread, onOpenArtifac
       },
       { heading: "Artifacts", rows: results.artifacts.map((a) => ({ key: `a-${a.id}`, label: a.title, detail: a.kind, onRun: onOpenArtifacts })) },
       { heading: "Projects", rows: results.projects.map((p) => ({ key: `p-${p.id}`, label: p.name, onRun: onOpenProjects })) },
+      {
+        heading: "Project files",
+        rows: fileHits.map((f) => ({ key: `f-${f.id}`, label: f.filename, detail: f.snippet ?? f.project_name, onRun: onOpenProjects })),
+      },
     );
   }
   sections.push({ heading: "Actions", rows: [{ key: "new", label: "New session", onRun: onNew }] });
@@ -106,7 +116,7 @@ export function SearchDialog({ workspaceId, threads, onOpenThread, onOpenArtifac
           <input
             ref={inputRef}
             className="search-input"
-            placeholder="Search chats, messages, artifacts and projects…"
+            placeholder="Search chats, messages, artifacts, projects and project files…"
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);

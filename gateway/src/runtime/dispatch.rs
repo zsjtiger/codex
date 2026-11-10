@@ -305,11 +305,11 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
 /// Most project file text added to one turn, in bytes.
 const PROJECT_FILE_BUDGET: usize = 60_000;
 
-/// The text files kept with the thread's project, for the model to read. Office and PDF files
-/// are not read yet, so they are left out. `None` when there is nothing to add.
+/// The text read from the thread's project files, for the model. Files that were cut off or left
+/// out are named, so the model can say what it could not see. `None` when there are no files.
 async fn project_files_context(state: &AppState, thread_id: Uuid) -> Option<String> {
-    let rows: Vec<(String, String, String)> = sqlx::query_as(
-        "SELECT a.filename, a.content_type, a.storage_key
+    let rows: Vec<(uuid::Uuid, String, String, String, Option<String>)> = sqlx::query_as(
+        "SELECT a.id, a.filename, a.content_type, a.storage_key, a.extracted_text
          FROM attachments a JOIN threads th ON th.project_id = a.project_id
          WHERE th.id = $1 AND a.uploaded
          ORDER BY a.created_at",
@@ -319,25 +319,46 @@ async fn project_files_context(state: &AppState, thread_id: Uuid) -> Option<Stri
     .await
     .ok()?;
     let mut out = String::new();
-    for (name, content_type, key) in rows {
-        if !(content_type.starts_with("text/") || content_type == "application/json") {
-            continue;
-        }
+    let mut not_fully_read = Vec::new();
+    for (file_id, name, content_type, key, stored) in rows {
+        // Files uploaded before their text was kept are read once, now, and the text is saved.
+        let text = match stored {
+            Some(text) => text,
+            None => {
+                let Ok(bytes) = state.storage.get(&key).await else { continue };
+                let Some(text) = crate::extract::extract(&name, &content_type, &bytes).await else {
+                    continue;
+                };
+                let _ = sqlx::query("UPDATE attachments SET extracted_text = $2 WHERE id = $1")
+                    .bind(file_id)
+                    .bind(&text)
+                    .execute(&state.pool)
+                    .await;
+                text
+            }
+        };
         let remaining = PROJECT_FILE_BUDGET.saturating_sub(out.len());
         if remaining == 0 {
-            break;
-        }
-        let Ok(bytes) = state.storage.get(&key).await else {
+            not_fully_read.push(format!("{name} (not read: the project text limit is reached)"));
             continue;
-        };
-        let text = String::from_utf8_lossy(&bytes);
+        }
         let mut end = remaining.min(text.len());
         while !text.is_char_boundary(end) {
             end -= 1;
         }
+        if end < text.len() {
+            not_fully_read.push(format!("{name} (cut off after {end} bytes)"));
+        }
         out.push_str(&format!("\n## {name}\n{}\n", &text[..end]));
     }
-    (!out.is_empty()).then(|| format!("Files in this project (for reference):{out}"))
+    if out.is_empty() && not_fully_read.is_empty() {
+        return None;
+    }
+    let mut context = format!("Files in this project (for reference):{out}");
+    if !not_fully_read.is_empty() {
+        context.push_str(&format!("\nNot fully included: {}.", not_fully_read.join("; ")));
+    }
+    Some(context)
 }
 
 /// Project instructions followed by each enabled skill. `None` when there is nothing to add.

@@ -6,6 +6,7 @@ import type {
   Artifact,
   ArtifactKind,
   Attachment,
+  ProjectFileHit,
   Connector,
   Frequency,
   Project,
@@ -129,6 +130,9 @@ export const attachments = {
   listForProject: (ws: string, projectId: string) =>
     api<Attachment[]>("GET", `/workspaces/${ws}/attachments?project_id=${projectId}`),
   remove: (id: string) => api<void>("DELETE", `/attachments/${id}`),
+  /** Project files whose name or text matches the query. */
+  searchProjectFiles: (ws: string, q: string) =>
+    api<ProjectFileHit[]>("GET", `/workspaces/${ws}/project-files/search?q=${encodeURIComponent(q)}`),
   /** The stored bytes of an attachment, for previewing. */
   download: (id: string): Promise<ArrayBuffer> => fetchBytes(`/attachments/${id}/content`),
   /** An Office document (pptx, docx, xlsx) converted to PDF by the gateway, for previewing. */

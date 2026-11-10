@@ -160,6 +160,17 @@ export interface Attachment {
   content_type: string;
   size_bytes: number;
   uploaded: boolean;
+  /** Bytes of text read from a project file; null when none was read. */
+  read_bytes?: number | null;
+}
+
+/** A project file that matched a search: its name, the project, and the text around the match. */
+export interface ProjectFileHit {
+  id: string;
+  filename: string;
+  project_id: string;
+  project_name: string;
+  snippet: string | null;
 }
 
 export interface SearchResults {

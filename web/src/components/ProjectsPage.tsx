@@ -15,6 +15,9 @@ interface ProjectsPageProps {
   onError: (message: string) => void;
 }
 
+/** Bytes of project file text a chat reads per turn. Matches the gateway's limit. */
+const PROJECT_READ_LIMIT_BYTES = 60000;
+
 /** Files kept with a project. Text files are read into every new chat in the project. */
 function ProjectFiles({ workspaceId, projectId, onError }: { workspaceId: string; projectId: string; onError: (message: string) => void }) {
   const [files, setFiles] = useState<Attachment[] | null>(null);
@@ -58,8 +61,17 @@ function ProjectFiles({ workspaceId, projectId, onError }: { workspaceId: string
     }
   };
 
+  // Chats read up to this many characters of a project's files in total.
+  const readTotal = (files ?? []).reduce((sum, file) => sum + (file.read_bytes ?? 0), 0);
+  const overLimit = readTotal > PROJECT_READ_LIMIT_BYTES;
+
   return (
     <div className="project-files">
+      {overLimit && (
+        <p className="banner error small">
+          Chats read only the first {PROJECT_READ_LIMIT_BYTES.toLocaleString()} bytes of these files ({readTotal.toLocaleString()} bytes in total). The rest is not included.
+        </p>
+      )}
       <div className="project-files-header">
         <span className="muted small">Files</span>
         <label className="add-button">
@@ -76,12 +88,12 @@ function ProjectFiles({ workspaceId, projectId, onError }: { workspaceId: string
           />
         </label>
       </div>
-      {files && files.length === 0 && <p className="muted small">No files yet. Text files (txt, md, csv, json) are read into new chats.</p>}
+      {files && files.length === 0 && <p className="muted small">No files yet. Text, PDF and Word files are read into new chats.</p>}
       {files?.map((file) => (
         <div key={file.id} className="project-file-row">
           <span className="project-file-name">{file.filename}</span>
           <span className="muted small">
-            {file.content_type.startsWith("text/") || file.content_type === "application/json" ? "read into chats" : "stored only"}
+            {file.read_bytes ? `read ${file.read_bytes.toLocaleString()} bytes` : "stored only"}
           </span>
           <button onClick={() => void remove(file)}>Delete</button>
         </div>
