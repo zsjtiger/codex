@@ -83,6 +83,9 @@ export const threads = {
     api<Thread>("POST", `/workspaces/${ws}/threads`, body),
   setProject: (id: string, projectId: string | null) =>
     api<Thread>("PATCH", `/threads/${id}`, { project_id: projectId }),
+  /** Saves a snapshot of the chat as a Markdown file in a project. */
+  saveToProject: (id: string, projectId: string) =>
+    api<Attachment>("POST", `/threads/${id}/save-to-project`, { project_id: projectId }),
   turns: (id: string) => api<Turn[]>("GET", `/threads/${id}/turns?limit=100`),
   toolUses: (id: string) => api<ToolUseRecord[]>("GET", `/threads/${id}/tool-uses?limit=100`),
   send: (id: string, body: { input: string; model?: string; effort?: string; attachment_ids?: string[]; skill_ids?: string[] }) =>
@@ -120,8 +123,12 @@ async function fetchBytes(path: string): Promise<ArrayBuffer> {
 }
 
 export const attachments = {
-  create: (ws: string, body: { filename: string; content_type: string; size_bytes: number }) =>
+  create: (ws: string, body: { filename: string; content_type: string; size_bytes: number; project_id?: string }) =>
     api<Attachment>("POST", `/workspaces/${ws}/attachments`, body),
+  /** Files kept with a project. */
+  listForProject: (ws: string, projectId: string) =>
+    api<Attachment[]>("GET", `/workspaces/${ws}/attachments?project_id=${projectId}`),
+  remove: (id: string) => api<void>("DELETE", `/attachments/${id}`),
   /** The stored bytes of an attachment, for previewing. */
   download: (id: string): Promise<ArrayBuffer> => fetchBytes(`/attachments/${id}/content`),
   /** An Office document (pptx, docx, xlsx) converted to PDF by the gateway, for previewing. */

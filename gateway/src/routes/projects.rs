@@ -8,6 +8,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{FromRow, PgPool};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::{
@@ -47,6 +48,92 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/workspaces/{id}/projects", get(list).post(create))
         .route("/projects/{id}", get(get_one).patch(update).delete(delete))
+        .route("/threads/{id}/save-to-project", axum::routing::post(save_thread_to_project))
+}
+
+#[derive(Deserialize)]
+pub struct SaveToProject {
+    project_id: Uuid,
+}
+
+/// Saves a snapshot of a chat's messages as a Markdown file in a project. Later messages in the
+/// chat are not added; saving again makes another file.
+async fn save_thread_to_project(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(thread_id): Path<Uuid>,
+    Json(req): Json<SaveToProject>,
+) -> Result<(StatusCode, Json<crate::routes::attachments::AttachmentView>), ApiError> {
+    let (workspace_id, title): (Uuid, String) =
+        sqlx::query_as("SELECT workspace_id, title FROM threads WHERE id = $1")
+            .bind(thread_id)
+            .fetch_one(&state.pool)
+            .await?;
+    require_role(&state.pool, workspace_id, user.id, Role::Member).await?;
+    let in_workspace: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM projects WHERE id = $1 AND workspace_id = $2)",
+    )
+    .bind(req.project_id)
+    .bind(workspace_id)
+    .fetch_one(&state.pool)
+    .await?;
+    if !in_workspace {
+        return Err(ApiError::BadRequest(
+            "project does not belong to this workspace".to_string(),
+        ));
+    }
+
+    let turns: Vec<(String, Option<String>)> =
+        sqlx::query_as("SELECT input, reply FROM turns WHERE thread_id = $1 ORDER BY seq")
+            .bind(thread_id)
+            .fetch_all(&state.pool)
+            .await?;
+    let mut markdown = format!("# {title}\n\n");
+    for (input, reply) in turns {
+        markdown.push_str(&format!("## User\n\n{input}\n\n"));
+        if let Some(reply) = reply {
+            markdown.push_str(&format!("## Assistant\n\n{reply}\n\n"));
+        }
+    }
+    let bytes = markdown.into_bytes();
+    if bytes.len() as i64 > crate::routes::attachments::MAX_ATTACHMENT_BYTES {
+        return Err(ApiError::BadRequest("the chat is too long to save to a project".to_string()));
+    }
+
+    let filename: String = format!("{title}.md")
+        .chars()
+        .filter(|c| !matches!(c, '"' | '\\' | '/') && !c.is_control())
+        .collect();
+    let attachment_id = Uuid::new_v4();
+    let storage_key = format!("workspaces/{workspace_id}/attachments/{attachment_id}");
+    let sha = hex::encode(Sha256::digest(&bytes));
+    let size = bytes.len() as i64;
+    state
+        .storage
+        .put(&storage_key, axum::body::Bytes::from(bytes))
+        .await
+        .map_err(|err| {
+            tracing::error!(%err, "could not store saved chat");
+            ApiError::Internal
+        })?;
+    let sql = format!(
+        "INSERT INTO attachments (id, workspace_id, thread_id, project_id, uploaded_by, filename, content_type, size_bytes, sha256, storage_key, uploaded)
+         VALUES ($1, $2, NULL, $3, $4, $5, 'text/markdown', $6, $7, $8, true)
+         RETURNING {}",
+        crate::routes::attachments::COLUMNS
+    );
+    let view = sqlx::query_as::<_, crate::routes::attachments::AttachmentView>(&sql)
+        .bind(attachment_id)
+        .bind(workspace_id)
+        .bind(req.project_id)
+        .bind(user.id)
+        .bind(&filename)
+        .bind(size)
+        .bind(&sha)
+        .bind(&storage_key)
+        .fetch_one(&state.pool)
+        .await?;
+    Ok((StatusCode::CREATED, Json(view)))
 }
 
 const COLUMNS: &str = "id, workspace_id, name, instructions, created_by, created_at, updated_at";

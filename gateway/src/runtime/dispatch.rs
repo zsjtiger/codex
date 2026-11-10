@@ -219,6 +219,9 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
     // Local turns are told where to save files for the user; those files are kept with the reply.
     let output_dir = (turn.endpoint.is_none()).then(|| outputs::output_dir(turn_id));
     let mut text = with_skills(&state.pool, &turn.skill_ids, &turn.input).await?;
+    if let Some(context) = project_files_context(state, turn.thread_id).await {
+        text = format!("{context}\n\n{text}");
+    }
     if let Some(dir) = &output_dir {
         if let Err(err) = std::fs::create_dir_all(dir) {
             tracing::warn!(%err, "could not create the turn's output folder");
@@ -297,6 +300,44 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
         .await?;
     }
     Ok(())
+}
+
+/// Most project file text added to one turn, in bytes.
+const PROJECT_FILE_BUDGET: usize = 60_000;
+
+/// The text files kept with the thread's project, for the model to read. Office and PDF files
+/// are not read yet, so they are left out. `None` when there is nothing to add.
+async fn project_files_context(state: &AppState, thread_id: Uuid) -> Option<String> {
+    let rows: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT a.filename, a.content_type, a.storage_key
+         FROM attachments a JOIN threads th ON th.project_id = a.project_id
+         WHERE th.id = $1 AND a.uploaded
+         ORDER BY a.created_at",
+    )
+    .bind(thread_id)
+    .fetch_all(&state.pool)
+    .await
+    .ok()?;
+    let mut out = String::new();
+    for (name, content_type, key) in rows {
+        if !(content_type.starts_with("text/") || content_type == "application/json") {
+            continue;
+        }
+        let remaining = PROJECT_FILE_BUDGET.saturating_sub(out.len());
+        if remaining == 0 {
+            break;
+        }
+        let Ok(bytes) = state.storage.get(&key).await else {
+            continue;
+        };
+        let text = String::from_utf8_lossy(&bytes);
+        let mut end = remaining.min(text.len());
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        out.push_str(&format!("\n## {name}\n{}\n", &text[..end]));
+    }
+    (!out.is_empty()).then(|| format!("Files in this project (for reference):{out}"))
 }
 
 /// Project instructions followed by each enabled skill. `None` when there is nothing to add.

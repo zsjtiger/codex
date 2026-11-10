@@ -49,11 +49,13 @@ pub struct CreateAttachment {
     size_bytes: i64,
     sha256: Option<String>,
     thread_id: Option<Uuid>,
+    project_id: Option<Uuid>,
 }
 
 #[derive(Deserialize)]
 pub struct ListAttachmentsQuery {
     thread_id: Option<Uuid>,
+    project_id: Option<Uuid>,
 }
 
 pub fn routes() -> Router<AppState> {
@@ -129,7 +131,7 @@ async fn convert_to_pdf(ext: &str, bytes: Vec<u8>) -> Result<Vec<u8>, String> {
     result
 }
 
-const COLUMNS: &str = "id, workspace_id, thread_id, uploaded_by, filename, content_type, size_bytes, \
+pub(crate) const COLUMNS: &str = "id, workspace_id, thread_id, uploaded_by, filename, content_type, size_bytes, \
                        sha256, storage_key, uploaded, created_at";
 
 async fn create(
@@ -169,11 +171,26 @@ async fn create(
         }
     }
 
+    if let Some(project_id) = req.project_id {
+        let in_workspace: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM projects WHERE id = $1 AND workspace_id = $2)",
+        )
+        .bind(project_id)
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
+        if !in_workspace {
+            return Err(ApiError::BadRequest(
+                "project does not belong to this workspace".to_string(),
+            ));
+        }
+    }
+
     let attachment_id = Uuid::new_v4();
     let storage_key = format!("workspaces/{id}/attachments/{attachment_id}");
     let sql = format!(
-        "INSERT INTO attachments (id, workspace_id, thread_id, uploaded_by, filename, content_type, size_bytes, sha256, storage_key)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        "INSERT INTO attachments (id, workspace_id, thread_id, project_id, uploaded_by, filename, content_type, size_bytes, sha256, storage_key)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING {COLUMNS}"
     );
 
@@ -182,6 +199,7 @@ async fn create(
         .bind(attachment_id)
         .bind(id)
         .bind(req.thread_id)
+        .bind(req.project_id)
         .bind(user.id)
         .bind(&req.filename)
         .bind(&req.content_type)
@@ -214,13 +232,16 @@ async fn list(
     require_role(&state.pool, id, user.id, Role::Member).await?;
     let sql = format!(
         "SELECT {COLUMNS} FROM attachments
-         WHERE workspace_id = $1 AND ($2::uuid IS NULL OR thread_id = $2)
+         WHERE workspace_id = $1
+           AND ($2::uuid IS NULL OR thread_id = $2)
+           AND ($3::uuid IS NULL OR project_id = $3)
          ORDER BY created_at DESC
          LIMIT 500"
     );
     let rows = sqlx::query_as::<_, AttachmentView>(&sql)
         .bind(id)
         .bind(query.thread_id)
+        .bind(query.project_id)
         .fetch_all(&state.pool)
         .await?;
     Ok(Json(rows))

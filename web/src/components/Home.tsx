@@ -67,6 +67,19 @@ export function Home(props: HomeProps) {
       .catch(() => setRecent([]));
   }, [workspaceId, thread]);
 
+  const [savedNote, setSavedNote] = useState<string | null>(null);
+  const saveToProject = async (projectId: string) => {
+    if (!thread || !projectId) return;
+    try {
+      const file = await threadApi.saveToProject(thread.id, projectId);
+      const projectName = projects.find((p) => p.id === projectId)?.name ?? "project";
+      setSavedNote(`Saved “${file.filename}” to ${projectName}`);
+      window.setTimeout(() => setSavedNote(null), 4000);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Could not save the chat to the project.");
+    }
+  };
+
   const setThreadProject = async (projectId: string | null) => {
     if (!thread) return;
     try {
@@ -94,6 +107,22 @@ export function Home(props: HomeProps) {
         <div className="thread-view">
           <header className="thread-title">
             <span>{thread.title}</span>
+            {projects.length > 0 && (
+              <select
+                className="save-to-project"
+                aria-label="Save chat to project"
+                value=""
+                onChange={(event) => void saveToProject(event.target.value)}
+              >
+                <option value="">Save to project…</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            {savedNote && <span className="muted small">{savedNote}</span>}
             {used.length > 0 && (
               <button
                 className="used-toggle"
