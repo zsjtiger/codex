@@ -4,6 +4,7 @@ import { CopyIcon, RetryIcon, SpeakIcon, ThumbDownIcon, ThumbUpIcon } from "./ic
 import type { Activity, Approval } from "../state/useCodex";
 import { ChevronIcon } from "./icons";
 import { usePreview } from "./Preview";
+import { attachments as attachmentApi } from "../api/resources";
 import type { Turn } from "../api/types";
 
 /** "just now", "5 min ago", "3 h ago", or the date for older replies. */
@@ -125,18 +126,59 @@ function activitySummary(activity: Activity, running: boolean): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-/** A file sent with a message. Clicking it opens the file in the side panel. */
+/** A file sent with a message. Clicking the name opens it in the side panel; the buttons download or delete it. */
 function FileChip({ id, name, contentType }: { id: string; name: string; contentType: string }) {
   const { open } = usePreview();
+  const [gone, setGone] = useState(false);
+  const [busy, setBusy] = useState(false);
+  if (gone) return null;
+
+  const download = async () => {
+    setBusy(true);
+    try {
+      const bytes = await attachmentApi.download(id);
+      const url = URL.createObjectURL(new Blob([bytes], { type: contentType || "application/octet-stream" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = name;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Could not download the file.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!window.confirm(`Delete “${name}”? It will be removed from this chat.`)) return;
+    setBusy(true);
+    try {
+      await attachmentApi.remove(id);
+      setGone(true);
+    } catch (err) {
+      setBusy(false);
+      window.alert(err instanceof Error ? err.message : "Could not delete the file.");
+    }
+  };
+
   return (
-    <button
-      type="button"
-      className="file-chip"
-      onClick={() => open({ kind: "file", title: name, attachmentId: id, contentType })}
-      title={name}
-    >
-      <span className="file-chip-name">{name}</span>
-    </button>
+    <span className="file-chip-wrap">
+      <button
+        type="button"
+        className="file-chip"
+        onClick={() => open({ kind: "file", title: name, attachmentId: id, contentType })}
+        title={name}
+      >
+        <span className="file-chip-name">{name}</span>
+      </button>
+      <button type="button" className="file-chip-action" onClick={() => void download()} disabled={busy} aria-label={`Download ${name}`} title="Download">
+        ↓
+      </button>
+      <button type="button" className="file-chip-action file-chip-danger" onClick={() => void remove()} disabled={busy} aria-label={`Delete ${name}`} title="Delete">
+        ×
+      </button>
+    </span>
   );
 }
 

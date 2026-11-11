@@ -81,6 +81,7 @@ export function App() {
     codex.dismissError();
   };
   const onError = (message: string) => setNotice(message);
+  const failWith = (err: unknown) => onError(err instanceof Error ? err.message : "Something went wrong.");
   const canEditOwned = (createdBy: string | null) => isAdmin || createdBy === userId;
   const openThread = (threadId: string) => {
     setView("chat");
@@ -103,6 +104,9 @@ export function App() {
         activeId={codex.activeId}
         activeView={view}
         onSelect={openThread}
+        onRenameThread={(id, title) => codex.renameThread(id, title).catch(failWith)}
+        onArchiveThread={(id) => codex.archiveThread(id).catch(failWith)}
+        onDeleteThread={(id) => codex.deleteThread(id).catch(failWith)}
         onNew={newChat}
         onSearch={() => setSearchOpen(true)}
         onView={setView}

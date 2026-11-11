@@ -25,6 +25,9 @@ const viewFor: Partial<Record<NavLabel, View>> = {
 
 interface SidebarProps {
   open: boolean;
+  onRenameThread: (threadId: string, title: string) => void;
+  onArchiveThread: (threadId: string) => void;
+  onDeleteThread: (threadId: string) => void;
   onOpenSettings: () => void;
   onToggle: () => void;
   threads: Thread[];
@@ -44,7 +47,18 @@ interface SidebarProps {
 const statusLabel: Record<SocketStatus, string> = { open: "Live", connecting: "Connecting…", closed: "Offline" };
 
 export function Sidebar(props: SidebarProps) {
-  const { open, onOpenSettings, onToggle, threads, activeId, activeView, onSelect, onNew, onSearch, onView, hidden, onHiddenChange, user, socketStatus, onSignOut } = props;
+  const { open, onOpenSettings, onRenameThread, onArchiveThread, onDeleteThread, onToggle, threads, activeId, activeView, onSelect, onNew, onSearch, onView, hidden, onHiddenChange, user, socketStatus, onSignOut } = props;
+  const [chatMenuId, setChatMenuId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameText, setRenameText] = useState("");
+
+  // Closes the chat menu on a click elsewhere.
+  useEffect(() => {
+    if (!chatMenuId) return;
+    const close = () => setChatMenuId(null);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [chatMenuId]);
   const [recentsOpen, setRecentsOpen] = useState(true);
   const [moreOpen, setMoreOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -158,14 +172,69 @@ export function Sidebar(props: SidebarProps) {
           {recentsOpen && (
             <div className="chat-list">
               {threads.length === 0 && <p className="empty-note">No chats yet</p>}
-              {threads.map((thread) => (
-                <button key={thread.id} className={`chat-row ${thread.id === activeId ? "chat-row-active" : ""}`} onClick={() => onSelect(thread.id)} title={thread.title}>
-                  <ChatIcon className="chat-row-icon" />
-                  <span className="chat-row-title">{thread.title}</span>
-                  {thread.state === "running" && <span className="unread-dot" aria-label="running" />}
-                  {thread.state === "failed" && <span className="failed-dot" aria-label="failed" />}
-                </button>
-              ))}
+              {threads.map((thread) =>
+                renamingId === thread.id ? (
+                  <form
+                    key={thread.id}
+                    className="chat-rename"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const title = renameText.trim();
+                      setRenamingId(null);
+                      if (title && title !== thread.title) onRenameThread(thread.id, title);
+                    }}
+                  >
+                    <input
+                      autoFocus
+                      value={renameText}
+                      maxLength={200}
+                      onChange={(e) => setRenameText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") setRenamingId(null);
+                      }}
+                      onBlur={() => setRenamingId(null)}
+                      aria-label="Chat name"
+                    />
+                  </form>
+                ) : (
+                  <div key={thread.id} className="chat-row-wrap" data-menu-for={thread.id}>
+                    <button className={`chat-row ${thread.id === activeId ? "chat-row-active" : ""}`} onClick={() => onSelect(thread.id)} title={thread.title}>
+                      <ChatIcon className="chat-row-icon" />
+                      <span className="chat-row-title">{thread.title}</span>
+                      {thread.state === "running" && <span className="unread-dot" aria-label="running" />}
+                      {thread.state === "failed" && <span className="failed-dot" aria-label="failed" />}
+                    </button>
+                    <button
+                      className="chat-row-more"
+                      aria-label={`Actions for ${thread.title}`}
+                      aria-haspopup="menu"
+                      aria-expanded={chatMenuId === thread.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setChatMenuId(chatMenuId === thread.id ? null : thread.id);
+                      }}
+                    >
+                      ⋯
+                    </button>
+                    {chatMenuId === thread.id && (
+                      <div className="chat-menu" role="menu">
+                        <button role="menuitem" onClick={() => { setChatMenuId(null); setRenameText(thread.title); setRenamingId(thread.id); }}>Rename</button>
+                        <button role="menuitem" onClick={() => { setChatMenuId(null); onArchiveThread(thread.id); }}>Archive</button>
+                        <button
+                          role="menuitem"
+                          className="chat-menu-danger"
+                          onClick={() => {
+                            setChatMenuId(null);
+                            if (window.confirm(`Delete “${thread.title}”? This cannot be undone.`)) onDeleteThread(thread.id);
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ),
+              )}
             </div>
           )}
         </section>

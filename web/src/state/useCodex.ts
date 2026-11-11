@@ -335,6 +335,23 @@ export function useCodex() {
     signOut,
     selectThread,
     newChat: () => void selectThread(null),
+    /** Renames a chat in the sidebar and in the open view. */
+    renameThread: async (threadId: string, title: string) => {
+      await threadApi.rename(threadId, title);
+      if (workspaceRef.current) await refreshThreads(workspaceRef.current);
+    },
+    /** Archives a chat: it leaves the sidebar, and the open view if it was open. */
+    archiveThread: async (threadId: string) => {
+      await threadApi.archive(threadId);
+      if (activeRef.current === threadId) await selectThread(null);
+      if (workspaceRef.current) await refreshThreads(workspaceRef.current);
+    },
+    /** Deletes a chat and its messages. */
+    deleteThread: async (threadId: string) => {
+      await threadApi.remove(threadId);
+      if (activeRef.current === threadId) await selectThread(null);
+      if (workspaceRef.current) await refreshThreads(workspaceRef.current);
+    },
     sendMessage,
     answerApproval,
     setFeedback,

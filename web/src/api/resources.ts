@@ -131,6 +131,9 @@ export const threads = {
     api<Thread>("POST", `/workspaces/${ws}/threads`, body),
   setProject: (id: string, projectId: string | null) =>
     api<Thread>("PATCH", `/threads/${id}`, { project_id: projectId }),
+  rename: (id: string, title: string) => api<Thread>("PATCH", `/threads/${id}`, { title }),
+  archive: (id: string) => api<Thread>("PATCH", `/threads/${id}`, { archived: true }),
+  remove: (id: string) => api<void>("DELETE", `/threads/${id}`),
   /** Saves a snapshot of the chat as a Markdown file in a project. */
   saveToProject: (id: string, projectId: string) =>
     api<Attachment>("POST", `/threads/${id}/save-to-project`, { project_id: projectId }),
