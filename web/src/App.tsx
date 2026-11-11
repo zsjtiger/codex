@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { projects as projectApi } from "./api/resources";
 import type { Artifact, Project, ScheduledTask } from "./api/types";
 import { ArtifactsPage } from "./components/ArtifactsPage";
@@ -7,6 +7,8 @@ import { Home } from "./components/Home";
 import { PreviewProvider } from "./components/Preview";
 import { ProjectsPage } from "./components/ProjectsPage";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { TitleBar } from "./components/TitleBar";
+import { isDesktop, notify, onMenuAction } from "./desktop";
 import { ScheduledPage } from "./components/ScheduledPage";
 import { SearchDialog } from "./components/SearchDialog";
 import { SignIn } from "./components/SignIn";
@@ -59,6 +61,34 @@ export function App() {
     void reloadProjects().catch((err) => setNotice(err instanceof Error ? err.message : tx("Could not load projects.")));
   }, [reloadProjects]);
 
+  // Menu items of the desktop app.
+  useEffect(() => {
+    if (!isDesktop()) return;
+    let stop: (() => void) | undefined;
+    void onMenuAction((id) => {
+      if (id === "new-chat") {
+        setView("chat");
+        codex.newChat();
+      }
+      else if (id === "search") setSearchOpen(true);
+      else if (id === "settings") setSettingsOpen(true);
+      else if (id === "toggle-sidebar") setSidebarOpen((open) => !open);
+    }).then((unlisten) => {
+      stop = unlisten;
+    });
+    return () => stop?.();
+  }, []);
+
+  // Desktop: a notification when something needs the user and the window is in the background.
+  const approvalCount = codex.approvals.length;
+  const seenApprovals = useRef(0);
+  useEffect(() => {
+    if (approvalCount > seenApprovals.current && isDesktop() && document.hidden) {
+      void notify("Baize", tx("Approval needed"));
+    }
+    seenApprovals.current = approvalCount;
+  }, [approvalCount]);
+
   // Cmd/Ctrl+K opens search from anywhere in the app.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -104,6 +134,7 @@ export function App() {
 
   return (
     <PreviewProvider>
+    {isDesktop() && <TitleBar />}
     <div className="app">
       <Sidebar
         open={sidebarOpen}

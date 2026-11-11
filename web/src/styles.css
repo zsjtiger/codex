@@ -760,3 +760,17 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
   .member-row { flex-wrap: wrap; }
   .member-who { flex: 1 1 160px; }
 }
+.tabs-row { display: flex; gap: 6px; margin: 4px 0 16px; }
+
+/* Desktop app: its own title bar sits above the app, which fills the rest of the window. */
+.desktop-titlebar {
+  position: fixed; top: 0; left: 0; right: 0; height: 32px; z-index: 50; display: flex; align-items: center; justify-content: space-between;
+  background: var(--surface); border-bottom: 1px solid var(--border); user-select: none; -webkit-user-select: none;
+}
+.desktop-titlebar-name { padding-left: 12px; font-size: 13px; color: var(--text-muted); flex: 1; height: 100%; display: flex; align-items: center; }
+.desktop-titlebar-controls { display: flex; height: 100%; }
+.desktop-titlebar-controls button { width: 46px; height: 100%; border: none; background: none; cursor: pointer; color: var(--text); font-size: 14px; }
+.desktop-titlebar-controls button:hover { background: var(--hover); }
+.desktop-titlebar-close:hover { background: #c42b1c !important; color: #fff !important; }
+html.desktop .app { height: calc(100vh - 32px); margin-top: 32px; }
+.memory-add select { min-width: 0; max-width: 100%; flex: 1 1 180px; }

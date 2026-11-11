@@ -385,3 +385,73 @@ addChinese({
   "New project note": "新的项目备注",
   "Could not delete the note.": "无法删除备注。",
 });
+
+// Scheduled task templates.
+addChinese({
+  "Templates": "模板",
+  "Yours": "我的",
+  "Daily news digest": "每日新闻摘要",
+  "Weekday follow-ups": "工作日跟进",
+  "Weekly review": "每周回顾",
+  "No tasks match": "没有匹配的任务",
+});
+
+// Audit log labels.
+addChinese({
+  "Artifact created": "已创建 Artifact",
+  "Artifact deleted": "已删除 Artifact",
+  "File uploaded": "已上传文件",
+  "File deleted": "已删除文件",
+  "Connector added": "已添加连接器",
+  "Connector removed": "已移除连接器",
+  "Environment created": "已创建运行环境",
+  "Environment deleted": "已删除运行环境",
+  "Member added": "已添加成员",
+  "Member removed": "已移除成员",
+  "Member role changed": "已更改成员角色",
+  "Project created": "已创建项目",
+  "Project deleted": "已删除项目",
+  "Scheduled task created": "已创建定时任务",
+  "Scheduled task deleted": "已删除定时任务",
+  "Skill added": "已添加技能",
+  "Skill removed": "已移除技能",
+  "Chat created": "已创建聊天",
+  "Chat deleted": "已删除聊天",
+  "Workspace created": "已创建工作区",
+  "Approval declined (no one was watching)": "审批已拒绝（无人值守）",
+});
+
+// Gateway error messages.
+addChinese({
+  "authentication required": "需要先登录",
+  "forbidden": "没有权限",
+  "resource not found": "找不到该内容",
+  "resource already exists": "已存在",
+  "that username or email is already in use": "该用户名或邮箱已被使用",
+  "email is not valid": "邮箱格式不正确",
+  "thread is archived": "该聊天已归档",
+  "this chat has no messages yet": "这个聊天还没有消息",
+  "this chat has no environment to read it with": "这个聊天没有可用于读取的运行环境",
+  "the zip file could not be read": "无法读取该 zip 文件",
+  "the workspace has no matching environment to sign in on": "工作区没有可用于登录的运行环境",
+  "the search text is too long": "搜索内容太长",
+  "the file must be UTF-8 text or a zip": "文件必须是 UTF-8 文本或 zip",
+  "the chat is too long to save to a project": "聊天太长，无法保存到项目",
+  "no notes found in the import": "导入内容中没有找到备注",
+  "from must be before to": "开始时间必须早于结束时间",
+  "frequency must be hourly, daily, weekdays or weekly": "频率必须是每小时、每天、工作日或每周",
+  "time_of_day must be HH:MM in UTC": "时间必须是 UTC 的 HH:MM 格式",
+});
+
+// Desktop app.
+addChinese({
+  "Minimize": "最小化",
+  "Maximize": "最大化",
+  "Close window": "关闭窗口",
+  "Show in folder": "在文件夹中显示",
+  "Gateway address": "网关地址",
+  "Approval needed": "需要审批",
+  "The gateway address": "网关地址",
+  "Change the gateway": "更改网关",
+  "Use this gateway": "使用此网关",
+});

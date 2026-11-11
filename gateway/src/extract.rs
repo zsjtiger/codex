@@ -21,6 +21,24 @@ pub async fn extract(filename: &str, content_type: &str, bytes: &[u8]) -> Option
             command
         })
         .await?
+    } else if content_type.contains("presentationml") || name.ends_with(".pptx") {
+        // Slide text lives in DrawingML paragraphs (`a:p`) inside each slide part.
+        let xml = run_on_copy(bytes, "pptx", |path| {
+            let mut command = Command::new("unzip");
+            command.arg("-p").arg(path).arg("ppt/slides/*.xml");
+            command
+        })
+        .await?;
+        strip_xml(&xml)
+    } else if content_type.contains("spreadsheetml") || name.ends_with(".xlsx") {
+        // Shared strings hold the text of every text cell, one `si` item each.
+        let xml = run_on_copy(bytes, "xlsx", |path| {
+            let mut command = Command::new("unzip");
+            command.arg("-p").arg(path).arg("xl/sharedStrings.xml");
+            command
+        })
+        .await?;
+        strip_xml(&xml)
     } else if content_type.contains("wordprocessingml") || name.ends_with(".docx") {
         let xml = run_on_copy(bytes, "docx", |path| {
             let mut command = Command::new("unzip");
@@ -56,9 +74,13 @@ async fn run_on_copy(bytes: &[u8], ext: &str, build: impl FnOnce(&PathBuf) -> Co
     result
 }
 
-/// Word's XML with paragraphs on their own lines and the tags removed.
+/// Office XML (Word, PowerPoint, Excel) with paragraphs on their own lines and the tags removed.
 fn strip_xml(xml: &str) -> String {
-    let with_breaks = xml.replace("</w:p>", "\n").replace("<w:tab/>", "\t");
+    let with_breaks = xml
+        .replace("</w:p>", "\n")
+        .replace("</a:p>", "\n")
+        .replace("</si>", "\n")
+        .replace("<w:tab/>", "\t");
     let mut out = String::with_capacity(with_breaks.len());
     let mut in_tag = false;
     for ch in with_breaks.chars() {

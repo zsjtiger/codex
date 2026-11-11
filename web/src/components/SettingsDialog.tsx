@@ -3,12 +3,50 @@ import { memory as memoryApi } from "../api/resources";
 import type { MemoryImportResult, MemoryNote, Thread, User, Workspace } from "../api/types";
 import { AuditSection, MembersSection, WorkspaceSection } from "./WorkspaceSections";
 import { useI18n } from "../i18n";
+import { gatewayBase, setGatewayBase } from "../api/config";
+import { isDesktop } from "../desktop";
 import { tx } from "../i18n";
 
 /** Asked of claude.ai or Codex so their memory can be pasted here. */
 const IMPORT_PROMPT =
   "List everything you remember about me as concise bullet points, one fact per line, each starting with \"- \". " +
   "Include my preferences, my work and projects, and recurring context. Output only the list.";
+
+/** The gateway this desktop app connects to. Changing it reloads the app. */
+function GatewayRow({ onError }: { onError: (message: string) => void }) {
+  const [address, setAddress] = useState(gatewayBase());
+  const save = () => {
+    const value = address.trim().replace(/\/+$/, "");
+    try {
+      const url = new URL(value);
+      if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error();
+    } catch {
+      onError(tx("The address must start with http:// or https://"));
+      return;
+    }
+    setGatewayBase(value);
+    window.location.reload();
+  };
+  return (
+    <div className="settings-row">
+      <div className="settings-grow">
+        <div className="detail-label">{tx("Gateway address")}</div>
+        <form
+          className="memory-add"
+          onSubmit={(event) => {
+            event.preventDefault();
+            save();
+          }}
+        >
+          <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="https://codex.example.com" aria-label={tx("Gateway address")} />
+          <button className="primary" type="submit" disabled={!address.trim()}>
+            {tx("Save")}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 interface SettingsDialogProps {
   user: User;
@@ -227,6 +265,7 @@ export function SettingsDialog({ user, workspace, threads, onClose, onError }: S
                     <div className="muted small">{user.email}</div>
                   </div>
                 </div>
+                {isDesktop() && <GatewayRow onError={onError} />}
                 <div className="settings-row">
                   <div>
                     <div className="detail-label">{t("settings.language")}</div>

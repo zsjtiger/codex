@@ -48,6 +48,34 @@ interface ScheduledPageProps {
   onError: (message: string) => void;
 }
 
+/** Starting points for common scheduled tasks. Using one opens the new-task form filled in. */
+const TEMPLATES: { id: string; name: string; prompt: string; frequency: Frequency; time_of_day: string; weekday: number }[] = [
+  {
+    id: "daily-news",
+    name: "Daily news digest",
+    prompt: "Summarise the most important news from today in five short bullet points, in the language I use with you.",
+    frequency: "daily",
+    time_of_day: "08:00",
+    weekday: 1,
+  },
+  {
+    id: "weekday-followups",
+    name: "Weekday follow-ups",
+    prompt: "List open items from my recent chats that need follow-up today, grouped by project, most urgent first.",
+    frequency: "weekdays",
+    time_of_day: "09:00",
+    weekday: 1,
+  },
+  {
+    id: "weekly-review",
+    name: "Weekly review",
+    prompt: "Summarise what I worked on this week and suggest three priorities for next week.",
+    frequency: "weekly",
+    time_of_day: "17:00",
+    weekday: 5,
+  },
+];
+
 const emptyForm = { name: "", prompt: "", frequency: "daily" as Frequency, time_of_day: "08:00", weekday: 1, project_id: "" };
 
 /** Scheduled tasks start a new chat with their prompt on a schedule. Times are UTC. */
@@ -58,6 +86,7 @@ export function ScheduledPage({ workspaceId, focus, projects, canEdit, onOpenThr
   const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<"yours" | "templates">("yours");
   const [showSearch, setShowSearch] = useState(false);
   const [runs, setRuns] = useState<ScheduledRun[]>([]);
   const [busy, setBusy] = useState(false);
@@ -370,9 +399,39 @@ export function ScheduledPage({ workspaceId, focus, projects, canEdit, onOpenThr
             </button>
           </div>
         </div>
-        {items.length === 0 && <p className="empty-state">{tx("No scheduled tasks yet.")}</p>}
-        {items.length > 0 && shown.length === 0 && <p className="empty-state">No tasks match “{query}”.</p>}
-        <div className="projects-grid">
+        <div className="tabs-row" role="tablist">
+          <button role="tab" aria-selected={tab === "yours"} className={`tab ${tab === "yours" ? "tab-active" : ""}`} onClick={() => setTab("yours")}>{tx("Yours")}</button>
+          <button role="tab" aria-selected={tab === "templates"} className={`tab ${tab === "templates" ? "tab-active" : ""}`} onClick={() => setTab("templates")}>{tx("Templates")}</button>
+        </div>
+        {tab === "templates" && (
+          <div className="projects-grid">
+            {TEMPLATES.map((template) => (
+              <button
+                key={template.id}
+                className="project-card task-card"
+                onClick={() => {
+                  setForm({
+                    ...emptyForm,
+                    name: template.name,
+                    prompt: template.prompt,
+                    frequency: template.frequency,
+                    time_of_day: template.time_of_day,
+                    weekday: template.weekday,
+                  });
+                  setCreating(true);
+                }}
+              >
+                <span className="task-card-text">
+                  <span className="project-card-name">{tx(template.name)}</span>
+                  <span className="muted small task-card-prompt">{template.prompt}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+        {tab === "yours" && items.length === 0 && <p className="empty-state">{tx("No scheduled tasks yet.")}</p>}
+        {tab === "yours" && items.length > 0 && shown.length === 0 && <p className="empty-state">{tx("No tasks match")} “{query}”.</p>}
+        {tab === "yours" && <div className="projects-grid">
           {shown.map((task) => (
             <button key={task.id} className="project-card task-card" onClick={() => setSelectedId(task.id)}>
               <span className="task-card-text">
@@ -384,7 +443,7 @@ export function ScheduledPage({ workspaceId, focus, projects, canEdit, onOpenThr
               </span>
             </button>
           ))}
-        </div>
+        </div>}
       </div>
     </main>
   );

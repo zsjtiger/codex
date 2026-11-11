@@ -5,6 +5,7 @@ import type { Activity, Approval } from "../state/useCodex";
 import { ChevronIcon } from "./icons";
 import { usePreview } from "./Preview";
 import { attachments as attachmentApi } from "../api/resources";
+import { isDesktop, saveFileAs, showInFolder } from "../desktop";
 import type { Turn } from "../api/types";
 import { tx } from "../i18n";
 
@@ -157,12 +158,19 @@ function FileChip({ id, name, contentType }: { id: string; name: string; content
   const { open } = usePreview();
   const [gone, setGone] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [savedPath, setSavedPath] = useState<string | null>(null);
   if (gone) return null;
 
   const download = async () => {
     setBusy(true);
     try {
       const bytes = await attachmentApi.download(id);
+      if (isDesktop()) {
+        // The desktop app asks where to save, then can show the file in its folder.
+        const path = await saveFileAs(name, new Uint8Array(bytes));
+        if (path) setSavedPath(path);
+        return;
+      }
       const url = URL.createObjectURL(new Blob([bytes], { type: contentType || "application/octet-stream" }));
       const link = document.createElement("a");
       link.href = url;
@@ -204,6 +212,11 @@ function FileChip({ id, name, contentType }: { id: string; name: string; content
       <button type="button" className="file-chip-action file-chip-danger" onClick={() => void remove()} disabled={busy} aria-label={`Delete ${name}`} title={tx("Delete")}>
         ×
       </button>
+      {savedPath && (
+        <button type="button" className="file-chip-action" onClick={() => void showInFolder(savedPath)}>
+          {tx("Show in folder")}
+        </button>
+      )}
     </span>
   );
 }

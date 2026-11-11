@@ -172,6 +172,31 @@ export function MembersSection({ workspace, user, onError }: { workspace: Worksp
   );
 }
 
+/** Readable labels for the audit actions the gateway records. Unknown codes are shown as they are. */
+const AUDIT_LABELS: Record<string, string> = {
+  "artifact.created": "Artifact created",
+  "artifact.deleted": "Artifact deleted",
+  "attachment.created": "File uploaded",
+  "attachment.deleted": "File deleted",
+  "connector.created": "Connector added",
+  "connector.deleted": "Connector removed",
+  "environment.created": "Environment created",
+  "environment.deleted": "Environment deleted",
+  "member.added": "Member added",
+  "member.removed": "Member removed",
+  "member.role_changed": "Member role changed",
+  "project.created": "Project created",
+  "project.deleted": "Project deleted",
+  "scheduled_task.created": "Scheduled task created",
+  "scheduled_task.deleted": "Scheduled task deleted",
+  "skill.created": "Skill added",
+  "skill.deleted": "Skill removed",
+  "thread.created": "Chat created",
+  "thread.deleted": "Chat deleted",
+  "workspace.created": "Workspace created",
+  "approval.declined_unattended": "Approval declined (no one was watching)",
+};
+
 /** The workspace audit log, newest first. Admins and owners can read it. */
 export function AuditSection({ workspace, onError }: { workspace: Workspace; onError: (message: string) => void }) {
   const [entries, setEntries] = useState<AuditEntry[]>([]);
@@ -214,7 +239,7 @@ export function AuditSection({ workspace, onError }: { workspace: Workspace; onE
             {entries.map((entry) => (
               <div key={entry.id} className="audit-row">
                 <span className="muted small">{new Date(entry.created_at).toLocaleString()}</span>
-                <span className="audit-action">{entry.action}</span>
+                <span className="audit-action">{tx(AUDIT_LABELS[entry.action] ?? entry.action)}</span>
                 <span className="muted small">{who(entry.actor_id)}</span>
                 <span className="muted small audit-target">
                   {entry.target_type} {entry.target_id.slice(0, 8)}

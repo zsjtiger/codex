@@ -1,7 +1,17 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window can use Tauri's core APIs and nothing else.",
+  "description": "The main window can use the core APIs, its own title bar, file dialogs, opening files, and notifications.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
+    "core:window:allow-is-maximized",
+    "dialog:allow-save",
+    "opener:allow-reveal-item-in-dir",
+    "notification:default"
+  ]
 }

@@ -1,3 +1,5 @@
+import { tx } from "../i18n";
+import { isDesktop, writeStoredToken } from "../desktop";
 import { apiUrl } from "./config";
 // Thin fetch wrapper for the gateway. The session token lives in localStorage so a
 // reload keeps the user signed in. This is per-browser convenience, not a secret store.
@@ -12,16 +14,29 @@ export class ApiError extends Error {
     readonly code: string,
     message: string,
   ) {
-    super(message);
+    // Gateway messages that have a translation are shown in the app's language.
+    super(tx(message));
   }
 }
 
-export function loadStoredToken(): string | null {
+/** The token kept in web storage. Used in browsers, and in the desktop app when no keychain is available. */
+export function loadWebToken(): string | null {
   try {
     return localStorage.getItem(SESSION_KEY);
   } catch {
     return null;
   }
+}
+
+export function loadStoredToken(): string | null {
+  // In the desktop app the token was read from the keychain at start-up (see main.tsx).
+  if (isDesktop()) return token;
+  return loadWebToken();
+}
+
+/** The desktop app keeps the token in the keychain; this sets it for the page's requests. */
+export function useTokenInMemory(next: string | null): void {
+  token = next;
 }
 
 export function getToken(): string | null {
@@ -30,6 +45,18 @@ export function getToken(): string | null {
 
 export function setToken(next: string | null): void {
   token = next;
+  // The desktop app keeps the token in the keychain; web storage is the fallback when it is unavailable.
+  if (isDesktop()) {
+    writeStoredToken(next).catch(() => {
+      try {
+        if (next) localStorage.setItem(SESSION_KEY, next);
+        else localStorage.removeItem(SESSION_KEY);
+      } catch {
+        // No storage at all: the token lasts for this window only.
+      }
+    });
+    return;
+  }
   try {
     if (next) localStorage.setItem(SESSION_KEY, next);
     else localStorage.removeItem(SESSION_KEY);
