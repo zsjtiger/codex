@@ -801,3 +801,16 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 /* Model and effort sit inside the composer, beside the send arrow. */
 .composer-right .composer-options-right { gap: 4px; }
 .composer-right .pill-select { color: var(--text-muted); }
+
+/* Phones: the model and effort pickers shrink so the send button stays inside the composer. */
+@media (max-width: 600px) {
+  .composer-right { gap: 2px; min-width: 0; }
+  .composer-right .composer-options-right { gap: 0; min-width: 0; }
+  .composer-right .pill-select { max-width: 96px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+
+/* Phones: full-page views start below the sidebar-open button, and button labels stay on one line. */
+@media (max-width: 760px) {
+  .artifacts-page, .customize-page { padding-top: 56px; }
+  .add-button { white-space: nowrap; }
+}
