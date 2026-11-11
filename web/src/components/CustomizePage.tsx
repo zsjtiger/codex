@@ -93,6 +93,23 @@ export function CustomizePage({ workspaceId, isAdmin, onBack, onError }: Customi
     }
   };
 
+  // Opens the provider's sign-in page, then reloads the connector until the sign-in finishes.
+  const signIn = async (connector: Connector) => {
+    try {
+      const { authorization_url } = await connectorApi.signIn(connector.id);
+      window.open(authorization_url, "_blank", "noopener");
+      await reload();
+      for (let attempt = 0; attempt < 200; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const latest = await connectorApi.list(workspaceId);
+        setConnectorItems(latest);
+        if (latest.find((c) => c.id === connector.id)?.oauth_state !== "pending") break;
+      }
+    } catch (err) {
+      fail(err, tx("Could not start the sign-in."));
+    }
+  };
+
   const act = async (fn: () => Promise<unknown>, fallback: string) => {
     try {
       await fn();
@@ -192,9 +209,19 @@ export function CustomizePage({ workspaceId, isAdmin, onBack, onError }: Customi
                     </div>
                   </div>
                   <div className="list-actions">
+                    {c.oauth_state && (
+                      <span className={`status ${c.oauth_state === "signed_in" ? "status-on" : ""}`} title={c.oauth_error ?? undefined}>
+                        {c.oauth_state === "pending" ? tx("Waiting for sign-in…") : c.oauth_state === "signed_in" ? tx("Signed in") : tx("Sign-in failed")}
+                      </span>
+                    )}
                     <span className={`status ${c.enabled && c.status === "ready" ? "status-on" : ""}`} title={c.status_error ?? undefined}>
                       {connectorStatusLabel(c)}
                     </span>
+                    {c.enabled && (
+                      <button onClick={() => void signIn(c)} disabled={c.oauth_state === "pending"}>
+                        {c.oauth_state === "signed_in" ? tx("Sign in again") : tx("Sign in")}
+                      </button>
+                    )}
                     {isAdmin && (
                       <button onClick={() => void act(() => connectorApi.update(c.id, { enabled: !c.enabled }), tx("Could not update the connector."))}>
                         {c.enabled ? tx("Disconnect") : tx("Connect")}
@@ -206,7 +233,7 @@ export function CustomizePage({ workspaceId, isAdmin, onBack, onError }: Customi
               ))}
             </div>
             <p className="muted small">
-              {tx("Connected connectors are added to chats that start after the change. Status is the last report from codex in any chat; it shows \"Not checked\" until a chat has started with the connector. Connectors that need sign-in are not supported yet.")}
+              {tx("Connected connectors are added to chats that start after the change. Status is the last report from codex in any chat; it shows \"Not checked\" until a chat has started with the connector. Connectors that need sign-in use OAuth: sign in, then start a new chat. Sign-in needs the gateway's public address.")}
             </p>
           </>
         ) : (

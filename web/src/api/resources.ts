@@ -206,6 +206,8 @@ export const connectors = {
   update: (id: string, body: { name?: string; url?: string; enabled?: boolean }) =>
     api<Connector>("PATCH", `/connectors/${id}`, body),
   remove: (id: string) => api<void>("DELETE", `/connectors/${id}`),
+  /** Starts OAuth sign-in; returns the provider's page to open. */
+  signIn: (id: string) => api<{ authorization_url: string }>("POST", `/connectors/${id}/sign-in`),
 };
 
 /** The signed-in user's own token usage over the last `days` days. */

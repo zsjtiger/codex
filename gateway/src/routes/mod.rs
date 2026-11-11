@@ -5,7 +5,7 @@ use crate::state::AppState;
 mod artifacts;
 mod attachments;
 mod auth;
-mod connectors;
+pub mod connectors;
 mod environments;
 mod memory;
 mod members;

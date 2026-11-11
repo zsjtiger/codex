@@ -290,7 +290,7 @@ addChinese({
   "Edit sidebar…": "编辑侧边栏…",
   "Done editing sidebar": "完成编辑",
   "Server URL (http or https)": "服务器地址（http 或 https）",
-  "Connected connectors are added to chats that start after the change. Status is the last report from codex in any chat; it shows \"Not checked\" until a chat has started with the connector. Connectors that need sign-in are not supported yet.": "已连接的连接器会加入此后开始的聊天。状态是 Codex 在任意聊天中最后一次的报告；在用到该连接器的聊天开始之前显示“未检查”。需要登录的连接器暂不支持。",
+  "Connected connectors are added to chats that start after the change. Status is the last report from codex in any chat; it shows \"Not checked\" until a chat has started with the connector. Connectors that need sign-in use OAuth: sign in, then start a new chat. Sign-in needs the gateway's public address.": "已连接的连接器会加入此后开始的聊天。状态是 Codex 在任意聊天中最后一次的报告；在用到该连接器的聊天开始之前显示“未检查”。需要登录的连接器使用 OAuth：登录后请新开一个聊天。登录需要网关的公开地址。",
   "Project (optional)": "项目（可选）",
 });
 
@@ -344,4 +344,14 @@ addChinese({
 // Scheduled run history.
 addChinese({
   "Needed approval, skipped": "需要审批，已跳过",
+});
+
+// Connector sign-in.
+addChinese({
+  "Sign in": "登录",
+  "Sign in again": "重新登录",
+  "Signed in": "已登录",
+  "Sign-in failed": "登录失败",
+  "Waiting for sign-in…": "等待登录…",
+  "Could not start the sign-in.": "无法开始登录。",
 });

@@ -425,7 +425,21 @@ async fn developer_instructions(
 }
 
 /// Enabled connectors as codex `mcp_servers` entries. `None` when there are none.
-async fn mcp_servers(pool: &PgPool, workspace_id: Uuid) -> Result<Option<Value>, DispatchError> {
+/// The codex configuration for a workspace's connectors: their servers, and where MCP OAuth
+/// sends its callback when the gateway has a public address. `None` when there are no connectors.
+pub async fn codex_mcp_config(pool: &PgPool, workspace_id: Uuid) -> Result<Option<Value>, sqlx::Error> {
+    let Some(servers) = mcp_servers(pool, workspace_id).await? else {
+        return Ok(None);
+    };
+    let mut config = json!({ "mcp_servers": servers });
+    if let Some(public) = crate::routes::connectors::public_base() {
+        config["mcp_oauth_callback_url"] = json!(format!("{public}{}", crate::routes::connectors::CALLBACK_PATH));
+        config["mcp_oauth_callback_port"] = json!(crate::routes::connectors::callback_port());
+    }
+    Ok(Some(config))
+}
+
+async fn mcp_servers(pool: &PgPool, workspace_id: Uuid) -> Result<Option<Value>, sqlx::Error> {
     let rows: Vec<(String, String)> = sqlx::query_as(
         "SELECT key, url FROM connectors WHERE workspace_id = $1 AND enabled ORDER BY key",
     )
@@ -455,8 +469,8 @@ async fn start_codex_thread(
     if let Some(instructions) = instructions {
         params["developerInstructions"] = json!(instructions);
     }
-    if let Some(servers) = mcp_servers(pool, workspace_id).await? {
-        params["config"] = json!({ "mcp_servers": servers });
+    if let Some(config) = codex_mcp_config(pool, workspace_id).await? {
+        params["config"] = config;
     }
     let response = connection.request("thread/start", params).await?;
     let started = response

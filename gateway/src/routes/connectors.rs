@@ -2,7 +2,8 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     http::StatusCode,
-    routing::get,
+    response::{IntoResponse, Response},
+    routing::{get, post},
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -32,6 +33,11 @@ pub struct ConnectorView {
     pub status: Option<String>,
     pub status_error: Option<String>,
     pub status_at: Option<DateTime<Utc>>,
+    /// Sign-in state for connectors that use OAuth: pending, signed_in or failed. Null when
+    /// no sign-in has been started.
+    pub oauth_state: Option<String>,
+    pub oauth_error: Option<String>,
+    pub oauth_updated_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -57,9 +63,34 @@ pub fn routes() -> Router<AppState> {
             "/connectors/{id}",
             get(get_one).patch(update).delete(delete),
         )
+        .route("/connectors/{id}/sign-in", post(sign_in))
+        .route("/connectors/oauth/callback", get(oauth_callback))
+        .route("/connectors/oauth/callback/{*rest}", get(oauth_callback))
 }
 
-const COLUMNS: &str = "id, workspace_id, name, key, url, enabled, status, status_error, status_at, created_at, updated_at";
+/// Where the provider sends the browser after sign-in. The gateway forwards it to codex.
+pub const CALLBACK_PATH: &str = "/api/v1/connectors/oauth/callback";
+
+/// The gateway's public address, from `GATEWAY_PUBLIC_URL`. Without it, OAuth sign-in is off.
+pub fn public_base() -> Option<String> {
+    std::env::var("GATEWAY_PUBLIC_URL")
+        .ok()
+        .map(|value| value.trim().trim_end_matches('/').to_string())
+        .filter(|value| !value.is_empty())
+}
+
+/// The fixed port codex's local OAuth listener uses on the runtime host.
+pub fn callback_port() -> u16 {
+    std::env::var("GATEWAY_OAUTH_CALLBACK_PORT")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(17600)
+}
+
+/// How long a sign-in may wait for the browser before it is marked failed.
+const SIGN_IN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+const COLUMNS: &str = "id, workspace_id, name, key, url, enabled, status, status_error, status_at, oauth_state, oauth_error, oauth_updated_at, created_at, updated_at";
 
 /// Turns a display name into a key codex accepts: lowercase letters, digits, `_` and `-`.
 pub fn key_for(name: &str) -> Result<String, ApiError> {
@@ -224,4 +255,166 @@ async fn delete(
     .await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Serialize)]
+pub struct SignInStarted {
+    pub authorization_url: String,
+}
+
+/// Starts OAuth sign-in for a connector. Codex returns the provider's authorization URL, which
+/// the browser opens. When the provider calls back, codex stores the grant and the result is
+/// recorded on the connector.
+async fn sign_in(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<SignInStarted>, ApiError> {
+    if public_base().is_none() {
+        return Err(ApiError::BadRequest(
+            "sign-in needs GATEWAY_PUBLIC_URL to be set on the gateway".to_string(),
+        ));
+    }
+    let (workspace_id, key): (Uuid, String) = sqlx::query_as("SELECT workspace_id, key FROM connectors WHERE id = $1")
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
+    require_role(&state.pool, workspace_id, user.id, Role::Member).await?;
+    let (environment_id, endpoint): (Uuid, Option<String>) = sqlx::query_as(
+        "SELECT id, endpoint FROM environments WHERE workspace_id = $1 ORDER BY created_at LIMIT 1",
+    )
+    .bind(workspace_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| ApiError::BadRequest("the workspace has no environment to sign in on".to_string()))?;
+
+    let lease = state
+        .runtime
+        .lease(environment_id, endpoint.as_deref())
+        .await
+        .map_err(|err| {
+            tracing::error!(%err, "could not reach the runtime for connector sign-in");
+            ApiError::Internal
+        })?;
+    // Subscribe before starting the login so its completion cannot be missed.
+    let mut events = lease.subscribe();
+    let config = crate::runtime::dispatch::codex_mcp_config(&state.pool, workspace_id)
+        .await?
+        .unwrap_or_else(|| json!({}));
+    let started = lease
+        .request("thread/start", json!({ "approvalPolicy": "on-request", "config": config }))
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("could not start the sign-in: {err}")))?;
+    let codex_thread = started
+        .pointer("/thread/id")
+        .and_then(serde_json::Value::as_str)
+        .ok_or(ApiError::Internal)?
+        .to_string();
+    let login = lease
+        .request(
+            "mcpServer/oauth/login",
+            json!({ "name": key, "threadId": codex_thread }),
+        )
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("this connector cannot sign in: {err}")))?;
+    let authorization_url = login
+        .get("authorizationUrl")
+        .and_then(serde_json::Value::as_str)
+        .ok_or(ApiError::Internal)?
+        .to_string();
+    let login_id = login.get("loginId").and_then(serde_json::Value::as_str).map(str::to_string);
+
+    sqlx::query("UPDATE connectors SET oauth_state = 'pending', oauth_error = NULL, oauth_updated_at = now() WHERE id = $1")
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+
+    // Holds the runtime connection until the browser finishes or the sign-in times out.
+    let pool = state.pool.clone();
+    tokio::spawn(async move {
+        let outcome = tokio::time::timeout(SIGN_IN_TIMEOUT, async {
+            loop {
+                match events.recv().await {
+                    Ok(event) if event.method == "mcpServer/oauthLogin/completed" => {
+                        let matches = match &login_id {
+                            Some(expected) => event.params.get("loginId").and_then(serde_json::Value::as_str) == Some(expected.as_str()),
+                            None => event.params.get("name").and_then(serde_json::Value::as_str) == Some(key.as_str()),
+                        };
+                        if matches {
+                            return event.params;
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(_) => return serde_json::Value::Null,
+                }
+            }
+        })
+        .await;
+        let (state_text, error) = match outcome {
+            Ok(params) if params.get("success").and_then(serde_json::Value::as_bool) == Some(true) => ("signed_in", None),
+            Ok(params) => (
+                "failed",
+                Some(params.get("error").and_then(serde_json::Value::as_str).unwrap_or("sign-in was not completed").to_string()),
+            ),
+            Err(_) => ("failed", Some("sign-in timed out".to_string())),
+        };
+        let _ = sqlx::query("UPDATE connectors SET oauth_state = $2, oauth_error = $3, oauth_updated_at = now() WHERE id = $1")
+            .bind(id)
+            .bind(state_text)
+            .bind(error)
+            .execute(&pool)
+            .await;
+        drop(lease);
+    });
+
+    Ok(Json(SignInStarted { authorization_url }))
+}
+
+/// Receives the provider's redirect and hands it to codex's local listener, which checks the
+/// state and exchanges the code. Only the path and query are forwarded.
+async fn oauth_callback(uri: axum::http::Uri) -> Response {
+    // Inside the nested API router the URI has lost the `/api/v1` prefix, but codex's listener
+    // matches the full path from the redirect URI, so the prefix is put back.
+    let relative = uri.path_and_query().map(|value| value.as_str().to_string()).unwrap_or_default();
+    if !relative.starts_with("/connectors/oauth/callback") || relative.bytes().any(|byte| byte <= 0x20 || byte >= 0x7f) {
+        return (StatusCode::BAD_REQUEST, "not a sign-in callback").into_response();
+    }
+    let target = format!("/api/v1{relative}");
+    match forward_to_listener(&target).await {
+        Ok((status, body)) => (
+            StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
+            [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            body,
+        )
+            .into_response(),
+        Err(err) => {
+            tracing::warn!(%err, "could not reach codex's OAuth listener");
+            (StatusCode::BAD_GATEWAY, "The sign-in could not be completed. Start it again from Baize.").into_response()
+        }
+    }
+}
+
+/// A plain HTTP GET to codex's listener on this host.
+async fn forward_to_listener(target: &str) -> Result<(u16, Vec<u8>), String> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let address = format!("127.0.0.1:{}", callback_port());
+    let mut stream = tokio::time::timeout(std::time::Duration::from_secs(5), tokio::net::TcpStream::connect(&address))
+        .await
+        .map_err(|_| "connect timed out".to_string())?
+        .map_err(|err| err.to_string())?;
+    let request = format!("GET {target} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+    stream.write_all(request.as_bytes()).await.map_err(|err| err.to_string())?;
+    let mut raw = Vec::new();
+    tokio::time::timeout(std::time::Duration::from_secs(20), stream.read_to_end(&mut raw))
+        .await
+        .map_err(|_| "reading the response timed out".to_string())?
+        .map_err(|err| err.to_string())?;
+    let split = raw.windows(4).position(|window| window == b"\r\n\r\n").ok_or("malformed response")?;
+    let head = String::from_utf8_lossy(&raw[..split]).to_string();
+    let status = head
+        .split_whitespace()
+        .nth(1)
+        .and_then(|code| code.parse::<u16>().ok())
+        .ok_or("malformed status line")?;
+    Ok((status, raw[split + 4..].to_vec()))
 }

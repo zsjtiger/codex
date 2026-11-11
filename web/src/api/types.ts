@@ -92,6 +92,9 @@ export interface Connector {
   /** Last startup status codex reported, or null if not checked yet. */
   status: "starting" | "ready" | "failed" | "cancelled" | null;
   status_error: string | null;
+  /** Sign-in for connectors that use OAuth. Null until a sign-in has been started. */
+  oauth_state: "pending" | "signed_in" | "failed" | null;
+  oauth_error: string | null;
   created_at: string;
   updated_at: string;
 }
