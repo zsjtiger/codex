@@ -73,6 +73,14 @@ export const members = {
   remove: (ws: string, userId: string) => api<void>("DELETE", `/workspaces/${ws}/members/${userId}`),
 };
 
+/** Single-use invite links for a workspace. */
+export const invites = {
+  create: (ws: string, role: "admin" | "member") =>
+    api<{ token: string; role: string; expires_at: string }>("POST", `/workspaces/${ws}/invites`, { role }),
+  preview: (token: string) => api<{ workspace_name: string; role: string; expires_at: string }>("GET", `/invites/${token}`),
+  accept: (token: string) => api<{ workspace_id: string }>("POST", `/invites/${token}/accept`),
+};
+
 export const workspaceSettings = {
   update: (id: string, body: { name: string }) => api<Workspace>("PATCH", `/workspaces/${id}`, body),
   remove: (id: string) => api<void>("DELETE", `/workspaces/${id}`),

@@ -455,3 +455,14 @@ addChinese({
   "Change the gateway": "更改网关",
   "Use this gateway": "使用此网关",
 });
+
+// Invitations.
+addChinese({
+  "Invite someone with a link. The link works once and expires after a week.": "用链接邀请他人。链接只能使用一次，一周后过期。",
+  "Create invite link": "创建邀请链接",
+  "Invite link": "邀请链接",
+  "Could not create the invite.": "无法创建邀请。",
+  "This invite is not valid.": "此邀请无效或已过期。",
+  "Loading…": "加载中…",
+  "Role": "角色",
+});

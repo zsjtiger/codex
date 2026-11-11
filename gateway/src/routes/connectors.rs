@@ -87,6 +87,25 @@ pub fn callback_port() -> u16 {
         .unwrap_or(17600)
 }
 
+/// Ports a sign-in may listen on, starting at the configured callback port.
+const CALLBACK_PORTS: u16 = 100;
+
+/// A callback port no other sign-in on the same runtime is using. Sign-ins older than 15
+/// minutes are forgotten first, since codex has stopped listening for them.
+async fn pick_callback_port(pool: &sqlx::PgPool, runtime_host: &str) -> Result<u16, ApiError> {
+    sqlx::query("DELETE FROM oauth_callbacks WHERE created_at < now() - interval '15 minutes'")
+        .execute(pool)
+        .await?;
+    let used: Vec<i32> = sqlx::query_scalar("SELECT target_port FROM oauth_callbacks WHERE target_host = $1")
+        .bind(runtime_host)
+        .fetch_all(pool)
+        .await?;
+    let start = callback_port();
+    (start..start.saturating_add(CALLBACK_PORTS))
+        .find(|port| !used.contains(&i32::from(*port)))
+        .ok_or_else(|| ApiError::BadRequest("too many sign-ins are in progress; try again in a few minutes".to_string()))
+}
+
 /// How long a sign-in may wait for the browser before it is marked failed.
 const SIGN_IN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
@@ -334,9 +353,13 @@ async fn sign_in(
         })?;
     // Subscribe before starting the login so its completion cannot be missed.
     let mut events = lease.subscribe();
-    let config = crate::runtime::dispatch::codex_mcp_config(&state.pool, workspace_id)
+    let mut config = crate::runtime::dispatch::codex_mcp_config(&state.pool, workspace_id)
         .await?
         .unwrap_or_else(|| json!({}));
+    // Each sign-in listens on its own port, so several can be in progress at once.
+    let runtime_host = endpoint_host(endpoint.as_deref());
+    let port = pick_callback_port(&state.pool, &runtime_host).await?;
+    config["mcp_oauth_callback_port"] = json!(port);
     let started = lease
         .request("thread/start", json!({ "approvalPolicy": "on-request", "config": config }))
         .await
@@ -367,8 +390,8 @@ async fn sign_in(
              ON CONFLICT (state) DO UPDATE SET target_host = EXCLUDED.target_host, target_port = EXCLUDED.target_port",
         )
         .bind(oauth_state)
-        .bind(endpoint_host(endpoint.as_deref()))
-        .bind(i32::from(callback_port()))
+        .bind(runtime_host)
+        .bind(i32::from(port))
         .execute(&state.pool)
         .await?;
     }

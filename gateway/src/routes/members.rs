@@ -43,6 +43,9 @@ pub struct ChangeRole {
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/workspaces/{id}/members", get(list).post(add))
+        .route("/workspaces/{id}/invites", axum::routing::post(create_invite))
+        .route("/invites/{token}", get(preview_invite))
+        .route("/invites/{token}/accept", axum::routing::post(accept_invite))
         .route(
             "/workspaces/{id}/members/{user_id}",
             axum::routing::patch(change_role).delete(remove),
@@ -223,4 +226,104 @@ async fn remove(
     tx.commit().await?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub struct CreateInvite {
+    role: String,
+}
+
+#[derive(Serialize)]
+pub struct InviteCreated {
+    /// The token to put in the invite link. It is shown once; only its hash is stored.
+    pub token: String,
+    pub role: String,
+    pub expires_at: DateTime<Utc>,
+}
+
+/// How long an invite link works.
+const INVITE_DAYS: i64 = 7;
+
+/// Creates a single-use invite link for an admin of the workspace.
+async fn create_invite(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<CreateInvite>,
+) -> Result<(StatusCode, Json<InviteCreated>), ApiError> {
+    require_role(&state.pool, id, user.id, Role::Admin).await?;
+    let role = assignable_role(&req.role)?;
+    let token = crate::auth::new_token();
+    let expires_at = Utc::now() + chrono::Duration::days(INVITE_DAYS);
+    sqlx::query(
+        "INSERT INTO workspace_invites (workspace_id, role, token_hash, created_by, expires_at) VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(id)
+    .bind(role.as_str())
+    .bind(crate::auth::hash_token(&token))
+    .bind(user.id)
+    .bind(expires_at)
+    .execute(&state.pool)
+    .await?;
+    Ok((StatusCode::CREATED, Json(InviteCreated { token, role: req.role, expires_at })))
+}
+
+#[derive(Serialize)]
+pub struct InvitePreview {
+    pub workspace_name: String,
+    pub role: String,
+    pub expires_at: DateTime<Utc>,
+}
+
+/// The workspace and role an invite is for, while it can still be used.
+async fn preview_invite(
+    State(state): State<AppState>,
+    _user: CurrentUser,
+    Path(token): Path<String>,
+) -> Result<Json<InvitePreview>, ApiError> {
+    let row: Option<(String, String, DateTime<Utc>)> = sqlx::query_as(
+        "SELECT w.name, i.role, i.expires_at FROM workspace_invites i JOIN workspaces w ON w.id = i.workspace_id
+         WHERE i.token_hash = $1 AND i.used_at IS NULL AND i.expires_at > now()",
+    )
+    .bind(crate::auth::hash_token(&token))
+    .fetch_optional(&state.pool)
+    .await?;
+    let (workspace_name, role, expires_at) = row.ok_or(ApiError::NotFound)?;
+    Ok(Json(InvitePreview { workspace_name, role, expires_at }))
+}
+
+#[derive(Serialize)]
+pub struct InviteAccepted {
+    pub workspace_id: Uuid,
+}
+
+/// Joins the signed-in user to the invite's workspace. The invite can be used once.
+async fn accept_invite(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(token): Path<String>,
+) -> Result<Json<InviteAccepted>, ApiError> {
+    let mut tx = state.pool.begin().await?;
+    let invite: Option<(Uuid, String)> = sqlx::query_as(
+        "UPDATE workspace_invites SET used_at = now(), used_by = $2
+         WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
+         RETURNING workspace_id, role",
+    )
+    .bind(crate::auth::hash_token(&token))
+    .bind(user.id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let (workspace_id, role) = invite.ok_or(ApiError::NotFound)?;
+    sqlx::query(
+        "INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1, $2, $3)
+         ON CONFLICT (workspace_id, user_id) DO NOTHING",
+    )
+    .bind(workspace_id)
+    .bind(user.id)
+    .bind(&role)
+    .execute(&mut *tx)
+    .await?;
+    audit::record(&mut *tx, workspace_id, user.id, "member.added", "user", user.id, json!({ "via": "invite", "role": role })).await?;
+    tx.commit().await?;
+    Ok(Json(InviteAccepted { workspace_id }))
 }

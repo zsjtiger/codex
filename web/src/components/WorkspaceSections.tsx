@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { audit as auditApi, members as memberApi, workspaceSettings as workspaceApi } from "../api/resources";
+import { audit as auditApi, invites, members as memberApi, workspaceSettings as workspaceApi } from "../api/resources";
+import { gatewayBase } from "../api/config";
 import type { AuditEntry, Member, User, Workspace } from "../api/types";
 import { tx } from "../i18n";
 
@@ -63,6 +64,39 @@ export function WorkspaceSection({ workspace, onError }: { workspace: Workspace;
         </div>
       )}
     </>
+  );
+}
+
+/** Creates a single-use invite link to share by hand. The link works once and expires after a week. */
+function InviteLink({ workspaceId, onError }: { workspaceId: string; onError: (message: string) => void }) {
+  const [role, setRole] = useState<"admin" | "member">("member");
+  const [link, setLink] = useState<string | null>(null);
+  const create = async () => {
+    try {
+      const created = await invites.create(workspaceId, role);
+      const base = gatewayBase() || window.location.origin;
+      setLink(`${base}/?invite=${created.token}`);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : tx("Could not create the invite."));
+    }
+  };
+  return (
+    <div className="invite-box">
+      <div className="muted small">{tx("Invite someone with a link. The link works once and expires after a week.")}</div>
+      <div className="memory-add">
+        <select value={role} onChange={(e) => setRole(e.target.value as "admin" | "member")} aria-label={tx("Role")}>
+          <option value="member">{tx("Member")}</option>
+          <option value="admin">{tx("Admin")}</option>
+        </select>
+        <button onClick={() => void create()}>{tx("Create invite link")}</button>
+      </div>
+      {link && (
+        <div className="memory-add">
+          <input readOnly value={link} aria-label={tx("Invite link")} onFocus={(e) => e.currentTarget.select()} />
+          <button onClick={() => void navigator.clipboard?.writeText(link)}>{tx("Copy")}</button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -145,6 +179,8 @@ export function MembersSection({ workspace, user, onError }: { workspace: Worksp
               {tx("Add")}
             </button>
           </form>
+
+          <InviteLink workspaceId={workspace.id} onError={onError} />
 
           <div className="member-list">
             {list === null && <p className="muted small">{tx("Loading…")}</p>}

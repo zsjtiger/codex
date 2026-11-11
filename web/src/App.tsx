@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { projects as projectApi } from "./api/resources";
+import { invites as invitesApi, projects as projectApi } from "./api/resources";
 import type { Artifact, Project, ScheduledTask } from "./api/types";
 import { ArtifactsPage } from "./components/ArtifactsPage";
 import { CustomizePage } from "./components/CustomizePage";
@@ -60,6 +60,23 @@ export function App() {
   useEffect(() => {
     void reloadProjects().catch((err) => setNotice(err instanceof Error ? err.message : tx("Could not load projects.")));
   }, [reloadProjects]);
+
+  // A sign-in link with an invite: once signed in, join that workspace, then reload into it.
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get("invite");
+    if (!token || !codex.user) return;
+    invitesApi
+      .accept(token)
+      .then(() => {
+        window.history.replaceState(null, "", window.location.pathname);
+        window.location.reload();
+      })
+      .catch((err: unknown) => {
+        window.history.replaceState(null, "", window.location.pathname);
+        onError(err instanceof Error ? err.message : tx("This invite is not valid."));
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codex.user]);
 
   // Menu items of the desktop app.
   useEffect(() => {

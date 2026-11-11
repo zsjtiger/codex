@@ -774,3 +774,4 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .desktop-titlebar-close:hover { background: #c42b1c !important; color: #fff !important; }
 html.desktop .app { height: calc(100vh - 32px); margin-top: 32px; }
 .memory-add select { min-width: 0; max-width: 100%; flex: 1 1 180px; }
+.invite-box { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 14px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 10px; }
