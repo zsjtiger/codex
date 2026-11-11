@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { attachments as attachmentApi, search } from "../api/resources";
 import type { ProjectFileHit, SearchResults, Thread } from "../api/types";
 import { ChatIcon, PlusIcon, SearchIcon } from "./icons";
+import { useI18n } from "../i18n";
 
 interface SearchDialogProps {
   workspaceId: string;
@@ -9,6 +10,8 @@ interface SearchDialogProps {
   onOpenThread: (threadId: string) => void;
   onOpenArtifacts: () => void;
   onOpenProjects: () => void;
+  /** Opens a project's page, for a file found in it. */
+  onOpenProject: (projectId: string) => void;
   onNew: () => void;
   onClose: () => void;
   onError: (message: string) => void;
@@ -20,7 +23,8 @@ type Row = { key: string; label: string; detail?: string; onRun: () => void };
  * Search over the workspace through the gateway: chat titles, message text, artifacts and
  * projects. With no query it lists recent chats.
  */
-export function SearchDialog({ workspaceId, threads, onOpenThread, onOpenArtifacts, onOpenProjects, onNew, onClose, onError }: SearchDialogProps) {
+export function SearchDialog({ workspaceId, threads, onOpenThread, onOpenArtifacts, onOpenProjects, onOpenProject, onNew, onClose, onError }: SearchDialogProps) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResults | null>(null);
   const [fileHits, setFileHits] = useState<ProjectFileHit[]>([]);
@@ -73,7 +77,7 @@ export function SearchDialog({ workspaceId, threads, onOpenThread, onOpenArtifac
       { heading: "Projects", rows: results.projects.map((p) => ({ key: `p-${p.id}`, label: p.name, onRun: onOpenProjects })) },
       {
         heading: "Project files",
-        rows: fileHits.map((f) => ({ key: `f-${f.id}`, label: f.filename, detail: f.snippet ?? f.project_name, onRun: onOpenProjects })),
+        rows: fileHits.map((f) => ({ key: `f-${f.id}`, label: f.filename, detail: f.snippet ?? f.project_name, onRun: () => onOpenProject(f.project_id) })),
       },
     );
   }
@@ -116,7 +120,7 @@ export function SearchDialog({ workspaceId, threads, onOpenThread, onOpenArtifac
           <input
             ref={inputRef}
             className="search-input"
-            placeholder="Search chats, messages, artifacts, projects and project files…"
+            placeholder={t("search.placeholder")}
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);

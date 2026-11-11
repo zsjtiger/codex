@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { attachments as attachmentApi, contentTypeOf, projects as projectApi } from "../api/resources";
-import type { Attachment, Project, Thread } from "../api/types";
+import { attachments as attachmentApi, contentTypeOf, projects as projectApi, search } from "../api/resources";
+import type { Attachment, Project, ProjectFileHit, Thread } from "../api/types";
 import { PlusIcon } from "./icons";
 
 interface ProjectsPageProps {
   workspaceId: string;
+  /** The project to open on, when the page is opened from a search result. */
+  initialProjectId?: string | null;
   projects: Project[];
   threads: Thread[];
   reload: () => Promise<void>;
@@ -153,8 +155,15 @@ function ProjectForm({ initial, onSave, onCancel, busy }: { initial: Project | n
 }
 
 /** Projects group chats, files and instructions. The list shows cards; a card opens the project. */
-export function ProjectsPage({ workspaceId, projects, threads, reload, canEdit, onStartChat, onOpenThread, onBack, onError }: ProjectsPageProps) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+export function ProjectsPage({ workspaceId, initialProjectId, projects, threads, reload, canEdit, onStartChat, onOpenThread, onBack, onError }: ProjectsPageProps) {
+  const [selectedId, setSelectedId] = useState<string | null>(initialProjectId ?? null);
+  const [projectQuery, setProjectQuery] = useState("");
+  // A search result can ask for a different project while the page is already open.
+  useEffect(() => {
+    if (initialProjectId) setSelectedId(initialProjectId);
+  }, [initialProjectId]);
+  const [chatHits, setChatHits] = useState<{ thread_id: string; title: string; snippet: string }[]>([]);
+  const [fileHits, setFileHits] = useState<ProjectFileHit[]>([]);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
@@ -177,6 +186,38 @@ export function ProjectsPage({ workspaceId, projects, threads, reload, canEdit, 
     // Reloads when the selected project changes, not on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, workspaceId]);
+
+  // Searches this project's chats (titles and messages) and files while the search box has text.
+  useEffect(() => {
+    const q = projectQuery.trim();
+    if (!selected || q.length < 2) {
+      setChatHits([]);
+      setFileHits([]);
+      return;
+    }
+    let current = true;
+    const timer = window.setTimeout(() => {
+      const ids = new Set(projectThreads.map((t) => t.id));
+      Promise.all([search(workspaceId, q), attachmentApi.searchProjectFiles(workspaceId, q)])
+        .then(([found, files]) => {
+          if (!current) return;
+          const byTitle = projectThreads
+            .filter((t) => t.title.toLowerCase().includes(q.toLowerCase()))
+            .map((t) => ({ thread_id: t.id, title: t.title, snippet: "" }));
+          const byMessage = found.turns
+            .filter((turn) => ids.has(turn.thread_id) && !byTitle.some((hit) => hit.thread_id === turn.thread_id))
+            .map((turn) => ({ thread_id: turn.thread_id, title: turn.thread_title, snippet: turn.input.slice(0, 140) }));
+          setChatHits([...byTitle, ...byMessage]);
+          setFileHits(files.filter((file) => file.project_id === selected.id));
+        })
+        .catch((err: unknown) => current && onError(err instanceof Error ? err.message : "Search failed."));
+    }, 200);
+    return () => {
+      current = false;
+      window.clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectQuery, selectedId, workspaceId]);
 
   const save = async (name: string, instructions: string) => {
     setBusy(true);
@@ -234,16 +275,55 @@ export function ProjectsPage({ workspaceId, projects, threads, reload, canEdit, 
                 <button className="primary" onClick={() => onStartChat(selected.id)}>Start chat</button>
               </div>
 
-              <h2 className="section-label">Recents</h2>
-              {projectThreads.length === 0 && <p className="muted small">No chats in this project yet.</p>}
-              <div className="recent-list">
-                {projectThreads.map((thread) => (
+              <input
+                className="project-search project-page-search"
+                placeholder="Search this project’s chats and files"
+                aria-label="Search this project"
+                value={projectQuery}
+                onChange={(e) => setProjectQuery(e.target.value)}
+              />
+
+              {projectQuery.trim().length >= 2 ? (
+                <>
+                  <h2 className="section-label">Chats</h2>
+                  {chatHits.length === 0 && <p className="muted small">No matching chats.</p>}
+                  <div className="recent-list">
+                    {chatHits.map((hit) => (
+                      <button key={hit.thread_id} className="recent-row" onClick={() => onOpenThread(hit.thread_id)}>
+                        <span>
+                          {hit.title}
+                          {hit.snippet && <span className="muted small search-snippet"> — {hit.snippet}</span>}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  <h2 className="section-label">Files</h2>
+                  {fileHits.length === 0 && <p className="muted small">No matching files.</p>}
+                  <div className="recent-list">
+                    {fileHits.map((file) => (
+                      <button key={file.id} className="recent-row" onClick={() => setShowFiles(true)}>
+                        <span>
+                          {file.filename}
+                          {file.snippet && <span className="muted small search-snippet"> — {file.snippet}</span>}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h2 className="section-label">Recents</h2>
+                  {projectThreads.length === 0 && <p className="muted small">No chats in this project yet.</p>}
+                  <div className="recent-list">
+                    {projectThreads.map((thread) => (
                   <button key={thread.id} className="recent-row" onClick={() => onOpenThread(thread.id)}>
                     <span>{thread.title}</span>
                     <span className="muted small">{shortDate(thread.last_activity_at)}</span>
                   </button>
                 ))}
               </div>
+                </>
+              )}
             </section>
 
             <aside className="project-side">

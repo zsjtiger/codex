@@ -196,7 +196,7 @@ export function CustomizePage({ workspaceId, isAdmin, onBack, onError }: Customi
                     </span>
                     {isAdmin && (
                       <button onClick={() => void act(() => connectorApi.update(c.id, { enabled: !c.enabled }), "Could not update the connector.")}>
-                        {c.enabled ? "Disable" : "Enable"}
+                        {c.enabled ? "Disconnect" : "Connect"}
                       </button>
                     )}
                     {isAdmin && <button onClick={() => void act(() => connectorApi.remove(c.id), "Could not remove the connector.")}>Remove</button>}
@@ -205,7 +205,7 @@ export function CustomizePage({ workspaceId, isAdmin, onBack, onError }: Customi
               ))}
             </div>
             <p className="muted small">
-              Enabled connectors are added to chats that start after the change. Status is the last report from codex in any chat; it shows "Not checked" until a chat has started with the connector. Connectors that need sign-in are not supported yet.
+              Connected connectors are added to chats that start after the change. Status is the last report from codex in any chat; it shows "Not checked" until a chat has started with the connector. Connectors that need sign-in are not supported yet.
             </p>
           </>
         ) : (

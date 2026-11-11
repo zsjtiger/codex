@@ -355,6 +355,7 @@ async fn project_files_context(state: &AppState, thread_id: Uuid) -> Option<Stri
     for (file_id, name, content_type, key, stored) in rows {
         // Files uploaded before their text was kept are read once, now, and the text is saved.
         let text = match stored {
+            Some(text) if text.is_empty() => continue,
             Some(text) => text,
             None => {
                 let Ok(bytes) = state.storage.get(&key).await else { continue };

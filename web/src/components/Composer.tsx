@@ -1,6 +1,33 @@
 import { useEffect, useRef, useState } from "react";
 import { type ModelOption, environments as environmentApi } from "../api/resources";
 import type { Project, Skill } from "../api/types";
+import { useI18n } from "../i18n";
+
+/** The browser's speech recognition, when it has one (Chromium and Safari do; some webviews do not). */
+interface SpeechRecognitionLike {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+  start(): void;
+  stop(): void;
+}
+
+function speechRecognitionConstructor(): (new () => SpeechRecognitionLike) | null {
+  const scope = window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
+  return scope.SpeechRecognition ?? scope.webkitSpeechRecognition ?? null;
+}
+
+function MicIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+    </svg>
+  );
+}
 import type { SendOptions } from "../state/useCodex";
 import { ChevronIcon, PlusIcon } from "./icons";
 
@@ -52,8 +79,45 @@ interface Pending {
  * files as attachments, and offers Stop while a turn is running.
  */
 export function Composer(props: ComposerProps) {
-  const { environmentId, onSend, onStop, running, disabled, placeholder = "How can I help you today?", projects, projectId, onProjectChange, onCreateProject, skills, upload, onError } = props;
+  const { t } = useI18n();
+  const { environmentId, onSend, onStop, running, disabled, placeholder = t("home.placeholder"), projects, projectId, onProjectChange, onCreateProject, skills, upload, onError } = props;
   const [draft, setDraft] = useState("");
+  const [listening, setListening] = useState(false);
+  const recognizerRef = useRef<SpeechRecognitionLike | null>(null);
+  const SpeechInput = speechRecognitionConstructor();
+  const { locale } = useI18n();
+
+  // Starts or stops dictation. The spoken text is added to the message, which can still be edited.
+  const toggleVoice = () => {
+    if (!SpeechInput) return;
+    if (listening) {
+      recognizerRef.current?.stop();
+      return;
+    }
+    const recognizer = new SpeechInput();
+    recognizer.lang = locale === "zh" ? "zh-CN" : "en-US";
+    recognizer.interimResults = false;
+    recognizer.continuous = false;
+    recognizer.onresult = (event) => {
+      const spoken = Array.from(event.results)
+        .map((result) => result[0]?.transcript ?? "")
+        .join(" ")
+        .trim();
+      if (spoken) setDraft((current) => (current ? `${current} ${spoken}` : spoken));
+    };
+    recognizer.onend = () => {
+      setListening(false);
+      recognizerRef.current = null;
+    };
+    recognizer.onerror = () => {
+      setListening(false);
+      recognizerRef.current = null;
+      onError("Voice input could not hear anything. Check the microphone and try again.");
+    };
+    recognizerRef.current = recognizer;
+    setListening(true);
+    recognizer.start();
+  };
   const [menuIndex, setMenuIndex] = useState(0);
   const [menuDismissed, setMenuDismissed] = useState(false);
   const [model, setModel] = useState("");
@@ -253,6 +317,18 @@ export function Composer(props: ComposerProps) {
           </div>
           <div className="composer-right">
             {uploading && <span className="muted small">Uploading…</span>}
+            {SpeechInput && (
+              <button
+                type="button"
+                className={`icon-button mic-button ${listening ? "mic-button-on" : ""}`}
+                aria-label={listening ? "Stop voice input" : "Voice input"}
+                aria-pressed={listening}
+                title={listening ? "Stop voice input" : "Voice input"}
+                onClick={toggleVoice}
+              >
+                <MicIcon />
+              </button>
+            )}
             {running && onStop ? (
               <button type="button" className="stop" onClick={onStop}>
                 Stop
@@ -270,7 +346,7 @@ export function Composer(props: ComposerProps) {
         {onProjectChange ? (
           <div className="add-menu">
             <button type="button" className="pill" onClick={() => setPickerOpen(!pickerOpen)} aria-expanded={pickerOpen}>
-              {projectName ?? "Project"} <ChevronIcon />
+              {projectName ?? t("composer.project")} <ChevronIcon />
             </button>
             {pickerOpen && (
               <div className="add-menu-list composer-menu project-picker" role="menu">
@@ -301,7 +377,7 @@ export function Composer(props: ComposerProps) {
                     ))}
                   {projectQuery.trim() === "" && (
                     <button type="button" role="menuitem" className="menu-action" onClick={() => { onProjectChange(null); setPickerOpen(false); }}>
-                      No project
+                      {t("composer.noProject")}
                     </button>
                   )}
                 </div>
@@ -348,7 +424,7 @@ export function Composer(props: ComposerProps) {
         )}
         <div className="composer-options-right">
           <select className="pill-select" value={model} onChange={(event) => setModel(event.target.value)} aria-label="Model">
-            <option value="">Model (default)</option>
+            <option value="">{t("composer.model")}</option>
             {models.map((option) => (
               <option key={option.model} value={option.model}>
                 {option.display_name || option.model}
@@ -356,7 +432,7 @@ export function Composer(props: ComposerProps) {
             ))}
           </select>
           <select className="pill-select" value={effort} onChange={(event) => setEffort(event.target.value)} aria-label="Reasoning effort">
-            <option value="">Effort (default)</option>
+            <option value="">{t("composer.effort")}</option>
             {efforts.map((level) => (
               <option key={level} value={level}>
                 {level.charAt(0).toUpperCase() + level.slice(1)}

@@ -52,6 +52,7 @@ export function ScheduledPage({ workspaceId, projects, canEdit, onOpenThread, on
   const [items, setItems] = useState<ScheduledTask[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [query, setQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
@@ -80,6 +81,25 @@ export function ScheduledPage({ workspaceId, projects, canEdit, onOpenThread, on
       .catch(() => setRuns([]));
   }, [selectedId, items]);
 
+  /** Opens the form filled in with a task's current settings. */
+  const startEdit = (task: ScheduledTask) => {
+    setForm({
+      name: task.name,
+      prompt: task.prompt,
+      frequency: task.frequency,
+      time_of_day: task.time_of_day,
+      weekday: task.weekday ?? 1,
+      project_id: task.project_id ?? "",
+    });
+    setEditingTask(task);
+  };
+
+  const closeForm = () => {
+    setCreating(false);
+    setEditingTask(null);
+    setForm(emptyForm);
+  };
+
   const create = async () => {
     const body: TaskInput = {
       name: form.name.trim(),
@@ -91,8 +111,16 @@ export function ScheduledPage({ workspaceId, projects, canEdit, onOpenThread, on
     };
     setBusy(true);
     try {
+      if (editingTask) {
+        await scheduledApi.update(editingTask.id, body);
+        const id = editingTask.id;
+        closeForm();
+        await reload();
+        setSelectedId(id);
+        return;
+      }
       const created = await scheduledApi.create(workspaceId, body);
-      setCreating(false);
+      closeForm();
       setForm(emptyForm);
       await reload();
       setSelectedId(created.id);
@@ -132,89 +160,13 @@ export function ScheduledPage({ workspaceId, projects, canEdit, onOpenThread, on
     }
   };
 
-  // The task page: next run, history, instructions and repeat.
-  if (selected) {
-    return (
-      <main className="customize-page project-page">
-        <div className="customize-inner">
-          <nav className="project-crumbs">
-            <button className="link-button" onClick={() => setSelectedId(null)}>Scheduled tasks</button>
-            <span aria-hidden="true">/</span>
-            <span>{selected.name}</span>
-          </nav>
-          <div className="task-heading">
-            <h1 className="project-title">{selected.name}</h1>
-            <div className="task-actions">
-              <button className="primary" onClick={() => void runNow(selected)}>Run now</button>
-              <label className="switch-label">
-                <span>{selected.enabled ? "Active" : "Paused"}</span>
-                <input type="checkbox" className="switch" checked={selected.enabled} onChange={(e) => void setEnabled(selected, e.target.checked)} aria-label="Active" />
-              </label>
-            </div>
-          </div>
-          <p className="muted">
-            {selected.enabled ? `Next run: ${whenLabel(selected.next_run_at)}` : "Paused. It will not run until it is turned on."}
-          </p>
-
-          <div className="project-layout">
-            <section className="project-main">
-              <h2 className="section-label">History</h2>
-              {runs.length === 0 && <p className="muted small">No runs yet.</p>}
-              <div className="recent-list">
-                {runs.map((run) => (
-                  <button
-                    key={run.id}
-                    className="recent-row"
-                    disabled={!run.thread_id}
-                    onClick={() => run.thread_id && onOpenThread(run.thread_id)}
-                  >
-                    <span>{whenLabel(run.started_at)}</span>
-                    <span className="muted small">{run.title ? "Open chat" : "Chat removed"}</span>
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            <aside className="project-side">
-              <div className="detail-rows">
-                <div className="detail-row">
-                  <div>
-                    <div className="detail-label">Instructions</div>
-                    <div className="muted small detail-value task-prompt">{selected.prompt}</div>
-                  </div>
-                </div>
-                <div className="detail-row">
-                  <div>
-                    <div className="detail-label">Repeats</div>
-                    <div className="muted small detail-value">{describeRepeat(selected)}</div>
-                  </div>
-                </div>
-                <div className="detail-row">
-                  <div>
-                    <div className="detail-label">Permissions</div>
-                    <div className="muted small detail-value">Asks before running commands.</div>
-                  </div>
-                </div>
-                {canEdit(selected) && (
-                  <div className="detail-actions">
-                    <button onClick={() => void remove(selected)}>Delete task</button>
-                  </div>
-                )}
-              </div>
-            </aside>
-          </div>
-        </div>
-      </main>
-    );
-  }
-
   // The new task form.
-  if (creating) {
+  if (creating || editingTask) {
     return (
       <main className="customize-page">
         <div className="customize-inner">
-          <button className="link-button" onClick={() => setCreating(false)}>← Scheduled tasks</button>
-          <h1 className="projects-header">New scheduled task</h1>
+          <button className="link-button" onClick={closeForm}>← Scheduled tasks</button>
+          <h1 className="projects-header">{editingTask ? "Edit scheduled task" : "New scheduled task"}</h1>
           <form
             className="form-card"
             onSubmit={(event) => {
@@ -279,14 +231,91 @@ export function ScheduledPage({ workspaceId, projects, canEdit, onOpenThread, on
               </select>
             </label>
             <div className="form-actions">
-              <button type="button" onClick={() => setCreating(false)}>
+              <button type="button" onClick={closeForm}>
                 Cancel
               </button>
               <button className="primary" type="submit" disabled={busy || !form.name.trim() || !form.prompt.trim()}>
-                Create task
+                {editingTask ? "Save changes" : "Create task"}
               </button>
             </div>
           </form>
+        </div>
+      </main>
+    );
+  }
+
+  // The task page: next run, history, instructions and repeat.
+  if (selected) {
+    return (
+      <main className="customize-page project-page">
+        <div className="customize-inner">
+          <nav className="project-crumbs">
+            <button className="link-button" onClick={() => setSelectedId(null)}>Scheduled tasks</button>
+            <span aria-hidden="true">/</span>
+            <span>{selected.name}</span>
+          </nav>
+          <div className="task-heading">
+            <h1 className="project-title">{selected.name}</h1>
+            <div className="task-actions">
+              <button className="primary" onClick={() => void runNow(selected)}>Run now</button>
+              {canEdit(selected) && <button onClick={() => startEdit(selected)}>Edit</button>}
+              <label className="switch-label">
+                <span>{selected.enabled ? "Active" : "Paused"}</span>
+                <input type="checkbox" className="switch" checked={selected.enabled} onChange={(e) => void setEnabled(selected, e.target.checked)} aria-label="Active" />
+              </label>
+            </div>
+          </div>
+          <p className="muted">
+            {selected.enabled ? `Next run: ${whenLabel(selected.next_run_at)}` : "Paused. It will not run until it is turned on."}
+          </p>
+
+          <div className="project-layout">
+            <section className="project-main">
+              <h2 className="section-label">History</h2>
+              {runs.length === 0 && <p className="muted small">No runs yet.</p>}
+              <div className="recent-list">
+                {runs.map((run) => (
+                  <button
+                    key={run.id}
+                    className="recent-row"
+                    disabled={!run.thread_id}
+                    onClick={() => run.thread_id && onOpenThread(run.thread_id)}
+                  >
+                    <span>{whenLabel(run.started_at)}</span>
+                    <span className="muted small">{run.title ? "Open chat" : "Chat removed"}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <aside className="project-side">
+              <div className="detail-rows">
+                <div className="detail-row">
+                  <div>
+                    <div className="detail-label">Instructions</div>
+                    <div className="muted small detail-value task-prompt">{selected.prompt}</div>
+                  </div>
+                </div>
+                <div className="detail-row">
+                  <div>
+                    <div className="detail-label">Repeats</div>
+                    <div className="muted small detail-value">{describeRepeat(selected)}</div>
+                  </div>
+                </div>
+                <div className="detail-row">
+                  <div>
+                    <div className="detail-label">Permissions</div>
+                    <div className="muted small detail-value">Asks before running commands.</div>
+                  </div>
+                </div>
+                {canEdit(selected) && (
+                  <div className="detail-actions">
+                    <button onClick={() => void remove(selected)}>Delete task</button>
+                  </div>
+                )}
+              </div>
+            </aside>
+          </div>
         </div>
       </main>
     );

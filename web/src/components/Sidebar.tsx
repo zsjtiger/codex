@@ -2,18 +2,19 @@ import { useEffect, useRef, useState } from "react";
 import type { Thread, User } from "../api/types";
 import type { SocketStatus } from "../realtime/socket";
 import { UsageDialog } from "./UsageDialog";
+import { useI18n, type MessageKey } from "../i18n";
 import { ArtifactIcon, ChatIcon, ChevronIcon, ClockIcon, CustomizeIcon, MoreIcon, PlusIcon, ProjectIcon, SearchIcon, SidebarIcon } from "./icons";
 
 export type NavLabel = "New" | "Search" | "Projects" | "Artifacts" | "Scheduled" | "Customize";
 export type View = "chat" | "artifacts" | "customize" | "scheduled" | "projects";
 
-const navItems: { label: NavLabel; Icon: typeof PlusIcon }[] = [
-  { label: "New", Icon: PlusIcon },
-  { label: "Search", Icon: SearchIcon },
-  { label: "Projects", Icon: ProjectIcon },
-  { label: "Artifacts", Icon: ArtifactIcon },
-  { label: "Scheduled", Icon: ClockIcon },
-  { label: "Customize", Icon: CustomizeIcon },
+const navItems: { label: NavLabel; Icon: typeof PlusIcon; key: MessageKey }[] = [
+  { label: "New", Icon: PlusIcon, key: "nav.new" },
+  { label: "Search", Icon: SearchIcon, key: "nav.search" },
+  { label: "Projects", Icon: ProjectIcon, key: "nav.projects" },
+  { label: "Artifacts", Icon: ArtifactIcon, key: "nav.artifacts" },
+  { label: "Scheduled", Icon: ClockIcon, key: "nav.scheduled" },
+  { label: "Customize", Icon: CustomizeIcon, key: "nav.customize" },
 ];
 
 const viewFor: Partial<Record<NavLabel, View>> = {
@@ -47,6 +48,7 @@ interface SidebarProps {
 const statusLabel: Record<SocketStatus, string> = { open: "Live", connecting: "Connecting…", closed: "Offline" };
 
 export function Sidebar(props: SidebarProps) {
+  const { t, locale, setLocale } = useI18n();
   const { open, onOpenSettings, onRenameThread, onArchiveThread, onDeleteThread, onToggle, threads, activeId, activeView, onSelect, onNew, onSearch, onView, hidden, onHiddenChange, user, socketStatus, onSignOut } = props;
   const [chatMenuId, setChatMenuId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -126,7 +128,7 @@ export function Sidebar(props: SidebarProps) {
           <div key={label} className="nav-row">
             <button className={`nav-item ${isActive(label) ? "nav-item-active" : ""}`} onClick={() => activate(label)}>
               <Icon />
-              <span>{label}</span>
+              <span>{t(navItems.find((item) => item.label === label)!.key)}</span>
             </button>
             {editing && (
               <input
@@ -142,7 +144,7 @@ export function Sidebar(props: SidebarProps) {
         <div className="more-wrap" ref={moreRef}>
           <button className={`nav-item ${moreOpen ? "nav-item-active" : ""}`} onClick={() => setMoreOpen(!moreOpen)} aria-expanded={moreOpen} aria-haspopup="menu">
             <MoreIcon />
-            <span>More</span>
+            <span>{t("nav.more")}</span>
           </button>
           {moreOpen && (
             <div className="more-menu" role="menu">
@@ -166,7 +168,7 @@ export function Sidebar(props: SidebarProps) {
       <div className="sidebar-scroll">
         <section>
           <button className="section-heading" onClick={() => setRecentsOpen(!recentsOpen)} aria-expanded={recentsOpen}>
-            <span>Recents</span>
+            <span>{t("nav.recents")}</span>
             <ChevronIcon className={recentsOpen ? "" : "chevron-closed"} />
           </button>
           {recentsOpen && (
@@ -218,8 +220,8 @@ export function Sidebar(props: SidebarProps) {
                     </button>
                     {chatMenuId === thread.id && (
                       <div className="chat-menu" role="menu">
-                        <button role="menuitem" onClick={() => { setChatMenuId(null); setRenameText(thread.title); setRenamingId(thread.id); }}>Rename</button>
-                        <button role="menuitem" onClick={() => { setChatMenuId(null); onArchiveThread(thread.id); }}>Archive</button>
+                        <button role="menuitem" onClick={() => { setChatMenuId(null); setRenameText(thread.title); setRenamingId(thread.id); }}>{t("chat.rename")}</button>
+                        <button role="menuitem" onClick={() => { setChatMenuId(null); onArchiveThread(thread.id); }}>{t("chat.archive")}</button>
                         <button
                           role="menuitem"
                           className="chat-menu-danger"
@@ -228,7 +230,7 @@ export function Sidebar(props: SidebarProps) {
                             if (window.confirm(`Delete “${thread.title}”? This cannot be undone.`)) onDeleteThread(thread.id);
                           }}
                         >
-                          Delete
+                          {t("chat.delete")}
                         </button>
                       </div>
                     )}
@@ -252,7 +254,7 @@ export function Sidebar(props: SidebarProps) {
                 onOpenSettings();
               }}
             >
-              Settings
+              {t("account.settings")}
             </button>
             <button
               role="menuitem"
@@ -262,7 +264,17 @@ export function Sidebar(props: SidebarProps) {
                 setUsageOpen(true);
               }}
             >
-              Usage
+              {t("account.usage")}
+            </button>
+            <button
+              role="menuitem"
+              className="account-menu-item"
+              onClick={() => {
+                setAccountOpen(false);
+                setLocale(locale === "en" ? "zh" : "en");
+              }}
+            >
+              {t("account.language")}: {locale === "en" ? "English" : "中文"}
             </button>
             <button
               role="menuitem"
@@ -272,7 +284,7 @@ export function Sidebar(props: SidebarProps) {
                 onSignOut();
               }}
             >
-              Log out
+              {t("account.logout")}
             </button>
           </div>
         )}

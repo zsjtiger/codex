@@ -7,12 +7,13 @@ import { Composer } from "./Composer";
 import { usePreview } from "./Preview";
 import { Conversation } from "./Conversation";
 import { ChevronIcon, SparkIcon } from "./icons";
+import { useI18n, type MessageKey } from "../i18n";
 
-function greeting(date: Date): string {
+function greeting(date: Date, t: (key: MessageKey) => string): string {
   const hour = date.getHours();
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
-  return "Good evening";
+  if (hour < 12) return t("home.morning");
+  if (hour < 18) return t("home.afternoon");
+  return t("home.evening");
 }
 
 interface HomeProps {
@@ -43,6 +44,7 @@ interface HomeProps {
 }
 
 export function Home(props: HomeProps) {
+  const { t } = useI18n();
   const { user, workspaceId, thread, turns, agentText, toolUses, activity, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
   const pending = approvals.filter((a) => a.threadId === thread?.id);
   const runningTurn = [...turns].reverse().find((t) => (t.status === "running" || t.status === "queued") && t.codex_turn_id);
@@ -167,7 +169,7 @@ export function Home(props: HomeProps) {
         <div className="home-inner">
           <h1 className="greeting">
             <SparkIcon className="greeting-mark" />
-            <span>{`${greeting(new Date())}, ${user.display_name}`}</span>
+            <span>{`${greeting(new Date(), t)}, ${user.display_name}`}</span>
           </h1>
           <Composer
             environmentId={environment?.id ?? null}
@@ -184,10 +186,10 @@ export function Home(props: HomeProps) {
 
           <section className="recent-artifacts">
             <button className="recent-heading link-button" onClick={onOpenArtifacts}>
-              <span>Recent artifacts</span>
+              <span>{t("home.recentArtifacts")}</span>
               <ChevronIcon />
             </button>
-            {recent.length === 0 && <p className="empty-note">No artifacts yet</p>}
+            {recent.length === 0 && <p className="empty-note">{t("home.noArtifacts")}</p>}
             {recent.length > 0 && (
               <div className="artifact-grid">
                 {recent.map((artifact) => (

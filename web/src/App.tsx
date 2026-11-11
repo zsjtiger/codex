@@ -31,6 +31,12 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia("(min-width: 761px)").matches);
   const [view, setView] = useState<View>("chat");
+  // The project the Projects page opens on, set when a search result points into a project.
+  const [projectFocus, setProjectFocus] = useState<string | null>(null);
+  const openProject = (projectId: string) => {
+    setProjectFocus(projectId);
+    setView("projects");
+  };
   const [searchOpen, setSearchOpen] = useState(false);
   const [hidden, setHidden] = useState<NavLabel[]>(loadHidden);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -124,6 +130,7 @@ export function App() {
           onOpenThread={openThread}
           onOpenArtifacts={() => setView("artifacts")}
           onOpenProjects={() => setView("projects")}
+          onOpenProject={openProject}
           onNew={newChat}
           onClose={() => setSearchOpen(false)}
           onError={onError}
@@ -149,6 +156,7 @@ export function App() {
             onOpenThread={openThread}
             onBack={() => setView("chat")}
             onError={onError}
+            initialProjectId={projectFocus}
           />
         )}
         {view === "artifacts" && (

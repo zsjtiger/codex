@@ -89,6 +89,31 @@ pub struct ProjectFileHit {
     pub snippet: Option<String>,
 }
 
+/// Reads the text of project files uploaded before text was kept, so they can be searched. Files
+/// with no readable text are marked with an empty text so they are not read again.
+async fn fill_missing_text(state: &AppState, workspace_id: Uuid) -> Result<(), ApiError> {
+    let missing: Vec<(Uuid, String, String, String)> = sqlx::query_as(
+        "SELECT id, filename, content_type, storage_key FROM attachments
+         WHERE workspace_id = $1 AND uploaded AND project_id IS NOT NULL AND extracted_text IS NULL
+         LIMIT 20",
+    )
+    .bind(workspace_id)
+    .fetch_all(&state.pool)
+    .await?;
+    for (file_id, filename, content_type, key) in missing {
+        let text = match state.storage.get(&key).await {
+            Ok(bytes) => crate::extract::extract(&filename, &content_type, &bytes).await.unwrap_or_default(),
+            Err(_) => continue,
+        };
+        sqlx::query("UPDATE attachments SET extracted_text = $2 WHERE id = $1")
+            .bind(file_id)
+            .bind(text)
+            .execute(&state.pool)
+            .await?;
+    }
+    Ok(())
+}
+
 /// Finds project files whose name or text contains the query, ignoring case.
 async fn search_project_files(
     State(state): State<AppState>,
@@ -107,6 +132,7 @@ async fn search_project_files(
     // Escape the LIKE wildcards so the search text is matched literally.
     let escaped = term.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
     let pattern = format!("%{escaped}%");
+    fill_missing_text(&state, id).await?;
     let rows: Vec<(Uuid, String, Uuid, String, Option<String>)> = sqlx::query_as(
         "SELECT a.id, a.filename, a.project_id, p.name, a.extracted_text
          FROM attachments a JOIN projects p ON p.id = a.project_id

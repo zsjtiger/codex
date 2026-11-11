@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ApiError } from "../api/client";
 import { SparkIcon } from "./icons";
+import { useI18n } from "../i18n";
 
 interface SignInProps {
   onSignIn: (username: string, password: string) => Promise<void>;
@@ -9,6 +10,7 @@ interface SignInProps {
 
 /** Sign in with a username and password, or create an account. */
 export function SignIn({ onSignIn, onRegister }: SignInProps) {
+  const { t } = useI18n();
   const [mode, setMode] = useState<"signin" | "register">("signin");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -44,9 +46,9 @@ export function SignIn({ onSignIn, onRegister }: SignInProps) {
         }}
       >
         <SparkIcon className="signin-mark" />
-        <h1>{registering ? "Create account" : "Sign in"}</h1>
+        <h1>{registering ? t("signin.createAccount") : t("signin.signIn")}</h1>
         <label className="signin-field">
-          <span>Username</span>
+          <span>{t("signin.username")}</span>
           <input
             required
             autoComplete="username"
@@ -70,7 +72,7 @@ export function SignIn({ onSignIn, onRegister }: SignInProps) {
           </>
         )}
         <label className="signin-field">
-          <span>Password</span>
+          <span>{t("signin.password")}</span>
           <input
             type="password"
             required
@@ -81,13 +83,13 @@ export function SignIn({ onSignIn, onRegister }: SignInProps) {
           />
         </label>
         <button className="primary" type="submit" disabled={busy || !username.trim() || !password}>
-          {busy ? "Please wait…" : registering ? "Create account" : "Sign in"}
+          {busy ? t("signin.please") : registering ? t("signin.createAccount") : t("signin.signIn")}
         </button>
         {error && <p className="banner error">{error}</p>}
         <p className="signin-note">
-          {registering ? "Already have an account? " : "No account yet? "}
+          {registering ? `${t("signin.haveAccount")} ` : `${t("signin.noAccount")} `}
           <button type="button" className="link-button" onClick={() => { setMode(registering ? "signin" : "register"); setError(null); }}>
-            {registering ? "Sign in" : "Create one"}
+            {registering ? t("signin.signInLink") : t("signin.createOne")}
           </button>
         </p>
       </form>

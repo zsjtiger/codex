@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { memory as memoryApi } from "../api/resources";
 import type { MemoryImportResult, MemoryNote, User, Workspace } from "../api/types";
 import { AuditSection, MembersSection, WorkspaceSection } from "./WorkspaceSections";
+import { useI18n } from "../i18n";
 
 /** Asked of claude.ai or Codex so their memory can be pasted here. */
 const IMPORT_PROMPT =
@@ -20,6 +21,7 @@ type Section = "account" | "memory" | "workspace" | "members" | "audit";
 /** Account settings. Memory holds notes that are added to the user's new chats when it is on. */
 export function SettingsDialog({ user, workspace, onClose, onError }: SettingsDialogProps) {
   const [section, setSection] = useState<Section>("memory");
+  const { t, locale, setLocale } = useI18n();
   // Workspace administration is for admins and owners only.
   const isAdmin = workspace?.role === "owner" || workspace?.role === "admin";
   const [enabled, setEnabled] = useState(true);
@@ -133,31 +135,50 @@ export function SettingsDialog({ user, workspace, onClose, onError }: SettingsDi
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div className="settings-dialog" role="dialog" aria-modal="true" aria-label="Settings" onMouseDown={(event) => event.stopPropagation()}>
         <header className="settings-header">
-          <h2>Settings</h2>
-          <button className="icon-button" onClick={onClose} aria-label="Close settings">×</button>
+          <h2>{t("settings.title")}</h2>
+          <button className="icon-button" onClick={onClose} aria-label={t("settings.close")}>×</button>
         </header>
         <div className="settings-body">
           <nav className="settings-nav" aria-label="Settings sections">
-            <button className={section === "account" ? "settings-nav-item settings-nav-active" : "settings-nav-item"} onClick={() => setSection("account")}>Account</button>
-            <button className={section === "memory" ? "settings-nav-item settings-nav-active" : "settings-nav-item"} onClick={() => setSection("memory")}>Memory</button>
+            <button className={section === "account" ? "settings-nav-item settings-nav-active" : "settings-nav-item"} onClick={() => setSection("account")}>{t("settings.account")}</button>
+            <button className={section === "memory" ? "settings-nav-item settings-nav-active" : "settings-nav-item"} onClick={() => setSection("memory")}>{t("settings.memory")}</button>
             {isAdmin && workspace && (
               <>
-                <div className="settings-nav-heading">Workspace</div>
-                <button className={section === "workspace" ? "settings-nav-item settings-nav-active" : "settings-nav-item"} onClick={() => setSection("workspace")}>Settings</button>
-                <button className={section === "members" ? "settings-nav-item settings-nav-active" : "settings-nav-item"} onClick={() => setSection("members")}>Members</button>
-                <button className={section === "audit" ? "settings-nav-item settings-nav-active" : "settings-nav-item"} onClick={() => setSection("audit")}>Audit log</button>
+                <div className="settings-nav-heading">{t("settings.workspace")}</div>
+                <button className={section === "workspace" ? "settings-nav-item settings-nav-active" : "settings-nav-item"} onClick={() => setSection("workspace")}>{t("settings.title")}</button>
+                <button className={section === "members" ? "settings-nav-item settings-nav-active" : "settings-nav-item"} onClick={() => setSection("members")}>{t("settings.members")}</button>
+                <button className={section === "audit" ? "settings-nav-item settings-nav-active" : "settings-nav-item"} onClick={() => setSection("audit")}>{t("settings.auditLog")}</button>
               </>
             )}
           </nav>
 
           <div className="settings-content">
             {section === "account" && (
-              <div className="settings-row">
-                <div>
-                  <div className="detail-label">Email</div>
-                  <div className="muted small">{user.email}</div>
+              <>
+                <h3 className="settings-title">{t("settings.account")}</h3>
+                <div className="settings-row">
+                  <div>
+                    <div className="detail-label">{t("settings.name")}</div>
+                    <div className="muted small">{user.display_name || "Not set"}</div>
+                  </div>
                 </div>
-              </div>
+                <div className="settings-row">
+                  <div>
+                    <div className="detail-label">{t("settings.email")}</div>
+                    <div className="muted small">{user.email}</div>
+                  </div>
+                </div>
+                <div className="settings-row">
+                  <div>
+                    <div className="detail-label">{t("settings.language")}</div>
+                    <div className="muted small">{t("settings.languageHint")}</div>
+                  </div>
+                  <select value={locale} onChange={(e) => setLocale(e.target.value as "en" | "zh")} aria-label={t("settings.language")}>
+                    <option value="en">English</option>
+                    <option value="zh">中文</option>
+                  </select>
+                </div>
+              </>
             )}
 
             {section === "workspace" && isAdmin && workspace && <WorkspaceSection workspace={workspace} onError={onError} />}

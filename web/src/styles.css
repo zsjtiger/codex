@@ -738,3 +738,6 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .file-chip-action:hover { background: var(--hover); color: var(--text); }
 .file-chip-action:disabled { opacity: 0.5; cursor: default; }
 .file-chip-danger:hover { color: #b3261e; }
+.project-page-search { width: 100%; margin: 12px 0 0; }
+.search-snippet { white-space: normal; }
+.mic-button-on { color: #b3261e; background: var(--hover); }
