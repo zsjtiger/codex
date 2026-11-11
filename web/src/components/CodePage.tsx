@@ -15,7 +15,7 @@ interface CodePageProps {
   onError: (message: string) => void;
 }
 
-/** BaizeCode's home: linked GitHub repositories, and the form to link another. */
+/** The code mode's home: linked GitHub repositories, and the form to link another. */
 export function CodePage({ workspaceId, isAdmin, environmentId, onOpenThread, onError }: CodePageProps) {
   const [list, setList] = useState<CodeRepo[] | null>(null);
   const [fullName, setFullName] = useState("");
@@ -83,7 +83,7 @@ export function CodePage({ workspaceId, isAdmin, environmentId, onOpenThread, on
 
   return (
     <main className="code-page">
-      <h1 className="code-title">{tx("BaizeCode")}</h1>
+      <h1 className="code-title">{tx("Code")}</h1>
       <p className="muted">
         {tx("Connect a GitHub repository. Each session works on its own branch, and you choose when to commit and push.")}
       </p>

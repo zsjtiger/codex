@@ -475,9 +475,8 @@ addChinese({
   "Gateway": "网关",
 });
 
-// BaizeCode: code sessions.
+// Code mode.
 addChinese({
-  "BaizeCode": "BaizeCode",
   "Chat": "聊天",
   "Code": "代码",
   "Mode": "模式",

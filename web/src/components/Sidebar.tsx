@@ -127,7 +127,7 @@ export function Sidebar(props: SidebarProps) {
           <button className="icon-button" onClick={onToggle} aria-label={tx("Toggle sidebar")}>
             <SidebarIcon />
           </button>
-          <span className="brand-name">{mode === "code" ? "BaizeCode" : tx("Baize")}</span>
+          <span className="brand-name">{mode === "code" ? tx("Code") : tx("Baize")}</span>
         </div>
         <div className="mode-toggle" role="group" aria-label={tx("Mode")}>
           <button className={mode === "chat" ? "mode-on" : ""} aria-pressed={mode === "chat"} title={tx("Chat")} aria-label={tx("Chat")} onClick={() => onMode("chat")}>

@@ -820,7 +820,7 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 .mode-toggle button { width: 32px; height: 28px; border: none; border-radius: 8px; background: transparent; color: var(--text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .mode-toggle .mode-on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); }
 
-/* BaizeCode page: repositories and the connect form. */
+/* Code page: repositories and the connect form. */
 .code-page { width: 100%; max-width: 720px; margin: 0 auto; padding: 48px 24px; }
 .code-title { font-family: ui-serif, Georgia, "Times New Roman", serif; font-weight: 400; font-size: 32px; margin: 0 0 8px; }
 .code-repo { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 4px; border-bottom: 1px solid var(--border); }
