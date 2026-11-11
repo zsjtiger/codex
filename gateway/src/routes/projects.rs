@@ -49,6 +49,84 @@ pub fn routes() -> Router<AppState> {
         .route("/workspaces/{id}/projects", get(list).post(create))
         .route("/projects/{id}", get(get_one).patch(update).delete(delete))
         .route("/threads/{id}/save-to-project", axum::routing::post(save_thread_to_project))
+        .route("/projects/{id}/memory", get(list_project_memory).post(add_project_memory))
+        .route("/projects/{id}/memory/{note}", axum::routing::delete(delete_project_memory))
+}
+
+#[derive(Serialize, FromRow)]
+pub struct ProjectNote {
+    pub id: Uuid,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize)]
+pub struct ProjectNoteInput {
+    content: String,
+}
+
+/// Most notes kept for one project.
+const MAX_PROJECT_NOTES: i64 = 100;
+
+async fn project_workspace(pool: &PgPool, project_id: Uuid) -> Result<Uuid, ApiError> {
+    sqlx::query_scalar("SELECT workspace_id FROM projects WHERE id = $1")
+        .bind(project_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(ApiError::NotFound)
+}
+
+async fn list_project_memory(State(state): State<AppState>, user: CurrentUser, Path(id): Path<Uuid>) -> Result<Json<Vec<ProjectNote>>, ApiError> {
+    let workspace_id = project_workspace(&state.pool, id).await?;
+    require_role(&state.pool, workspace_id, user.id, Role::Member).await?;
+    let notes = sqlx::query_as::<_, ProjectNote>(
+        "SELECT id, content, created_at FROM project_memories WHERE project_id = $1 ORDER BY created_at",
+    )
+    .bind(id)
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(notes))
+}
+
+async fn add_project_memory(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<ProjectNoteInput>,
+) -> Result<(StatusCode, Json<ProjectNote>), ApiError> {
+    let workspace_id = project_workspace(&state.pool, id).await?;
+    require_role(&state.pool, workspace_id, user.id, Role::Member).await?;
+    let content = req.content.trim().to_string();
+    validate::length("memory", &content, 1, 2000)?;
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM project_memories WHERE project_id = $1")
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
+    if count >= MAX_PROJECT_NOTES {
+        return Err(ApiError::BadRequest(format!("a project keeps at most {MAX_PROJECT_NOTES} memory notes")));
+    }
+    let note = sqlx::query_as::<_, ProjectNote>(
+        "INSERT INTO project_memories (project_id, content) VALUES ($1, $2) RETURNING id, content, created_at",
+    )
+    .bind(id)
+    .bind(content)
+    .fetch_one(&state.pool)
+    .await?;
+    Ok((StatusCode::CREATED, Json(note)))
+}
+
+async fn delete_project_memory(State(state): State<AppState>, user: CurrentUser, Path((id, note)): Path<(Uuid, Uuid)>) -> Result<StatusCode, ApiError> {
+    let workspace_id = project_workspace(&state.pool, id).await?;
+    require_role(&state.pool, workspace_id, user.id, Role::Member).await?;
+    let result = sqlx::query("DELETE FROM project_memories WHERE id = $1 AND project_id = $2")
+        .bind(note)
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(ApiError::NotFound);
+    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]

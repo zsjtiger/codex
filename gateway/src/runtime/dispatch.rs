@@ -225,6 +225,12 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
     if let Some(context) = memory_context(&state.pool, turn.created_by).await {
         text = format!("{context}\n\n{text}");
     }
+    if let Some(context) = project_memory_context(&state.pool, turn.thread_id).await {
+        text = format!("{context}\n\n{text}");
+    }
+    if let Some(context) = past_chats_context(&state.pool, turn.created_by, turn.workspace_id, turn.thread_id, &turn.input).await {
+        text = format!("{context}\n\n{text}");
+    }
     if let Some(dir) = &output_dir {
         if let Err(err) = std::fs::create_dir_all(dir) {
             tracing::warn!(%err, "could not create the turn's output folder");
@@ -332,6 +338,97 @@ async fn memory_context(pool: &PgPool, user_id: Option<Uuid>) -> Option<String> 
         out.push_str(&format!("\n- {note}"));
     }
     (!out.is_empty()).then(|| format!("Saved memory about the user (use it when relevant):{out}"))
+}
+
+/// Most project memory text added to one turn, in bytes.
+const PROJECT_MEMORY_BUDGET: usize = 4_000;
+
+/// The notes saved for the thread's project, when there are any.
+async fn project_memory_context(pool: &PgPool, thread_id: Uuid) -> Option<String> {
+    let notes: Vec<String> = sqlx::query_scalar(
+        "SELECT m.content FROM project_memories m JOIN threads th ON th.project_id = m.project_id
+         WHERE th.id = $1 ORDER BY m.created_at",
+    )
+    .bind(thread_id)
+    .fetch_all(pool)
+    .await
+    .ok()?;
+    let mut out = String::new();
+    for note in notes {
+        if out.len() + note.len() + 3 > PROJECT_MEMORY_BUDGET {
+            break;
+        }
+        out.push_str(&format!("\n- {note}"));
+    }
+    (!out.is_empty()).then(|| format!("Project memory (use it when relevant):{out}"))
+}
+
+/// Most earlier-chat text added to one turn, in bytes.
+const PAST_CHATS_BUDGET: usize = 4_000;
+
+/// Excerpts from the user's earlier chats in the workspace that match words in the new message,
+/// when the user has turned on "Search and reference chats". `None` when off or nothing matches.
+async fn past_chats_context(pool: &PgPool, user_id: Option<Uuid>, workspace_id: Uuid, thread_id: Uuid, input: &str) -> Option<String> {
+    let user_id = user_id?;
+    let on: Option<bool> = sqlx::query_scalar("SELECT search_chats FROM user_settings WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
+        .ok()?;
+    if !on.unwrap_or(false) {
+        return None;
+    }
+    // Words of three or more characters, longest first, a few at most.
+    let mut words: Vec<String> = input
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| word.chars().count() >= 3)
+        .map(str::to_lowercase)
+        .collect();
+    words.sort_by_key(|word| std::cmp::Reverse(word.len()));
+    words.dedup();
+    words.truncate(4);
+    if words.is_empty() {
+        return None;
+    }
+    let patterns: Vec<String> = words
+        .iter()
+        .map(|word| format!("%{}%", word.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")))
+        .collect();
+    let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
+        "SELECT th.title, t.input, t.reply FROM turns t JOIN threads th ON th.id = t.thread_id
+         WHERE th.workspace_id = $1 AND t.created_by = $2 AND th.id <> $3
+           AND EXISTS (SELECT 1 FROM unnest($4::text[]) AS p WHERE t.input ILIKE p OR t.reply ILIKE p)
+         ORDER BY t.created_at DESC LIMIT 5",
+    )
+    .bind(workspace_id)
+    .bind(user_id)
+    .bind(thread_id)
+    .bind(&patterns)
+    .fetch_all(pool)
+    .await
+    .ok()?;
+    let mut out = String::new();
+    for (title, input, reply) in rows {
+        let excerpt = format!(
+            "\n- {title}: user: {} / assistant: {}",
+            clip(&input, 300),
+            clip(reply.as_deref().unwrap_or(""), 300)
+        );
+        if out.len() + excerpt.len() > PAST_CHATS_BUDGET {
+            break;
+        }
+        out.push_str(&excerpt);
+    }
+    (!out.is_empty()).then(|| format!("Earlier chats that may be relevant (for reference):{out}"))
+}
+
+/// The first `max` characters of a text, with a marker when cut.
+fn clip(text: &str, max: usize) -> String {
+    let mut out: String = text.chars().take(max).collect();
+    if text.chars().count() > max {
+        out.push_str("…");
+    }
+    out.replace('\n', " ")
 }
 
 /// Most project file text added to one turn, in bytes.

@@ -213,7 +213,23 @@ export interface MemoryImportResult {
 
 export interface MemoryView {
   enabled: boolean;
+  /** Whether earlier chats are searched for context in new turns. */
+  search_chats: boolean;
   notes: MemoryNote[];
+}
+
+/** A note kept for one project. */
+export interface ProjectNote {
+  id: string;
+  content: string;
+  created_at: string;
+}
+
+/** Progress of a memory extraction from one chat. */
+export interface FromChatResult {
+  status: "queued" | "running" | "completed" | "failed";
+  candidates: string[];
+  error: string | null;
 }
 
 /** A project file that matched a search: its name, the project, and the text around the match. */

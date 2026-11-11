@@ -34,6 +34,8 @@ export function App() {
   const [view, setView] = useState<View>("chat");
   // The project the Projects page opens on, set when a search result points into a project.
   const [projectFocus, setProjectFocus] = useState<string | null>(null);
+  // Where the Scheduled page opens: a new task for a project, or an existing task.
+  const [scheduledFocus, setScheduledFocus] = useState<{ projectId: string | null; taskId: string | null } | null>(null);
   const openProject = (projectId: string) => {
     setProjectFocus(projectId);
     setView("projects");
@@ -123,7 +125,7 @@ export function App() {
         socketStatus={codex.socketStatus}
         onSignOut={() => void codex.signOut()}
       />
-      {settingsOpen && <SettingsDialog user={codex.user!} workspace={codex.workspace} onClose={() => setSettingsOpen(false)} onError={onError} />}
+      {settingsOpen && <SettingsDialog user={codex.user!} workspace={codex.workspace} threads={codex.threads} onClose={() => setSettingsOpen(false)} onError={onError} />}
       {searchOpen && (
         <SearchDialog
           workspaceId={workspaceId}
@@ -150,6 +152,14 @@ export function App() {
             threads={codex.threads}
             reload={reloadProjects}
             canEdit={(p: Project) => canEditOwned(p.created_by)}
+            onNewScheduled={(projectId) => {
+              setScheduledFocus({ projectId, taskId: null });
+              setView("scheduled");
+            }}
+            onOpenScheduled={(taskId) => {
+              setScheduledFocus({ projectId: null, taskId });
+              setView("scheduled");
+            }}
             onStartChat={(projectId) => {
               codex.setDraftProjectId(projectId);
               newChat();
@@ -174,6 +184,7 @@ export function App() {
         {view === "scheduled" && (
           <ScheduledPage
             workspaceId={workspaceId}
+            focus={scheduledFocus}
             projects={projects}
             canEdit={(t: ScheduledTask) => canEditOwned(t.created_by)}
             onOpenThread={openThread}

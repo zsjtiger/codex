@@ -39,6 +39,8 @@ function whenLabel(iso: string): string {
 
 interface ScheduledPageProps {
   workspaceId: string;
+  /** Where the page opens: a new task for a project, or an existing task. */
+  focus?: { projectId: string | null; taskId: string | null } | null;
   projects: Project[];
   canEdit: (task: ScheduledTask) => boolean;
   onOpenThread: (threadId: string) => void;
@@ -49,7 +51,7 @@ interface ScheduledPageProps {
 const emptyForm = { name: "", prompt: "", frequency: "daily" as Frequency, time_of_day: "08:00", weekday: 1, project_id: "" };
 
 /** Scheduled tasks start a new chat with their prompt on a schedule. Times are UTC. */
-export function ScheduledPage({ workspaceId, projects, canEdit, onOpenThread, onBack, onError }: ScheduledPageProps) {
+export function ScheduledPage({ workspaceId, focus, projects, canEdit, onOpenThread, onBack, onError }: ScheduledPageProps) {
   const [items, setItems] = useState<ScheduledTask[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -70,6 +72,20 @@ export function ScheduledPage({ workspaceId, projects, canEdit, onOpenThread, on
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
+
+  // Opened from a project: start a new task there, or show the task that was picked.
+  useEffect(() => {
+    if (!focus) return;
+    if (focus.taskId) {
+      setSelectedId(focus.taskId);
+      setCreating(false);
+    } else if (focus.projectId) {
+      setSelectedId(null);
+      setForm({ ...emptyForm, project_id: focus.projectId });
+      setCreating(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus]);
 
   const selected = items.find((task) => task.id === selectedId) ?? null;
 

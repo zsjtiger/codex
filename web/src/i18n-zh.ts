@@ -355,3 +355,33 @@ addChinese({
   "Waiting for sign-in…": "等待登录…",
   "Could not start the sign-in.": "无法开始登录。",
 });
+
+// Memory features.
+addChinese({
+  "Search and reference chats": "搜索并参考聊天",
+  "Use excerpts from your earlier chats when they match a new message. Off by default.": "新消息与之前的聊天相关时，引用其中的片段。默认关闭。",
+  "Generate memory from a chat": "从聊天生成记忆",
+  "Reads a chat and suggests durable facts about you. You choose what to keep.": "读取一段聊天，提出关于你的长期事实，由你选择保留哪些。",
+  "Chat to read": "要读取的聊天",
+  "Choose a chat": "选择一个聊天",
+  "Generate": "生成",
+  "Reading…": "读取中…",
+  "Could not read the chat.": "无法读取该聊天。",
+  "Nothing worth remembering was found.": "没有发现值得记住的内容。",
+  "Save selected": "保存所选",
+  "Discard": "丢弃",
+});
+
+// Project memory and scheduled tasks.
+addChinese({
+  "Memory": "记忆",
+  "Notes added to this project's chats": "加入本项目新聊天的备注",
+  "View": "查看",
+  "Scheduled": "定时任务",
+  "No scheduled tasks for this project": "这个项目还没有定时任务",
+  "No notes yet.": "还没有备注。",
+  "Could not load memory.": "无法加载记忆。",
+  "Add a note for this project": "为这个项目添加备注",
+  "New project note": "新的项目备注",
+  "Could not delete the note.": "无法删除备注。",
+});

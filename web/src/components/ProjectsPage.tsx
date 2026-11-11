@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { attachments as attachmentApi, contentTypeOf, projects as projectApi, search } from "../api/resources";
-import type { Attachment, Project, ProjectFileHit, Thread } from "../api/types";
+import { attachments as attachmentApi, contentTypeOf, projectMemory, projects as projectApi, scheduled as scheduledApi, search } from "../api/resources";
+import type { Attachment, Project, ProjectFileHit, ProjectNote, ScheduledTask, Thread } from "../api/types";
 import { PlusIcon } from "./icons";
 import { tx } from "../i18n";
 
@@ -14,8 +14,68 @@ interface ProjectsPageProps {
   canEdit: (project: Project) => boolean;
   onStartChat: (projectId: string) => void;
   onOpenThread: (threadId: string) => void;
+  /** Opens the scheduled-task form with this project already chosen. */
+  onNewScheduled: (projectId: string) => void;
+  /** Opens a scheduled task on the Scheduled page. */
+  onOpenScheduled: (taskId: string) => void;
   onBack: () => void;
   onError: (message: string) => void;
+}
+
+/** Notes kept for one project. They are added to the project's new chats. */
+function ProjectMemory({ projectId, onError }: { projectId: string; onError: (message: string) => void }) {
+  const [notes, setNotes] = useState<ProjectNote[] | null>(null);
+  const [draft, setDraft] = useState("");
+  const load = () =>
+    projectMemory
+      .list(projectId)
+      .then(setNotes)
+      .catch((err: unknown) => onError(err instanceof Error ? err.message : tx("Could not load memory.")));
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+  const add = async () => {
+    if (!draft.trim()) return;
+    try {
+      await projectMemory.add(projectId, draft.trim());
+      setDraft("");
+      await load();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : tx("Could not add the note."));
+    }
+  };
+  const remove = async (note: ProjectNote) => {
+    try {
+      await projectMemory.remove(projectId, note.id);
+      await load();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : tx("Could not delete the note."));
+    }
+  };
+  return (
+    <div className="project-files">
+      {notes?.length === 0 && <p className="muted small">{tx("No notes yet.")}</p>}
+      {notes?.map((note) => (
+        <div key={note.id} className="project-file-row">
+          <span className="project-file-name">{note.content}</span>
+          <button onClick={() => void remove(note)}>{tx("Delete")}</button>
+        </div>
+      ))}
+      <form
+        className="memory-add"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void add();
+        }}
+      >
+        <input value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={2000} placeholder={tx("Add a note for this project")} aria-label={tx("New project note")} />
+        <button className="primary" type="submit" disabled={!draft.trim()}>
+          {tx("Add")}
+        </button>
+      </form>
+    </div>
+  );
 }
 
 /** Bytes of project file text a chat reads per turn. Matches the gateway's limit. */
@@ -156,7 +216,7 @@ function ProjectForm({ initial, onSave, onCancel, busy }: { initial: Project | n
 }
 
 /** Projects group chats, files and instructions. The list shows cards; a card opens the project. */
-export function ProjectsPage({ workspaceId, initialProjectId, projects, threads, reload, canEdit, onStartChat, onOpenThread, onBack, onError }: ProjectsPageProps) {
+export function ProjectsPage({ workspaceId, initialProjectId, projects, threads, reload, canEdit, onStartChat, onOpenThread, onNewScheduled, onOpenScheduled, onBack, onError }: ProjectsPageProps) {
   const [selectedId, setSelectedId] = useState<string | null>(initialProjectId ?? null);
   const [projectQuery, setProjectQuery] = useState("");
   // A search result can ask for a different project while the page is already open.
@@ -168,6 +228,8 @@ export function ProjectsPage({ workspaceId, initialProjectId, projects, threads,
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
+  const [showMemory, setShowMemory] = useState(false);
+  const [projectTasks, setProjectTasks] = useState<ScheduledTask[]>([]);
   const [fileCount, setFileCount] = useState<number | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -175,8 +237,19 @@ export function ProjectsPage({ workspaceId, initialProjectId, projects, threads,
   const selected = projects.find((p) => p.id === selectedId) ?? null;
   const projectThreads = selected ? threads.filter((t) => t.project_id === selected.id && !t.archived_at) : [];
 
+  // Scheduled tasks that run in this project, listed under the project.
+  useEffect(() => {
+    if (!selected) return;
+    scheduledApi
+      .list(workspaceId)
+      .then((tasks) => setProjectTasks(tasks.filter((task) => task.project_id === selected.id)))
+      .catch(() => setProjectTasks([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, workspaceId]);
+
   useEffect(() => {
     setShowFiles(false);
+    setShowMemory(false);
     setEditing(false);
     setFileCount(null);
     if (!selected) return;
@@ -351,6 +424,30 @@ export function ProjectsPage({ workspaceId, initialProjectId, projects, threads,
                     </div>
                     <button className="link-button" onClick={() => setShowFiles((open) => !open)} aria-expanded={showFiles}>
                       {showFiles ? tx("Hide") : tx("Add")}
+                    </button>
+                  </div>
+                  <div className="detail-row">
+                    <div>
+                      <div className="detail-label">{tx("Memory")}</div>
+                      <div className="muted small detail-value">{tx("Notes added to this project's chats")}</div>
+                    </div>
+                    <button className="link-button" onClick={() => setShowMemory((open) => !open)} aria-expanded={showMemory}>
+                      {showMemory ? tx("Hide") : tx("View")}
+                    </button>
+                  </div>
+                  {showMemory && <ProjectMemory projectId={selected.id} onError={onError} />}
+                  <div className="detail-row">
+                    <div className="settings-grow">
+                      <div className="detail-label">{tx("Scheduled")}</div>
+                      {projectTasks.length === 0 && <div className="muted small detail-value">{tx("No scheduled tasks for this project")}</div>}
+                      {projectTasks.map((task) => (
+                        <button key={task.id} className="link-button project-task-link" onClick={() => onOpenScheduled(task.id)}>
+                          {task.name}
+                        </button>
+                      ))}
+                    </div>
+                    <button className="link-button" onClick={() => onNewScheduled(selected.id)}>
+                      {tx("Add")}
                     </button>
                   </div>
                   {showFiles && (

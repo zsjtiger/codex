@@ -193,6 +193,8 @@ pub struct MemoryNote {
 #[derive(Serialize)]
 pub struct MemoryView {
     pub enabled: bool,
+    /// Whether earlier chats are searched for context in new turns.
+    pub search_chats: bool,
     pub notes: Vec<MemoryNote>,
 }
 
@@ -210,6 +212,9 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/me/memory", get(get_memory).post(add_note))
         .route("/me/memory/enabled", put(set_enabled))
+        .route("/me/memory/search-chats", put(set_search_chats))
+        .route("/me/memory/from-chat", post(start_from_chat))
+        .route("/me/memory/from-chat/{helper}", get(from_chat_result))
         .route(
             "/me/memory/import",
             post(import_notes).layer(DefaultBodyLimit::max(IMPORT_LIMIT_BYTES)),
@@ -219,13 +224,17 @@ pub fn routes() -> Router<AppState> {
 
 async fn get_memory(State(state): State<AppState>, user: CurrentUser) -> Result<Json<MemoryView>, ApiError> {
     let enabled = memory_enabled(&state, user.id).await?;
+    let search_chats: bool = sqlx::query_scalar("SELECT COALESCE((SELECT search_chats FROM user_settings WHERE user_id = $1), false)")
+        .bind(user.id)
+        .fetch_one(&state.pool)
+        .await?;
     let notes = sqlx::query_as::<_, MemoryNote>(
         "SELECT id, content, created_at, updated_at FROM user_memories WHERE user_id = $1 ORDER BY created_at",
     )
     .bind(user.id)
     .fetch_all(&state.pool)
     .await?;
-    Ok(Json(MemoryView { enabled, notes }))
+    Ok(Json(MemoryView { enabled, search_chats, notes }))
 }
 
 async fn add_note(
@@ -295,6 +304,125 @@ async fn set_enabled(State(state): State<AppState>, user: CurrentUser, Json(req)
     .execute(&state.pool)
     .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn set_search_chats(State(state): State<AppState>, user: CurrentUser, Json(req): Json<EnabledInput>) -> Result<StatusCode, ApiError> {
+    sqlx::query(
+        "INSERT INTO user_settings (user_id, search_chats) VALUES ($1, $2)
+         ON CONFLICT (user_id) DO UPDATE SET search_chats = EXCLUDED.search_chats, updated_at = now()",
+    )
+    .bind(user.id)
+    .bind(req.enabled)
+    .execute(&state.pool)
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub struct FromChatInput {
+    thread_id: Uuid,
+}
+
+#[derive(Serialize)]
+pub struct FromChatStarted {
+    /// The hidden chat that reads the conversation. Poll it with GET /me/memory/from-chat/{id}.
+    pub helper: Uuid,
+}
+
+/// Most conversation text sent to the model when extracting memory from a chat.
+const FROM_CHAT_TEXT_BYTES: usize = 12_000;
+
+/// Starts a hidden chat that reads one of the user's chats and lists durable facts about them.
+/// The reply is not saved; the user chooses what to keep from the result.
+async fn start_from_chat(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Json(req): Json<FromChatInput>,
+) -> Result<(StatusCode, Json<FromChatStarted>), ApiError> {
+    let (workspace_id, environment_id, title): (Uuid, Option<Uuid>, String) =
+        sqlx::query_as("SELECT workspace_id, environment_id, title FROM threads WHERE id = $1")
+            .bind(req.thread_id)
+            .fetch_one(&state.pool)
+            .await?;
+    crate::authz::require_role(&state.pool, workspace_id, user.id, crate::authz::Role::Member).await?;
+    let environment_id = environment_id.ok_or_else(|| ApiError::BadRequest("this chat has no environment to read it with".to_string()))?;
+
+    let turns: Vec<(String, Option<String>)> =
+        sqlx::query_as("SELECT input, reply FROM turns WHERE thread_id = $1 ORDER BY seq")
+            .bind(req.thread_id)
+            .fetch_all(&state.pool)
+            .await?;
+    let mut transcript = String::new();
+    for (input, reply) in turns {
+        transcript.push_str(&format!("User: {input}\n"));
+        if let Some(reply) = reply {
+            transcript.push_str(&format!("Assistant: {reply}\n\n"));
+        }
+    }
+    let transcript: String = {
+        let chars: Vec<char> = transcript.chars().collect();
+        let keep = chars.len().min(FROM_CHAT_TEXT_BYTES / 2);
+        chars[chars.len() - keep..].iter().collect()
+    };
+    if transcript.trim().is_empty() {
+        return Err(ApiError::BadRequest("this chat has no messages yet".to_string()));
+    }
+    let instructions = "From the conversation below, list only durable facts about the user worth remembering \
+        long term: preferences, their work and projects, and ongoing context. Skip anything temporary, \
+        and do not repeat the question. Output one fact per line, each starting with \"- \". If nothing is \
+        worth remembering, output nothing.";
+    let input = format!("{instructions}\n\nChat title: {title}\n\nConversation:\n{transcript}");
+
+    let helper: Uuid = sqlx::query_scalar(
+        "INSERT INTO threads (workspace_id, environment_id, created_by, title, archived_at)
+         VALUES ($1, $2, $3, 'Memory from chat', now()) RETURNING id",
+    )
+    .bind(workspace_id)
+    .bind(environment_id)
+    .bind(user.id)
+    .fetch_one(&state.pool)
+    .await?;
+    sqlx::query("INSERT INTO turns (thread_id, seq, input, created_by) VALUES ($1, 1, $2, $3)")
+        .bind(helper)
+        .bind(&input)
+        .bind(user.id)
+        .execute(&state.pool)
+        .await?;
+    crate::runtime::dispatch::spawn_drain(state.clone(), helper);
+    Ok((StatusCode::ACCEPTED, Json(FromChatStarted { helper })))
+}
+
+#[derive(Serialize)]
+pub struct FromChatResult {
+    /// queued, running, completed or failed.
+    pub status: String,
+    /// Candidate notes from the reply, once it has completed.
+    pub candidates: Vec<String>,
+    pub error: Option<String>,
+}
+
+async fn from_chat_result(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(helper): Path<Uuid>,
+) -> Result<Json<FromChatResult>, ApiError> {
+    let (owner, title): (Option<Uuid>, String) = sqlx::query_as("SELECT created_by, title FROM threads WHERE id = $1")
+        .bind(helper)
+        .fetch_one(&state.pool)
+        .await?;
+    if owner != Some(user.id) || title != "Memory from chat" {
+        return Err(ApiError::NotFound);
+    }
+    let (status, reply, error): (String, Option<String>, Option<String>) =
+        sqlx::query_as("SELECT status, reply, error FROM turns WHERE thread_id = $1 AND seq = 1")
+            .bind(helper)
+            .fetch_one(&state.pool)
+            .await?;
+    let candidates = match (status.as_str(), reply) {
+        ("completed", Some(reply)) => parse_notes(&reply),
+        _ => Vec::new(),
+    };
+    Ok(Json(FromChatResult { status, candidates, error }))
 }
 
 /// Whether the user's saved memory is used in their chats. On by default.

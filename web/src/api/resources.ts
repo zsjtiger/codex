@@ -11,8 +11,10 @@ import type {
   AuditEntry,
   Member,
   Workspace,
+  FromChatResult,
   MemoryNote,
   MemoryView,
+  ProjectNote,
   ProjectFileHit,
   ScheduledRun,
   Connector,
@@ -81,12 +83,23 @@ export const audit = {
     api<AuditEntry[]>("GET", `/workspaces/${ws}/audit-logs?limit=${limit}&offset=${offset}`),
 };
 
+/** Notes kept for a project; they are added to the project's new chats. */
+export const projectMemory = {
+  list: (projectId: string) => api<ProjectNote[]>("GET", `/projects/${projectId}/memory`),
+  add: (projectId: string, content: string) => api<ProjectNote>("POST", `/projects/${projectId}/memory`, { content }),
+  remove: (projectId: string, noteId: string) => api<void>("DELETE", `/projects/${projectId}/memory/${noteId}`),
+};
+
 export const memory = {
   get: () => api<MemoryView>("GET", "/me/memory"),
   add: (content: string) => api<MemoryNote>("POST", "/me/memory", { content }),
   edit: (id: string, content: string) => api<MemoryNote>("PATCH", `/me/memory/${id}`, { content }),
   remove: (id: string) => api<void>("DELETE", `/me/memory/${id}`),
   setEnabled: (enabled: boolean) => api<void>("PUT", "/me/memory/enabled", { enabled }),
+  setSearchChats: (enabled: boolean) => api<void>("PUT", "/me/memory/search-chats", { enabled }),
+  /** Starts reading one chat for durable facts; returns the helper chat to poll. */
+  startFromChat: (threadId: string) => api<{ helper: string }>("POST", "/me/memory/from-chat", { thread_id: threadId }),
+  fromChatResult: (helper: string) => api<FromChatResult>("GET", `/me/memory/from-chat/${helper}`),
   /** Imports notes from pasted text (a string) or a file (a zip, .md or .txt). */
   importNotes: async (input: string | File): Promise<MemoryImportResult> => {
     const headers: Record<string, string> = { "content-type": typeof input === "string" ? "text/plain" : contentTypeOf(input) };

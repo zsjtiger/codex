@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { memory as memoryApi } from "../api/resources";
-import type { MemoryImportResult, MemoryNote, User, Workspace } from "../api/types";
+import type { MemoryImportResult, MemoryNote, Thread, User, Workspace } from "../api/types";
 import { AuditSection, MembersSection, WorkspaceSection } from "./WorkspaceSections";
 import { useI18n } from "../i18n";
 import { tx } from "../i18n";
@@ -13,6 +13,8 @@ const IMPORT_PROMPT =
 interface SettingsDialogProps {
   user: User;
   workspace: Workspace | null;
+  /** The chats the user can read to generate memory from. */
+  threads: Thread[];
   onClose: () => void;
   onError: (message: string) => void;
 }
@@ -20,7 +22,7 @@ interface SettingsDialogProps {
 type Section = "account" | "memory" | "workspace" | "members" | "audit";
 
 /** Account settings. Memory holds notes that are added to the user's new chats when it is on. */
-export function SettingsDialog({ user, workspace, onClose, onError }: SettingsDialogProps) {
+export function SettingsDialog({ user, workspace, threads, onClose, onError }: SettingsDialogProps) {
   const [section, setSection] = useState<Section>("memory");
   const { t, locale, setLocale } = useI18n();
   // Workspace administration is for admins and owners only.
@@ -33,6 +35,11 @@ export function SettingsDialog({ user, workspace, onClose, onError }: SettingsDi
   const [importOpen, setImportOpen] = useState(false);
   const [pasted, setPasted] = useState("");
   const [importResult, setImportResult] = useState<MemoryImportResult | null>(null);
+  const [searchChats, setSearchChats] = useState(false);
+  const [fromChat, setFromChat] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [candidates, setCandidates] = useState<string[] | null>(null);
+  const [chosen, setChosen] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     if (section !== "memory") return;
@@ -40,6 +47,7 @@ export function SettingsDialog({ user, workspace, onClose, onError }: SettingsDi
       .get()
       .then((view) => {
         setEnabled(view.enabled);
+        setSearchChats(view.search_chats);
         setNotes(view.notes);
       })
       .catch((err: unknown) => onError(err instanceof Error ? err.message : tx("Could not load memory.")));
@@ -95,6 +103,56 @@ export function SettingsDialog({ user, workspace, onClose, onError }: SettingsDi
       await reload();
     } catch (err) {
       onError(err instanceof Error ? err.message : tx("Could not delete the note."));
+    }
+  };
+
+  const toggleSearchChats = async (next: boolean) => {
+    setSearchChats(next);
+    try {
+      await memoryApi.setSearchChats(next);
+    } catch (err) {
+      setSearchChats(!next);
+      onError(err instanceof Error ? err.message : tx("Could not change memory."));
+    }
+  };
+
+  /** Reads the chosen chat in a hidden helper chat, then lists the facts it found. */
+  const generateFromChat = async () => {
+    if (!fromChat) return;
+    setGenerating(true);
+    setCandidates(null);
+    try {
+      const { helper } = await memoryApi.startFromChat(fromChat);
+      for (let attempt = 0; attempt < 200; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        const result = await memoryApi.fromChatResult(helper);
+        if (result.status === "completed") {
+          setCandidates(result.candidates);
+          setChosen(new Set(result.candidates.map((_, index) => index)));
+          break;
+        }
+        if (result.status === "failed") throw new Error(result.error ?? tx("Could not read the chat."));
+      }
+    } catch (err) {
+      onError(err instanceof Error ? err.message : tx("Could not read the chat."));
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const saveChosen = async () => {
+    const text = (candidates ?? []).filter((_, index) => chosen.has(index)).map((line) => `- ${line}`).join("\n");
+    if (!text) return;
+    setBusy(true);
+    try {
+      const result = await memoryApi.importNotes(text);
+      setImportResult(result);
+      setCandidates(null);
+      await reload();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : tx("Could not import the memory."));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -197,6 +255,14 @@ export function SettingsDialog({ user, workspace, onClose, onError }: SettingsDi
                   <input type="checkbox" className="switch" checked={enabled} onChange={(e) => void toggle(e.target.checked)} aria-label={tx("Use saved memory in chats")} />
                 </div>
 
+                <div className="settings-row">
+                  <div>
+                    <div className="detail-label">{tx("Search and reference chats")}</div>
+                    <div className="muted small">{tx("Use excerpts from your earlier chats when they match a new message. Off by default.")}</div>
+                  </div>
+                  <input type="checkbox" className="switch" checked={searchChats} onChange={(e) => void toggleSearchChats(e.target.checked)} aria-label={tx("Search and reference chats")} />
+                </div>
+
                 <div className="settings-row settings-row-top">
                   <div className="settings-grow">
                     <div className="detail-label">{tx("Your memory")}</div>
@@ -285,6 +351,54 @@ export function SettingsDialog({ user, workspace, onClose, onError }: SettingsDi
                             Added {importResult.added} notes. {importResult.duplicates} were already saved
                             {importResult.skipped > 0 ? `; ${importResult.skipped} left out because memory is full` : ""}.
                           </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="settings-row settings-row-top">
+                  <div className="settings-grow">
+                    <div className="detail-label">{tx("Generate memory from a chat")}</div>
+                    <div className="muted small">{tx("Reads a chat and suggests durable facts about you. You choose what to keep.")}</div>
+                    <div className="memory-add">
+                      <select value={fromChat} onChange={(e) => setFromChat(e.target.value)} aria-label={tx("Chat to read")}>
+                        <option value="">{tx("Choose a chat")}</option>
+                        {threads.map((thread) => (
+                          <option key={thread.id} value={thread.id}>
+                            {thread.title}
+                          </option>
+                        ))}
+                      </select>
+                      <button onClick={() => void generateFromChat()} disabled={!fromChat || generating}>
+                        {generating ? tx("Reading…") : tx("Generate")}
+                      </button>
+                    </div>
+                    {candidates && (
+                      <div className="memory-list">
+                        {candidates.length === 0 && <p className="muted small">{tx("Nothing worth remembering was found.")}</p>}
+                        {candidates.map((line, index) => (
+                          <label key={index} className="memory-note">
+                            <input
+                              type="checkbox"
+                              checked={chosen.has(index)}
+                              onChange={(e) => {
+                                const next = new Set(chosen);
+                                if (e.target.checked) next.add(index);
+                                else next.delete(index);
+                                setChosen(next);
+                              }}
+                            />
+                            <span className="memory-note-text">{line}</span>
+                          </label>
+                        ))}
+                        {candidates.length > 0 && (
+                          <div className="import-actions">
+                            <button className="primary" onClick={() => void saveChosen()} disabled={busy || chosen.size === 0}>
+                              {tx("Save selected")}
+                            </button>
+                            <button onClick={() => setCandidates(null)}>{tx("Discard")}</button>
+                          </div>
                         )}
                       </div>
                     )}
