@@ -815,10 +815,14 @@ html.desktop .app { height: 100vh; margin-top: 0; }
   .add-button { white-space: nowrap; }
 }
 
-/* Chat / code switch under the sidebar brand. */
-.mode-toggle { display: inline-flex; gap: 2px; padding: 3px; margin: 0 12px 8px; background: var(--hover); border-radius: 10px; }
-.mode-toggle button { width: 32px; height: 28px; border: none; border-radius: 8px; background: transparent; color: var(--text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
-.mode-toggle .mode-on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); }
+/* Chat / code switch, on the same row as the sidebar title. */
+.brand { justify-content: space-between; }
+.brand .brand-name { flex: 1; }
+.mode-toggle { display: inline-flex; gap: 2px; padding: 3px; background: var(--hover); border-radius: 10px; flex: none; }
+.mode-toggle button { position: relative; width: 40px; height: 30px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.mode-toggle button:hover { color: var(--text); }
+.mode-toggle .mode-on { background: var(--surface); color: var(--text); border-color: var(--border); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); }
+.mode-dot { position: absolute; top: 4px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 
 /* Code page: repositories and the connect form. */
 .code-page { width: 100%; max-width: 720px; margin: 0 auto; padding: 48px 24px; }

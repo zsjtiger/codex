@@ -43,6 +43,10 @@ export const MoreIcon = (p: IconProps) => (
 export const ChatIcon = (p: IconProps) => (
   <svg {...base(p)}><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 3.5V17H6.5A2.5 2.5 0 0 1 4 14.5z" /></svg>
 );
+/** A speech bubble with a magnifier: chat search. */
+export const ChatSearchIcon = (p: IconProps) => (
+  <svg {...base({ width: 18, height: 18, ...p })}><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h7A2.5 2.5 0 0 1 16 6.5v4.5A2.5 2.5 0 0 1 13.5 13.5H10l-3.5 2.8V13.5H6.5A2.5 2.5 0 0 1 4 11z" /><circle cx="17" cy="16" r="3" /><path d="M19.2 18.2L21 20" /></svg>
+);
 export const CodeIcon = (p: IconProps) => (
   <svg {...base(p)}><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16" /></svg>
 );

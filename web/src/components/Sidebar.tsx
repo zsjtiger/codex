@@ -3,7 +3,7 @@ import type { Thread, User } from "../api/types";
 import type { SocketStatus } from "../realtime/socket";
 import { UsageDialog } from "./UsageDialog";
 import { useI18n, type MessageKey } from "../i18n";
-import { ArtifactIcon, ChatIcon, ChevronIcon, ClockIcon, CodeIcon, CustomizeIcon, MoreIcon, PlusIcon, ProjectIcon, SearchIcon, SidebarIcon, SparkIcon } from "./icons";
+import { ArtifactIcon, ChatIcon, ChatSearchIcon, ChevronIcon, ClockIcon, CodeIcon, CustomizeIcon, MoreIcon, PlusIcon, ProjectIcon, SearchIcon, SidebarIcon, SparkIcon } from "./icons";
 import { isDesktop } from "../desktop";
 import { WindowLights } from "./TitleBar";
 import { tx } from "../i18n";
@@ -48,6 +48,8 @@ interface SidebarProps {
   workspaceName: string;
   mode: Mode;
   onMode: (mode: Mode) => void;
+  /** A chat (not a code session) is running, so the chat switch shows a dot. */
+  chatActive: boolean;
   socketStatus: SocketStatus;
   onSignOut: () => void;
 }
@@ -56,7 +58,7 @@ const statusLabel: Record<SocketStatus, string> = { open: "Live", connecting: tx
 
 export function Sidebar(props: SidebarProps) {
   const { t, locale, setLocale } = useI18n();
-  const { open, onOpenSettings, onRenameThread, onArchiveThread, onDeleteThread, onToggle, threads, activeId, activeView, onSelect, onNew, onSearch, onView, hidden, onHiddenChange, user, workspaceName, socketStatus, onSignOut, mode, onMode } = props;
+  const { open, onOpenSettings, onRenameThread, onArchiveThread, onDeleteThread, onToggle, threads, activeId, activeView, onSelect, onNew, onSearch, onView, hidden, onHiddenChange, user, workspaceName, socketStatus, onSignOut, mode, onMode, chatActive } = props;
   const [chatMenuId, setChatMenuId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState("");
@@ -128,14 +130,15 @@ export function Sidebar(props: SidebarProps) {
             <SidebarIcon />
           </button>
           <span className="brand-name">{mode === "code" ? tx("Code") : tx("Baize")}</span>
-        </div>
-        <div className="mode-toggle" role="group" aria-label={tx("Mode")}>
-          <button className={mode === "chat" ? "mode-on" : ""} aria-pressed={mode === "chat"} title={tx("Chat")} aria-label={tx("Chat")} onClick={() => onMode("chat")}>
-            <ChatIcon />
-          </button>
-          <button className={mode === "code" ? "mode-on" : ""} aria-pressed={mode === "code"} title={tx("Code")} aria-label={tx("Code")} onClick={() => onMode("code")}>
-            <CodeIcon />
-          </button>
+          <div className="mode-toggle" role="group" aria-label={tx("Mode")}>
+            <button className={mode === "chat" ? "mode-on" : ""} aria-pressed={mode === "chat"} title={tx("Chat")} aria-label={tx("Chat")} onClick={() => onMode("chat")}>
+              <ChatSearchIcon />
+              {chatActive && <span className="mode-dot" aria-label={tx("Chat is running")} />}
+            </button>
+            <button className={mode === "code" ? "mode-on" : ""} aria-pressed={mode === "code"} title={tx("Code")} aria-label={tx("Code")} onClick={() => onMode("code")}>
+              <CodeIcon />
+            </button>
+          </div>
         </div>
       </div>
 

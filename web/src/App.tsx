@@ -173,6 +173,7 @@ export function App() {
         threads={codex.threads.filter((t) => (mode === "code") === Boolean(t.repo_id))}
         mode={mode}
         onMode={changeMode}
+        chatActive={codex.threads.some((t) => !t.repo_id && t.state === "running")}
         activeId={codex.activeId}
         activeView={view}
         onSelect={openThread}
