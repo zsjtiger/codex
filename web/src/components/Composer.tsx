@@ -29,7 +29,7 @@ function MicIcon() {
   );
 }
 import type { SendOptions } from "../state/useCodex";
-import { ChevronIcon, PlusIcon } from "./icons";
+import { ChevronIcon, PlusIcon, ArrowUpIcon } from "./icons";
 import { tx } from "../i18n";
 
 /** Text files are sent to the model, so they are kept small. Word and PDF files are only shown. */
@@ -318,6 +318,24 @@ export function Composer(props: ComposerProps) {
           </div>
           <div className="composer-right">
             {uploading && <span className="muted small">{tx("Uploading…")}</span>}
+          <div className="composer-options-right">
+            <select className="pill-select" value={model} onChange={(event) => setModel(event.target.value)} aria-label={tx("Model")}>
+              <option value="">{t("composer.model")}</option>
+              {models.map((option) => (
+                <option key={option.model} value={option.model}>
+                  {option.display_name || option.model}
+                </option>
+              ))}
+            </select>
+            <select className="pill-select" value={effort} onChange={(event) => setEffort(event.target.value)} aria-label={tx("Reasoning effort")}>
+              <option value="">{t("composer.effort")}</option>
+              {efforts.map((level) => (
+                <option key={level} value={level}>
+                  {tx(level.charAt(0).toUpperCase() + level.slice(1))}
+                </option>
+              ))}
+            </select>
+          </div>
             {SpeechInput && (
               <button
                 type="button"
@@ -335,8 +353,8 @@ export function Composer(props: ComposerProps) {
                 {tx("Stop")}
               </button>
             ) : (
-              <button type="submit" className="send" disabled={disabled || uploading || (!draft.trim() && pending.length === 0)}>
-                {tx("Send")}
+              <button type="submit" className="send" aria-label={tx("Send")} title={tx("Send")} disabled={disabled || uploading || (!draft.trim() && pending.length === 0)}>
+                <ArrowUpIcon />
               </button>
             )}
           </div>
@@ -423,24 +441,7 @@ export function Composer(props: ComposerProps) {
         ) : (
           <span />
         )}
-        <div className="composer-options-right">
-          <select className="pill-select" value={model} onChange={(event) => setModel(event.target.value)} aria-label={tx("Model")}>
-            <option value="">{t("composer.model")}</option>
-            {models.map((option) => (
-              <option key={option.model} value={option.model}>
-                {option.display_name || option.model}
-              </option>
-            ))}
-          </select>
-          <select className="pill-select" value={effort} onChange={(event) => setEffort(event.target.value)} aria-label={tx("Reasoning effort")}>
-            <option value="">{t("composer.effort")}</option>
-            {efforts.map((level) => (
-              <option key={level} value={level}>
-                {tx(level.charAt(0).toUpperCase() + level.slice(1))}
-              </option>
-            ))}
-          </select>
-        </div>
+
       </div>
     </div>
   );

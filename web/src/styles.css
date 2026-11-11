@@ -134,7 +134,7 @@ a { color: inherit; text-decoration: none; }
 }
 .composer-input::placeholder { color: var(--text-muted); }
 .composer-bar { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
-.composer-right { display: flex; align-items: center; gap: 4px; }
+.composer-right { display: flex; align-items: center; gap: 6px; }
 
 .composer-options { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 4px; }
 .composer-options-right { display: flex; align-items: center; gap: 8px; }
@@ -242,10 +242,8 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .composer-dock { position: sticky; bottom: 0; padding: 12px 0 20px; background: var(--bg); }
 .composer-wrap { width: 100%; }
 .composer-input:disabled { opacity: 0.6; }
-.send {
-  padding: 6px 14px; border: none; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; font-size: 14px;
-}
-.send:disabled { opacity: 0.4; cursor: default; }
+.send { width: 32px; height: 32px; border-radius: 50%; border: none; display: inline-flex; align-items: center; justify-content: center; background: var(--text); color: var(--surface); cursor: pointer; }
+.send:disabled { background: var(--hover); color: var(--text-muted); cursor: default; }
 .empty-note { margin: 0; padding: 6px 10px; font-size: 13px; color: var(--text-muted); }
 
 /* Search dialog */
@@ -799,3 +797,7 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 .footer-mark { color: var(--accent); flex: none; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #9a9a9a; flex: none; }
 .status-open { background: #28c840; }
+
+/* Model and effort sit inside the composer, beside the send arrow. */
+.composer-right .composer-options-right { gap: 4px; }
+.composer-right .pill-select { color: var(--text-muted); }
