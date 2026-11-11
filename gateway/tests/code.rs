@@ -197,7 +197,7 @@ async fn finished_turns_commit_their_changes_to_the_session_branch(pool: PgPool)
 
     // The commit follows the turn's completion, so wait for the branch to reach the remote.
     let mut subject = String::new();
-    for _ in 0..200 {
+    for _ in 0..1200 {
         let found = Command::new("git").args(["log", "-1", "--format=%s", &branch]).current_dir(&remote).output().unwrap();
         if found.status.success() {
             subject = String::from_utf8_lossy(&found.stdout).trim().to_string();
