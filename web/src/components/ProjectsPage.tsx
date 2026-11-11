@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { attachments as attachmentApi, contentTypeOf, projects as projectApi, search } from "../api/resources";
 import type { Attachment, Project, ProjectFileHit, Thread } from "../api/types";
 import { PlusIcon } from "./icons";
+import { tx } from "../i18n";
 
 interface ProjectsPageProps {
   workspaceId: string;
@@ -29,7 +30,7 @@ function ProjectFiles({ workspaceId, projectId, onError }: { workspaceId: string
     attachmentApi
       .listForProject(workspaceId, projectId)
       .then(setFiles)
-      .catch((err: unknown) => onError(err instanceof Error ? err.message : "Could not load the files."));
+      .catch((err: unknown) => onError(err instanceof Error ? err.message : tx("Could not load the files.")));
 
   useEffect(() => {
     void load();
@@ -48,7 +49,7 @@ function ProjectFiles({ workspaceId, projectId, onError }: { workspaceId: string
       await attachmentApi.upload(created.id, file);
       await load();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not upload the file.");
+      onError(err instanceof Error ? err.message : tx("Could not upload the file."));
     } finally {
       setUploading(false);
     }
@@ -59,7 +60,7 @@ function ProjectFiles({ workspaceId, projectId, onError }: { workspaceId: string
       await attachmentApi.remove(file.id);
       await load();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not delete the file.");
+      onError(err instanceof Error ? err.message : tx("Could not delete the file."));
     }
   };
 
@@ -75,9 +76,9 @@ function ProjectFiles({ workspaceId, projectId, onError }: { workspaceId: string
         </p>
       )}
       <div className="project-files-header">
-        <span className="muted small">Files</span>
+        <span className="muted small">{tx("Files")}</span>
         <label className="add-button">
-          {uploading ? "Uploading…" : "Upload file"}
+          {uploading ? tx("Uploading…") : tx("Upload file")}
           <input
             type="file"
             hidden
@@ -90,14 +91,14 @@ function ProjectFiles({ workspaceId, projectId, onError }: { workspaceId: string
           />
         </label>
       </div>
-      {files && files.length === 0 && <p className="muted small">No files yet. Text, PDF and Word files are read into new chats.</p>}
+      {files && files.length === 0 && <p className="muted small">{tx("No files yet. Text, PDF and Word files are read into new chats.")}</p>}
       {files?.map((file) => (
         <div key={file.id} className="project-file-row">
           <span className="project-file-name">{file.filename}</span>
           <span className="muted small">
-            {file.read_bytes ? `read ${file.read_bytes.toLocaleString()} bytes` : "stored only"}
+            {file.read_bytes ? `${tx("read")} ${file.read_bytes.toLocaleString()} ${tx("bytes")}` : tx("stored only")}
           </span>
-          <button onClick={() => void remove(file)}>Delete</button>
+          <button onClick={() => void remove(file)}>{tx("Delete")}</button>
         </div>
       ))}
     </div>
@@ -129,25 +130,25 @@ function ProjectForm({ initial, onSave, onCancel, busy }: { initial: Project | n
       }}
     >
       <label className="field">
-        <span>Name</span>
+        <span>{tx("Name")}</span>
         <input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} required />
       </label>
       <label className="field">
-        <span>Instructions</span>
+        <span>{tx("Instructions")}</span>
         <textarea
           value={instructions}
           onChange={(e) => setInstructions(e.target.value)}
           rows={6}
           maxLength={20000}
-          placeholder="Added to every new chat in this project."
+          placeholder={tx("Added to every new chat in this project.")}
         />
       </label>
       <div className="form-actions">
         <button type="button" onClick={onCancel}>
-          Cancel
+          {tx("Cancel")}
         </button>
         <button className="primary" type="submit" disabled={busy || !name.trim()}>
-          Save
+          {tx("Save")}
         </button>
       </div>
     </form>
@@ -210,7 +211,7 @@ export function ProjectsPage({ workspaceId, initialProjectId, projects, threads,
           setChatHits([...byTitle, ...byMessage]);
           setFileHits(files.filter((file) => file.project_id === selected.id));
         })
-        .catch((err: unknown) => current && onError(err instanceof Error ? err.message : "Search failed."));
+        .catch((err: unknown) => current && onError(err instanceof Error ? err.message : tx("Search failed.")));
     }, 200);
     return () => {
       current = false;
@@ -232,7 +233,7 @@ export function ProjectsPage({ workspaceId, initialProjectId, projects, threads,
       }
       await reload();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not save the project.");
+      onError(err instanceof Error ? err.message : tx("Could not save the project."));
     } finally {
       setBusy(false);
     }
@@ -244,7 +245,7 @@ export function ProjectsPage({ workspaceId, initialProjectId, projects, threads,
       setSelectedId(null);
       await reload();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not delete the project.");
+      onError(err instanceof Error ? err.message : tx("Could not delete the project."));
     }
   };
 
@@ -254,7 +255,7 @@ export function ProjectsPage({ workspaceId, initialProjectId, projects, threads,
       <main className="customize-page project-page">
         <div className="customize-inner">
           <nav className="project-crumbs">
-            <button className="link-button" onClick={() => setSelectedId(null)}>Projects</button>
+            <button className="link-button" onClick={() => setSelectedId(null)}>{tx("Projects")}</button>
             <span aria-hidden="true">/</span>
             <span>{selected.name}</span>
           </nav>
@@ -268,25 +269,25 @@ export function ProjectsPage({ workspaceId, initialProjectId, projects, threads,
                 <input
                   value=""
                   readOnly
-                  placeholder={`New session in ${selected.name}`}
+                  placeholder={`${tx("New session in")} ${selected.name}`}
                   onFocus={() => onStartChat(selected.id)}
-                  aria-label="Start a new session in this project"
+                  aria-label={tx("Start a new session in this project")}
                 />
-                <button className="primary" onClick={() => onStartChat(selected.id)}>Start chat</button>
+                <button className="primary" onClick={() => onStartChat(selected.id)}>{tx("Start chat")}</button>
               </div>
 
               <input
                 className="project-search project-page-search"
-                placeholder="Search this project’s chats and files"
-                aria-label="Search this project"
+                placeholder={tx("Search this project’s chats and files")}
+                aria-label={tx("Search this project")}
                 value={projectQuery}
                 onChange={(e) => setProjectQuery(e.target.value)}
               />
 
               {projectQuery.trim().length >= 2 ? (
                 <>
-                  <h2 className="section-label">Chats</h2>
-                  {chatHits.length === 0 && <p className="muted small">No matching chats.</p>}
+                  <h2 className="section-label">{tx("Chats")}</h2>
+                  {chatHits.length === 0 && <p className="muted small">{tx("No matching chats.")}</p>}
                   <div className="recent-list">
                     {chatHits.map((hit) => (
                       <button key={hit.thread_id} className="recent-row" onClick={() => onOpenThread(hit.thread_id)}>
@@ -297,8 +298,8 @@ export function ProjectsPage({ workspaceId, initialProjectId, projects, threads,
                       </button>
                     ))}
                   </div>
-                  <h2 className="section-label">Files</h2>
-                  {fileHits.length === 0 && <p className="muted small">No matching files.</p>}
+                  <h2 className="section-label">{tx("Files")}</h2>
+                  {fileHits.length === 0 && <p className="muted small">{tx("No matching files.")}</p>}
                   <div className="recent-list">
                     {fileHits.map((file) => (
                       <button key={file.id} className="recent-row" onClick={() => setShowFiles(true)}>
@@ -312,8 +313,8 @@ export function ProjectsPage({ workspaceId, initialProjectId, projects, threads,
                 </>
               ) : (
                 <>
-                  <h2 className="section-label">Recents</h2>
-                  {projectThreads.length === 0 && <p className="muted small">No chats in this project yet.</p>}
+                  <h2 className="section-label">{tx("Recents")}</h2>
+                  {projectThreads.length === 0 && <p className="muted small">{tx("No chats in this project yet.")}</p>}
                   <div className="recent-list">
                     {projectThreads.map((thread) => (
                   <button key={thread.id} className="recent-row" onClick={() => onOpenThread(thread.id)}>
@@ -338,18 +339,18 @@ export function ProjectsPage({ workspaceId, initialProjectId, projects, threads,
                 <div className="detail-rows">
                   <div className="detail-row">
                     <div>
-                      <div className="detail-label">Instructions</div>
-                      <div className="muted small detail-value">{selected.instructions || "Not set"}</div>
+                      <div className="detail-label">{tx("Instructions")}</div>
+                      <div className="muted small detail-value">{selected.instructions || tx("Not set")}</div>
                     </div>
                     {canEdit(selected) && <button className="link-button" onClick={() => setEditing(true)}>{selected.instructions ? "Edit" : "Add"}</button>}
                   </div>
                   <div className="detail-row">
                     <div>
-                      <div className="detail-label">Context</div>
-                      <div className="muted small detail-value">{fileCount === null ? "" : fileCount === 0 ? "No files" : `${fileCount} file${fileCount === 1 ? "" : "s"}`}</div>
+                      <div className="detail-label">{tx("Context")}</div>
+                      <div className="muted small detail-value">{fileCount === null ? "" : fileCount === 0 ? tx("No files") : `${fileCount} ${tx(fileCount === 1 ? "file" : "files")}`}</div>
                     </div>
                     <button className="link-button" onClick={() => setShowFiles((open) => !open)} aria-expanded={showFiles}>
-                      {showFiles ? "Hide" : "Add"}
+                      {showFiles ? tx("Hide") : tx("Add")}
                     </button>
                   </div>
                   {showFiles && (
@@ -364,7 +365,7 @@ export function ProjectsPage({ workspaceId, initialProjectId, projects, threads,
                   )}
                   {canEdit(selected) && (
                     <div className="detail-actions">
-                      <button onClick={() => void remove(selected)}>Delete project</button>
+                      <button onClick={() => void remove(selected)}>{tx("Delete project")}</button>
                     </div>
                   )}
                 </div>
@@ -380,12 +381,12 @@ export function ProjectsPage({ workspaceId, initialProjectId, projects, threads,
   return (
     <main className="customize-page">
       <div className="customize-inner">
-        <button className="link-button" onClick={onBack}>← Back to chat</button>
+        <button className="link-button" onClick={onBack}>{tx("← Back to chat")}</button>
         <div className="projects-header">
-          <h1>Projects</h1>
+          <h1>{tx("Projects")}</h1>
           {!creating && (
             <button className="primary add-button" onClick={() => setCreating(true)}>
-              <PlusIcon width={16} height={16} /> New project
+              <PlusIcon width={16} height={16} /> {tx("New project")}
             </button>
           )}
         </div>
@@ -394,7 +395,7 @@ export function ProjectsPage({ workspaceId, initialProjectId, projects, threads,
           <ProjectForm initial={null} busy={busy} onSave={(name, instructions) => void save(name, instructions)} onCancel={() => setCreating(false)} />
         ) : (
           <>
-            {projects.length === 0 && <p className="empty-state">No projects yet.</p>}
+            {projects.length === 0 && <p className="empty-state">{tx("No projects yet.")}</p>}
             <div className="projects-grid">
               {projects.map((project) => (
                 <button key={project.id} className="project-card" onClick={() => setSelectedId(project.id)}>

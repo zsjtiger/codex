@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { usage } from "../api/resources";
 import type { UsageReport } from "../api/types";
+import { tx } from "../i18n";
 
 const RANGES = [7, 30, 90];
 
@@ -19,7 +20,7 @@ export function UsageDialog({ onClose }: { onClose: () => void }) {
     usage
       .mine(days)
       .then((next) => current && setReport(next))
-      .catch((err) => current && setError(err instanceof Error ? err.message : "Could not load usage."));
+      .catch((err) => current && setError(err instanceof Error ? err.message : tx("Could not load usage.")));
     return () => {
       current = false;
     };
@@ -31,20 +32,20 @@ export function UsageDialog({ onClose }: { onClose: () => void }) {
         className="usage-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="Your usage"
+        aria-label={tx("Your usage")}
         onMouseDown={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
           if (event.key === "Escape") onClose();
         }}
       >
         <header className="usage-header">
-          <h2>Your usage</h2>
-          <button className="banner-close" onClick={onClose} aria-label="Close">
+          <h2>{tx("Your usage")}</h2>
+          <button className="banner-close" onClick={onClose} aria-label={tx("Close")}>
             ×
           </button>
         </header>
 
-        <div className="usage-ranges" role="group" aria-label="Period">
+        <div className="usage-ranges" role="group" aria-label={tx("Period")}>
           {RANGES.map((range) => (
             <button key={range} aria-pressed={days === range} className={days === range ? "range-active" : ""} onClick={() => setDays(range)}>
               {range} days
@@ -53,25 +54,25 @@ export function UsageDialog({ onClose }: { onClose: () => void }) {
         </div>
 
         {error && <p className="banner error">{error}</p>}
-        {!error && !report && <p className="muted">Loading…</p>}
+        {!error && !report && <p className="muted">{tx("Loading…")}</p>}
 
         {report && (
           <>
             <div className="usage-used">
               <div className="usage-row">
-                <span>Input</span>
+                <span>{tx("Input")}</span>
                 <strong>{format(report.totals.input_tokens)} tokens</strong>
               </div>
               <div className="usage-row">
-                <span>Output</span>
+                <span>{tx("Output")}</span>
                 <strong>{format(report.totals.output_tokens)} tokens</strong>
               </div>
             </div>
 
             {report.daily.length === 0 ? (
-              <p className="muted">No usage in this period.</p>
+              <p className="muted">{tx("No usage in this period.")}</p>
             ) : (
-              <ul className="usage-days" aria-label="Daily usage">
+              <ul className="usage-days" aria-label={tx("Daily usage")}>
                 {report.daily.map((day) => (
                   <li key={day.day}>
                     <span className="muted">{new Date(day.day).toLocaleDateString()}</span>

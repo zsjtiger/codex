@@ -8,6 +8,7 @@ import { usePreview } from "./Preview";
 import { Conversation } from "./Conversation";
 import { ChevronIcon, SparkIcon } from "./icons";
 import { useI18n, type MessageKey } from "../i18n";
+import { tx } from "../i18n";
 
 function greeting(date: Date, t: (key: MessageKey) => string): string {
   const hour = date.getHours();
@@ -76,10 +77,10 @@ export function Home(props: HomeProps) {
     try {
       const file = await threadApi.saveToProject(thread.id, projectId);
       const projectName = projects.find((p) => p.id === projectId)?.name ?? "project";
-      setSavedNote(`Saved “${file.filename}” to ${projectName}`);
+      setSavedNote(`${tx("Saved")} “${file.filename}” ${tx("to")} ${projectName}`);
       window.setTimeout(() => setSavedNote(null), 4000);
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not save the chat to the project.");
+      onError(err instanceof Error ? err.message : tx("Could not save the chat to the project."));
     }
   };
 
@@ -89,7 +90,7 @@ export function Home(props: HomeProps) {
       await threadApi.setProject(thread.id, projectId);
       onThreadChanged();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not change the project.");
+      onError(err instanceof Error ? err.message : tx("Could not change the project."));
     }
   };
 
@@ -98,7 +99,7 @@ export function Home(props: HomeProps) {
       {error && (
         <p className="banner error" role="alert">
           {error}
-          <button className="banner-close" onClick={onDismissError} aria-label="Dismiss">
+          <button className="banner-close" onClick={onDismissError} aria-label={tx("Dismiss")}>
             ×
           </button>
         </p>
@@ -113,11 +114,11 @@ export function Home(props: HomeProps) {
             {projects.length > 0 && (
               <select
                 className="save-to-project"
-                aria-label="Save chat to project"
+                aria-label={tx("Save chat to project")}
                 value=""
                 onChange={(event) => void saveToProject(event.target.value)}
               >
-                <option value="">Save to project…</option>
+                <option value="">{tx("Save to project…")}</option>
                 {projects.map((project) => (
                   <option key={project.id} value={project.id}>
                     {project.name}
@@ -154,7 +155,7 @@ export function Home(props: HomeProps) {
               onStop={runningTurn ? () => onStop(runningTurn.id) : undefined}
               running={Boolean(runningTurn)}
               disabled={sending}
-              placeholder="Reply…"
+              placeholder={tx("Reply…")}
               projects={projects}
           skills={skills}
               projectId={thread.project_id}
@@ -219,15 +220,15 @@ function UsedPanel({ uses, onClose }: { uses: ToolUse[]; onClose: () => void }) 
   for (const use of uses) groups.set(use.kind, [...(groups.get(use.kind) ?? []), use]);
 
   return (
-    <aside className="used-panel" aria-label="Used in this session">
+    <aside className="used-panel" aria-label={tx("Used in this session")}>
       <header className="used-panel-header">
-        <h2>Used in this session</h2>
-        <button className="banner-close" onClick={onClose} aria-label="Close">
+        <h2>{tx("Used in this session")}</h2>
+        <button className="banner-close" onClick={onClose} aria-label={tx("Close")}>
           ×
         </button>
       </header>
       {uses.length === 0 ? (
-        <p className="muted">Web searches, connectors, commands and file changes appear here as Codex uses them.</p>
+        <p className="muted">{tx("Web searches, connectors, commands and file changes appear here as Codex uses them.")}</p>
       ) : (
         [...groups].map(([kind, items]) => (
           <section key={kind} className="used-group">

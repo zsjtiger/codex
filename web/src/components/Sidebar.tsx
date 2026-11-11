@@ -4,6 +4,7 @@ import type { SocketStatus } from "../realtime/socket";
 import { UsageDialog } from "./UsageDialog";
 import { useI18n, type MessageKey } from "../i18n";
 import { ArtifactIcon, ChatIcon, ChevronIcon, ClockIcon, CustomizeIcon, MoreIcon, PlusIcon, ProjectIcon, SearchIcon, SidebarIcon } from "./icons";
+import { tx } from "../i18n";
 
 export type NavLabel = "New" | "Search" | "Projects" | "Artifacts" | "Scheduled" | "Customize";
 export type View = "chat" | "artifacts" | "customize" | "scheduled" | "projects";
@@ -45,7 +46,7 @@ interface SidebarProps {
   onSignOut: () => void;
 }
 
-const statusLabel: Record<SocketStatus, string> = { open: "Live", connecting: "Connecting…", closed: "Offline" };
+const statusLabel: Record<SocketStatus, string> = { open: "Live", connecting: tx("Connecting…"), closed: "Offline" };
 
 export function Sidebar(props: SidebarProps) {
   const { t, locale, setLocale } = useI18n();
@@ -113,13 +114,13 @@ export function Sidebar(props: SidebarProps) {
   const visibleItems = navItems.filter((item) => editing || !hidden.includes(item.label));
 
   return (
-    <aside className={`sidebar ${open ? "" : "sidebar-collapsed"}`} aria-label="Sidebar">
+    <aside className={`sidebar ${open ? "" : "sidebar-collapsed"}`} aria-label={tx("Sidebar")}>
       <div className="sidebar-top">
         <div className="brand">
-          <button className="icon-button" onClick={onToggle} aria-label="Toggle sidebar">
+          <button className="icon-button" onClick={onToggle} aria-label={tx("Toggle sidebar")}>
             <SidebarIcon />
           </button>
-          <span className="brand-name">Baize</span>
+          <span className="brand-name">{tx("Baize")}</span>
         </div>
       </div>
 
@@ -150,15 +151,15 @@ export function Sidebar(props: SidebarProps) {
             <div className="more-menu" role="menu">
               <button role="menuitem" className="more-item more-item-enabled" onClick={() => { setMoreOpen(false); onView("projects"); }}>
                 <ProjectIcon width={16} height={16} />
-                <span>Projects</span>
+                <span>{tx("Projects")}</span>
               </button>
               <button role="menuitem" className="more-item more-item-enabled" onClick={() => { setMoreOpen(false); onView("scheduled"); }}>
                 <ClockIcon width={16} height={16} />
-                <span>Scheduled</span>
+                <span>{tx("Scheduled")}</span>
               </button>
               <hr className="more-divider" />
               <button role="menuitem" className="more-item more-item-enabled" onClick={() => { setMoreOpen(false); setEditing(!editing); }}>
-                <span>{editing ? "Done editing sidebar" : "Edit sidebar…"}</span>
+                <span>{editing ? tx("Done editing sidebar") : tx("Edit sidebar…")}</span>
               </button>
             </div>
           )}
@@ -173,7 +174,7 @@ export function Sidebar(props: SidebarProps) {
           </button>
           {recentsOpen && (
             <div className="chat-list">
-              {threads.length === 0 && <p className="empty-note">No chats yet</p>}
+              {threads.length === 0 && <p className="empty-note">{tx("No chats yet")}</p>}
               {threads.map((thread) =>
                 renamingId === thread.id ? (
                   <form
@@ -195,7 +196,7 @@ export function Sidebar(props: SidebarProps) {
                         if (e.key === "Escape") setRenamingId(null);
                       }}
                       onBlur={() => setRenamingId(null)}
-                      aria-label="Chat name"
+                      aria-label={tx("Chat name")}
                     />
                   </form>
                 ) : (
@@ -203,12 +204,12 @@ export function Sidebar(props: SidebarProps) {
                     <button className={`chat-row ${thread.id === activeId ? "chat-row-active" : ""}`} onClick={() => onSelect(thread.id)} title={thread.title}>
                       <ChatIcon className="chat-row-icon" />
                       <span className="chat-row-title">{thread.title}</span>
-                      {thread.state === "running" && <span className="unread-dot" aria-label="running" />}
-                      {thread.state === "failed" && <span className="failed-dot" aria-label="failed" />}
+                      {thread.state === "running" && <span className="unread-dot" aria-label={tx("running")} />}
+                      {thread.state === "failed" && <span className="failed-dot" aria-label={tx("failed")} />}
                     </button>
                     <button
                       className="chat-row-more"
-                      aria-label={`Actions for ${thread.title}`}
+                      aria-label={`${tx("Actions for")} ${thread.title}`}
                       aria-haspopup="menu"
                       aria-expanded={chatMenuId === thread.id}
                       onClick={(e) => {

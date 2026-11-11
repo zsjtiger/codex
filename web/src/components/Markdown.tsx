@@ -18,6 +18,7 @@ import katex from "katex";
 import "katex/dist/katex.min.css";
 import { type ReactNode } from "react";
 import { usePreview } from "./Preview";
+import { tx } from "../i18n";
 
 // Only these languages are highlighted; other code blocks stay plain text.
 [
@@ -291,18 +292,18 @@ export function parseChart(source: string): ChartSpec | string {
   try {
     raw = JSON.parse(source);
   } catch (error) {
-    return `Invalid chart JSON: ${error instanceof Error ? error.message : "parse error"}`;
+    return `${tx("Invalid chart JSON:")} ${error instanceof Error ? error.message : "parse error"}`;
   }
-  if (typeof raw !== "object" || raw === null) return "Chart spec must be an object.";
+  if (typeof raw !== "object" || raw === null) return tx("Chart spec must be an object.");
   const spec = raw as Partial<ChartSpec>;
   if (spec.type !== "bar" && spec.type !== "line" && spec.type !== "pie") return 'Chart type must be "bar", "line" or "pie".';
   if (!Array.isArray(spec.labels) || spec.labels.some((label) => typeof label !== "string")) return "labels must be an array of strings.";
   if (!Array.isArray(spec.series) || spec.series.length === 0) return "series must be a non-empty array.";
   for (const series of spec.series) {
     if (typeof series?.name !== "string" || !Array.isArray(series.data) || series.data.some((v) => typeof v !== "number" || !Number.isFinite(v))) {
-      return "Each series needs a name and numeric data.";
+      return tx("Each series needs a name and numeric data.");
     }
-    if (series.data.length !== spec.labels.length) return "Each series must have one value per label.";
+    if (series.data.length !== spec.labels.length) return tx("Each series must have one value per label.");
   }
   return {
     type: spec.type,
@@ -493,7 +494,7 @@ function CodeBlock({ lang, text }: { lang: string; text: string }) {
       <div className="code-head">
         <span className="muted small">{lang || "code"}</span>
         <button type="button" className="code-open" onClick={() => open({ kind: "code", title: lang || "Code", lang, text })}>
-          Open
+          {tx("Open")}
         </button>
       </div>
       <pre className={`code-block ${highlighted.known ? `language-${lang.toLowerCase()}` : ""}`}>
@@ -583,7 +584,7 @@ export function MarkdownView({ source }: { source: string }) {
 export function MarkdownToc({ headings }: { headings: Heading[] }) {
   if (headings.length === 0) return null;
   return (
-    <nav className="markdown-toc" aria-label="Table of contents">
+    <nav className="markdown-toc" aria-label={tx("Table of contents")}>
       <div className="markdown-toc-title">目录</div>
       <ol>
         {headings

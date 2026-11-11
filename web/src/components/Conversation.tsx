@@ -6,13 +6,14 @@ import { ChevronIcon } from "./icons";
 import { usePreview } from "./Preview";
 import { attachments as attachmentApi } from "../api/resources";
 import type { Turn } from "../api/types";
+import { tx } from "../i18n";
 
 /** "just now", "5 min ago", "3 h ago", or the date for older replies. */
 function relativeTime(iso: string): string {
   const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-  if (seconds < 60) return "just now";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)} h ago`;
+  if (seconds < 60) return tx("just now");
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} ${tx("min ago")}`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} ${tx("h ago")}`;
   return new Date(iso).toLocaleDateString();
 }
 
@@ -89,17 +90,17 @@ function ReplyActions({ turn, reply, onFeedback, onRegenerate }: ReplyActionsPro
         <CopyIcon />
       </button>
       {"speechSynthesis" in window && (
-      <button type="button" className={`reply-action ${speaking ? "reply-action-on" : ""}`} onClick={speak} aria-pressed={speaking} aria-label="Read aloud" title="Read aloud">
+      <button type="button" className={`reply-action ${speaking ? "reply-action-on" : ""}`} onClick={speak} aria-pressed={speaking} aria-label={tx("Read aloud")} title={tx("Read aloud")}>
         <SpeakIcon />
       </button>
       )}
-      <button type="button" className={`reply-action ${turn.feedback === "up" ? "reply-action-on" : ""}`} onClick={() => rate("up")} aria-pressed={turn.feedback === "up"} aria-label="Good response" title="Good response">
+      <button type="button" className={`reply-action ${turn.feedback === "up" ? "reply-action-on" : ""}`} onClick={() => rate("up")} aria-pressed={turn.feedback === "up"} aria-label={tx("Good response")} title={tx("Good response")}>
         <ThumbUpIcon />
       </button>
-      <button type="button" className={`reply-action ${turn.feedback === "down" ? "reply-action-on" : ""}`} onClick={() => rate("down")} aria-pressed={turn.feedback === "down"} aria-label="Bad response" title="Bad response">
+      <button type="button" className={`reply-action ${turn.feedback === "down" ? "reply-action-on" : ""}`} onClick={() => rate("down")} aria-pressed={turn.feedback === "down"} aria-label={tx("Bad response")} title={tx("Bad response")}>
         <ThumbDownIcon />
       </button>
-      <button type="button" className="reply-action" onClick={() => onRegenerate(turn.input)} aria-label="Retry" title="Retry">
+      <button type="button" className="reply-action" onClick={() => onRegenerate(turn.input)} aria-label={tx("Retry")} title={tx("Retry")}>
         <RetryIcon />
       </button>
       <span className="reply-time muted">{relativeTime(when)}</span>
@@ -113,13 +114,13 @@ function choicesFor(method: string): { label: string; result: unknown }[] {
     case "item/commandExecution/requestApproval":
     case "item/fileChange/requestApproval":
       return [
-        { label: "Allow", result: { decision: "accept" } },
-        { label: "Deny", result: { decision: "decline" } },
+        { label: tx("Allow"), result: { decision: "accept" } },
+        { label: tx("Deny"), result: { decision: "decline" } },
       ];
     case "item/permissions/requestApproval":
-      return [{ label: "Deny", result: { permissions: {}, scope: "turn" } }];
+      return [{ label: tx("Deny"), result: { permissions: {}, scope: "turn" } }];
     case "item/tool/requestUserInput":
-      return [{ label: "Skip", result: { answers: {} } }];
+      return [{ label: tx("Skip"), result: { answers: {} } }];
     default:
       return [];
   }
@@ -145,8 +146,8 @@ const STEP_VERBS: Record<string, string> = {
 
 /** The collapsed "Thinking" line: what the model has been doing this turn, or just "Thinking". */
 function activitySummary(activity: Activity, running: boolean): string {
-  const verbs = [...new Set(activity.steps.map((step) => STEP_VERBS[step.kind] ?? step.kind))];
-  if (verbs.length === 0) return running ? "Thinking" : "Thought process";
+  const verbs = [...new Set(activity.steps.map((step) => tx(STEP_VERBS[step.kind] ?? step.kind)))];
+  if (verbs.length === 0) return running ? tx("Thinking") : tx("Thought process");
   const text = verbs.join(", ");
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
@@ -169,21 +170,21 @@ function FileChip({ id, name, contentType }: { id: string; name: string; content
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "Could not download the file.");
+      window.alert(err instanceof Error ? err.message : tx("Could not download the file."));
     } finally {
       setBusy(false);
     }
   };
 
   const remove = async () => {
-    if (!window.confirm(`Delete “${name}”? It will be removed from this chat.`)) return;
+    if (!window.confirm(`${tx("Delete")} “${name}”? ${tx("It will be removed from this chat.")}`)) return;
     setBusy(true);
     try {
       await attachmentApi.remove(id);
       setGone(true);
     } catch (err) {
       setBusy(false);
-      window.alert(err instanceof Error ? err.message : "Could not delete the file.");
+      window.alert(err instanceof Error ? err.message : tx("Could not delete the file."));
     }
   };
 
@@ -197,10 +198,10 @@ function FileChip({ id, name, contentType }: { id: string; name: string; content
       >
         <span className="file-chip-name">{name}</span>
       </button>
-      <button type="button" className="file-chip-action" onClick={() => void download()} disabled={busy} aria-label={`Download ${name}`} title="Download">
+      <button type="button" className="file-chip-action" onClick={() => void download()} disabled={busy} aria-label={`Download ${name}`} title={tx("Download")}>
         ↓
       </button>
-      <button type="button" className="file-chip-action file-chip-danger" onClick={() => void remove()} disabled={busy} aria-label={`Delete ${name}`} title="Delete">
+      <button type="button" className="file-chip-action file-chip-danger" onClick={() => void remove()} disabled={busy} aria-label={`Delete ${name}`} title={tx("Delete")}>
         ×
       </button>
     </span>
@@ -213,7 +214,7 @@ function CommandStep({ command }: { command: string }) {
   return (
     <div className="command-step">
       <button type="button" className="command-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span>Bash</span>
+        <span>{tx("Bash")}</span>
         <ChevronIcon className={open ? "thinking-chevron thinking-chevron-open" : "thinking-chevron"} />
       </button>
       {open && (
@@ -251,7 +252,7 @@ function ThinkingBlock({ activity, running }: { activity: Activity; running: boo
                   </li>
                 ) : (
                   <li key={step.id}>
-                    <span className="muted">{step.kind}</span> {step.label}
+                    <span className="muted">{tx(step.kind)}</span> {step.label}
                   </li>
                 ),
               )}
@@ -301,7 +302,7 @@ export function Conversation({ turns, agentText, activity, approvals, onAnswer, 
               </>
             )}
             <div className={`turn-status status-${turn.status}`}>
-              {turn.status === "completed" ? "Done" : turn.status === "running" || turn.status === "queued" ? null : turn.status}
+              {turn.status === "completed" ? tx("Done") : turn.status === "running" || turn.status === "queued" ? null : tx(turn.status)}
               {turn.error && <span className="turn-error"> · {turn.error}</span>}
             </div>
           </div>
@@ -309,7 +310,7 @@ export function Conversation({ turns, agentText, activity, approvals, onAnswer, 
       })}
       {approvals.map((approval) => (
         <div className="approval" key={approval.requestId}>
-          <div className="approval-title">Approval needed</div>
+          <div className="approval-title">{tx("Approval needed")}</div>
           <code className="approval-body">{describe(approval)}</code>
           <div className="approval-actions">
             {choicesFor(approval.method).map((choice) => (

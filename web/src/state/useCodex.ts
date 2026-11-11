@@ -3,6 +3,7 @@ import { api, ApiError, loadStoredToken, setToken } from "../api/client";
 import { attachments as attachmentApi, contentTypeOf, interruptTurn, rateTurn, threads as threadApi } from "../api/resources";
 import type { Environment, LoginResponse, Thread, Turn, User, Workspace } from "../api/types";
 import { type Frame, GatewaySocket, type SocketStatus } from "../realtime/socket";
+import { tx } from "../i18n";
 import { type ToolUse, mergeToolUses, toolUseFromItem } from "./toolUses";
 
 export interface SendOptions {
@@ -277,7 +278,7 @@ export function useCodex() {
   const uploadAttachment = useCallback(
     async (file: File): Promise<string> => {
       const ws = workspaceRef.current;
-      if (!ws) throw new Error("No workspace yet.");
+      if (!ws) throw new Error(tx("No workspace yet."));
       const meta = await attachmentApi.create(ws.id, {
         filename: file.name,
         content_type: contentTypeOf(file),

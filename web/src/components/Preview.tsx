@@ -4,6 +4,7 @@ import { attachments as attachmentApi } from "../api/resources";
 import { MarkdownView, highlightCode } from "./Markdown";
 import { CopyIcon } from "./icons";
 import { PdfView } from "./PdfView";
+import { tx } from "../i18n";
 
 /** What the side panel shows: a code block, a document artifact, or a file sent in a message. */
 export type PreviewItem =
@@ -79,21 +80,21 @@ function FilePreview({ attachmentId, title, contentType }: { attachmentId: strin
         if (current) setState({ status: "ready", view });
       })
       .catch((err) => {
-        if (current) setState({ status: "error", message: err instanceof Error ? err.message : "Could not open the file." });
+        if (current) setState({ status: "error", message: err instanceof Error ? err.message : tx("Could not open the file.") });
       });
     return () => {
       current = false;
     };
   }, [attachmentId, contentType, title]);
 
-  if (state.status === "loading") return <p className="muted">Loading…</p>;
+  if (state.status === "loading") return <p className="muted">{tx("Loading…")}</p>;
   if (state.status === "error") return <p className="banner error">{state.message}</p>;
   const { view } = state;
   if (view.kind === "pdf") return <PdfView data={view.data} />;
   if (view.kind === "word") return <MarkdownView source={view.markdown} />;
   if (view.kind === "markdown") return <MarkdownView source={view.text} />;
   if (view.kind === "text") return <pre className="preview-text">{view.text}</pre>;
-  return <p className="muted">This file type cannot be previewed.</p>;
+  return <p className="muted">{tx("This file type cannot be previewed.")}</p>;
 }
 
 type ReactViewState =
@@ -132,7 +133,7 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
             <CopyIcon />
           </button>
         )}
-        <button type="button" className="banner-close" onClick={onClose} aria-label="Close">
+        <button type="button" className="banner-close" onClick={onClose} aria-label={tx("Close")}>
           ×
         </button>
       </header>
@@ -157,5 +158,5 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
 
 function contentLabel(contentType: string, title: string): string {
   const kind = fileKind(contentType, title);
-  return { pdf: "PDF", word: "Word", slides: "PowerPoint", sheet: "Excel", markdown: "Markdown", text: "text", other: "file" }[kind];
+  return tx({ pdf: "PDF", word: "Word", slides: "PowerPoint", sheet: "Excel", markdown: "Markdown", text: "text", other: "File" }[kind]);
 }

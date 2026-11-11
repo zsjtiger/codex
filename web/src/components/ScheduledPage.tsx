@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { scheduled as scheduledApi, type TaskInput } from "../api/resources";
 import type { Frequency, Project, ScheduledRun, ScheduledTask } from "../api/types";
 import { PlusIcon, SearchIcon } from "./icons";
+import { tx } from "../i18n";
 
 const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
@@ -9,13 +10,13 @@ const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Satur
 function describeRepeat(task: ScheduledTask): string {
   switch (task.frequency) {
     case "hourly":
-      return `Hourly at :${task.time_of_day.slice(3)} UTC`;
+      return `${tx("Hourly at")} :${task.time_of_day.slice(3)} UTC`;
     case "daily":
-      return `Daily at ${task.time_of_day} UTC`;
+      return `${tx("Daily at")} ${task.time_of_day} UTC`;
     case "weekdays":
-      return `Weekdays at ${task.time_of_day} UTC`;
+      return `${tx("Weekdays at")} ${task.time_of_day} UTC`;
     case "weekly":
-      return `${weekdays[(task.weekday ?? 1) - 1]}s at ${task.time_of_day} UTC`;
+      return `${tx(weekdays[(task.weekday ?? 1) - 1])}${tx("s at")} ${task.time_of_day} UTC`;
   }
 }
 
@@ -30,10 +31,10 @@ function whenLabel(iso: string): string {
     return d.toDateString();
   };
   const day = date.toDateString();
-  if (day === now.toDateString()) return `Today at ${time}`;
-  if (day === offset(-1)) return `Yesterday at ${time}`;
-  if (day === offset(1)) return `Tomorrow at ${time}`;
-  return `${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })} at ${time}`;
+  if (day === now.toDateString()) return `${tx("Today at")} ${time}`;
+  if (day === offset(-1)) return `${tx("Yesterday at")} ${time}`;
+  if (day === offset(1)) return `${tx("Tomorrow at")} ${time}`;
+  return `${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${tx("at")} ${time}`;
 }
 
 interface ScheduledPageProps {
@@ -63,7 +64,7 @@ export function ScheduledPage({ workspaceId, projects, canEdit, onOpenThread, on
     scheduledApi
       .list(workspaceId)
       .then(setItems)
-      .catch((err: unknown) => onError(err instanceof Error ? err.message : "Could not load scheduled tasks."));
+      .catch((err: unknown) => onError(err instanceof Error ? err.message : tx("Could not load scheduled tasks.")));
 
   useEffect(() => {
     void reload();
@@ -125,7 +126,7 @@ export function ScheduledPage({ workspaceId, projects, canEdit, onOpenThread, on
       await reload();
       setSelectedId(created.id);
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not create the task.");
+      onError(err instanceof Error ? err.message : tx("Could not create the task."));
     } finally {
       setBusy(false);
     }
@@ -136,7 +137,7 @@ export function ScheduledPage({ workspaceId, projects, canEdit, onOpenThread, on
       await scheduledApi.update(task.id, { enabled });
       await reload();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not change the task.");
+      onError(err instanceof Error ? err.message : tx("Could not change the task."));
     }
   };
 
@@ -146,7 +147,7 @@ export function ScheduledPage({ workspaceId, projects, canEdit, onOpenThread, on
       await reload();
       onOpenThread(result.thread_id);
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not run the task.");
+      onError(err instanceof Error ? err.message : tx("Could not run the task."));
     }
   };
 
@@ -156,7 +157,7 @@ export function ScheduledPage({ workspaceId, projects, canEdit, onOpenThread, on
       setSelectedId(null);
       await reload();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not delete the task.");
+      onError(err instanceof Error ? err.message : tx("Could not delete the task."));
     }
   };
 
@@ -165,8 +166,8 @@ export function ScheduledPage({ workspaceId, projects, canEdit, onOpenThread, on
     return (
       <main className="customize-page">
         <div className="customize-inner">
-          <button className="link-button" onClick={closeForm}>← Scheduled tasks</button>
-          <h1 className="projects-header">{editingTask ? "Edit scheduled task" : "New scheduled task"}</h1>
+          <button className="link-button" onClick={closeForm}>{tx("← Scheduled tasks")}</button>
+          <h1 className="projects-header">{editingTask ? tx("Edit scheduled task") : tx("New scheduled task")}</h1>
           <form
             className="form-card"
             onSubmit={(event) => {
@@ -175,43 +176,43 @@ export function ScheduledPage({ workspaceId, projects, canEdit, onOpenThread, on
             }}
           >
             <label className="field">
-              <span>Name</span>
+              <span>{tx("Name")}</span>
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} maxLength={100} required />
             </label>
             <label className="field">
-              <span>Instructions</span>
+              <span>{tx("Instructions")}</span>
               <textarea
                 value={form.prompt}
                 onChange={(e) => setForm({ ...form, prompt: e.target.value })}
                 rows={6}
                 maxLength={100000}
                 required
-                placeholder="What should the chat do each time it runs?"
+                placeholder={tx("What should the chat do each time it runs?")}
               />
             </label>
             <label className="field">
-              <span>Repeats</span>
+              <span>{tx("Repeats")}</span>
               <select value={form.frequency} onChange={(e) => setForm({ ...form, frequency: e.target.value as Frequency })}>
-                <option value="hourly">Hourly</option>
-                <option value="daily">Daily</option>
-                <option value="weekdays">Weekdays</option>
-                <option value="weekly">Weekly</option>
+                <option value="hourly">{tx("Hourly")}</option>
+                <option value="daily">{tx("Daily")}</option>
+                <option value="weekdays">{tx("Weekdays")}</option>
+                <option value="weekly">{tx("Weekly")}</option>
               </select>
             </label>
             {form.frequency === "weekly" && (
               <label className="field">
-                <span>Day</span>
+                <span>{tx("Day")}</span>
                 <select value={form.weekday} onChange={(e) => setForm({ ...form, weekday: Number(e.target.value) })}>
                   {weekdays.map((day, index) => (
                     <option key={day} value={index + 1}>
-                      {day}
+                      {tx(day)}
                     </option>
                   ))}
                 </select>
               </label>
             )}
             <label className="field">
-              <span>{form.frequency === "hourly" ? "Minute past the hour (UTC)" : "Time (UTC)"}</span>
+              <span>{form.frequency === "hourly" ? tx("Minute past the hour (UTC)") : tx("Time (UTC)")}</span>
               <input
                 type="time"
                 value={form.frequency === "hourly" ? `00:${form.time_of_day.slice(3) || "00"}` : form.time_of_day}
@@ -220,9 +221,9 @@ export function ScheduledPage({ workspaceId, projects, canEdit, onOpenThread, on
               />
             </label>
             <label className="field">
-              <span>Project (optional)</span>
+              <span>{tx("Project (optional)")}</span>
               <select value={form.project_id} onChange={(e) => setForm({ ...form, project_id: e.target.value })}>
-                <option value="">No project</option>
+                <option value="">{tx("No project")}</option>
                 {projects.map((project) => (
                   <option key={project.id} value={project.id}>
                     {project.name}
@@ -232,10 +233,10 @@ export function ScheduledPage({ workspaceId, projects, canEdit, onOpenThread, on
             </label>
             <div className="form-actions">
               <button type="button" onClick={closeForm}>
-                Cancel
+                {tx("Cancel")}
               </button>
               <button className="primary" type="submit" disabled={busy || !form.name.trim() || !form.prompt.trim()}>
-                {editingTask ? "Save changes" : "Create task"}
+                {editingTask ? tx("Save changes") : tx("Create task")}
               </button>
             </div>
           </form>
@@ -250,29 +251,29 @@ export function ScheduledPage({ workspaceId, projects, canEdit, onOpenThread, on
       <main className="customize-page project-page">
         <div className="customize-inner">
           <nav className="project-crumbs">
-            <button className="link-button" onClick={() => setSelectedId(null)}>Scheduled tasks</button>
+            <button className="link-button" onClick={() => setSelectedId(null)}>{tx("Scheduled tasks")}</button>
             <span aria-hidden="true">/</span>
             <span>{selected.name}</span>
           </nav>
           <div className="task-heading">
             <h1 className="project-title">{selected.name}</h1>
             <div className="task-actions">
-              <button className="primary" onClick={() => void runNow(selected)}>Run now</button>
-              {canEdit(selected) && <button onClick={() => startEdit(selected)}>Edit</button>}
+              <button className="primary" onClick={() => void runNow(selected)}>{tx("Run now")}</button>
+              {canEdit(selected) && <button onClick={() => startEdit(selected)}>{tx("Edit")}</button>}
               <label className="switch-label">
-                <span>{selected.enabled ? "Active" : "Paused"}</span>
-                <input type="checkbox" className="switch" checked={selected.enabled} onChange={(e) => void setEnabled(selected, e.target.checked)} aria-label="Active" />
+                <span>{selected.enabled ? tx("Active") : tx("Paused")}</span>
+                <input type="checkbox" className="switch" checked={selected.enabled} onChange={(e) => void setEnabled(selected, e.target.checked)} aria-label={tx("Active")} />
               </label>
             </div>
           </div>
           <p className="muted">
-            {selected.enabled ? `Next run: ${whenLabel(selected.next_run_at)}` : "Paused. It will not run until it is turned on."}
+            {selected.enabled ? `${tx("Next run:")} ${whenLabel(selected.next_run_at)}` : tx("Paused. It will not run until it is turned on.")}
           </p>
 
           <div className="project-layout">
             <section className="project-main">
-              <h2 className="section-label">History</h2>
-              {runs.length === 0 && <p className="muted small">No runs yet.</p>}
+              <h2 className="section-label">{tx("History")}</h2>
+              {runs.length === 0 && <p className="muted small">{tx("No runs yet.")}</p>}
               <div className="recent-list">
                 {runs.map((run) => (
                   <button
@@ -292,25 +293,25 @@ export function ScheduledPage({ workspaceId, projects, canEdit, onOpenThread, on
               <div className="detail-rows">
                 <div className="detail-row">
                   <div>
-                    <div className="detail-label">Instructions</div>
+                    <div className="detail-label">{tx("Instructions")}</div>
                     <div className="muted small detail-value task-prompt">{selected.prompt}</div>
                   </div>
                 </div>
                 <div className="detail-row">
                   <div>
-                    <div className="detail-label">Repeats</div>
+                    <div className="detail-label">{tx("Repeats")}</div>
                     <div className="muted small detail-value">{describeRepeat(selected)}</div>
                   </div>
                 </div>
                 <div className="detail-row">
                   <div>
-                    <div className="detail-label">Permissions</div>
-                    <div className="muted small detail-value">Asks before running commands.</div>
+                    <div className="detail-label">{tx("Permissions")}</div>
+                    <div className="muted small detail-value">{tx("Asks before running commands.")}</div>
                   </div>
                 </div>
                 {canEdit(selected) && (
                   <div className="detail-actions">
-                    <button onClick={() => void remove(selected)}>Delete task</button>
+                    <button onClick={() => void remove(selected)}>{tx("Delete task")}</button>
                   </div>
                 )}
               </div>
@@ -329,29 +330,29 @@ export function ScheduledPage({ workspaceId, projects, canEdit, onOpenThread, on
   return (
     <main className="customize-page">
       <div className="customize-inner">
-        <button className="link-button" onClick={onBack}>← Back to chat</button>
+        <button className="link-button" onClick={onBack}>{tx("← Back to chat")}</button>
         <div className="projects-header">
-          <h1>Scheduled tasks</h1>
+          <h1>{tx("Scheduled tasks")}</h1>
           <div className="task-toolbar">
             {showSearch && (
               <input
                 className="project-search task-search"
-                placeholder="Search tasks"
-                aria-label="Search tasks"
+                placeholder={tx("Search tasks")}
+                aria-label={tx("Search tasks")}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 autoFocus
               />
             )}
-            <button className="icon-button" aria-label="Search tasks" onClick={() => setShowSearch(!showSearch)}>
+            <button className="icon-button" aria-label={tx("Search tasks")} onClick={() => setShowSearch(!showSearch)}>
               <SearchIcon />
             </button>
             <button className="primary add-button" onClick={() => setCreating(true)}>
-              <PlusIcon width={16} height={16} /> New task
+              <PlusIcon width={16} height={16} /> {tx("New task")}
             </button>
           </div>
         </div>
-        {items.length === 0 && <p className="empty-state">No scheduled tasks yet.</p>}
+        {items.length === 0 && <p className="empty-state">{tx("No scheduled tasks yet.")}</p>}
         {items.length > 0 && shown.length === 0 && <p className="empty-state">No tasks match “{query}”.</p>}
         <div className="projects-grid">
           {shown.map((task) => (
@@ -360,7 +361,7 @@ export function ScheduledPage({ workspaceId, projects, canEdit, onOpenThread, on
                 <span className="project-card-name">{task.name}</span>
                 <span className="muted small task-card-prompt">{task.prompt}</span>
                 <span className="muted small">
-                  {task.enabled ? "Active" : "Paused"} · {describeRepeat(task)}
+                  {task.enabled ? tx("Active") : tx("Paused")} · {describeRepeat(task)}
                 </span>
               </span>
             </button>

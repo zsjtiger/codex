@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { connectors as connectorApi, skills as skillApi } from "../api/resources";
 import type { Connector, Skill } from "../api/types";
+import { tx } from "../i18n";
 
 const sections = ["Skills", "Connectors", "Plugins"] as const;
 type Section = (typeof sections)[number];
@@ -13,18 +14,18 @@ interface CustomizePageProps {
 }
 
 function connectorStatusLabel(c: Connector): string {
-  if (!c.enabled) return "Disabled";
+  if (!c.enabled) return tx("Disabled");
   switch (c.status) {
     case "ready":
-      return "Connected";
+      return tx("Connected");
     case "starting":
-      return "Connecting…";
+      return tx("Connecting…");
     case "failed":
-      return "Failed";
+      return tx("Failed");
     case "cancelled":
-      return "Cancelled";
+      return tx("Cancelled");
     default:
-      return "Not checked";
+      return tx("Not checked");
   }
 }
 
@@ -56,7 +57,7 @@ export function CustomizePage({ workspaceId, isAdmin, onBack, onError }: Customi
       setPluginItems(plugins);
       setConnectorItems(connectors);
     } catch (err) {
-      fail(err, "Could not load customizations.");
+      fail(err, tx("Could not load customizations."));
     }
   };
 
@@ -88,7 +89,7 @@ export function CustomizePage({ workspaceId, isAdmin, onBack, onError }: Customi
       resetForm();
       await reload();
     } catch (err) {
-      fail(err, `Could not add the ${section === "Connectors" ? "connector" : "item"}.`);
+      fail(err, `${tx("Could not add the")} ${section === "Connectors" ? tx("connector") : tx("item")}.`);
     }
   };
 
@@ -101,16 +102,16 @@ export function CustomizePage({ workspaceId, isAdmin, onBack, onError }: Customi
     }
   };
 
-  const addLabel = section === "Connectors" ? "Add connector" : section === "Plugins" ? "Add plugin" : "Add skill";
+  const addLabel = tx(section === "Connectors" ? "Add connector" : section === "Plugins" ? "Add plugin" : "Add skill");
   const formValid = section === "Connectors" ? name.trim() && url.trim() : name.trim() && instructions.trim();
 
   return (
     <main className="customize-page">
       <div className="customize-inner">
         <button className="link-button" onClick={onBack}>
-          ← Back to chat
+          {tx("← Back to chat")}
         </button>
-        <h1>Customize</h1>
+        <h1>{tx("Customize")}</h1>
 
         <div className="customize-toolbar">
           <div className="tabs" role="tablist">
@@ -125,7 +126,7 @@ export function CustomizePage({ workspaceId, isAdmin, onBack, onError }: Customi
                   resetForm();
                 }}
               >
-                {name}
+                {tx(name)}
               </button>
             ))}
           </div>
@@ -136,7 +137,7 @@ export function CustomizePage({ workspaceId, isAdmin, onBack, onError }: Customi
           )}
         </div>
 
-        {!isAdmin && <p className="muted small">Only workspace admins can add or change these.</p>}
+        {!isAdmin && <p className="muted small">{tx("Only workspace admins can add or change these.")}</p>}
 
         {creating && (
           <form
@@ -147,29 +148,29 @@ export function CustomizePage({ workspaceId, isAdmin, onBack, onError }: Customi
             }}
           >
             <label className="field">
-              <span>Name</span>
+              <span>{tx("Name")}</span>
               <input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} required />
             </label>
             {section === "Connectors" ? (
               <label className="field">
-                <span>Server URL (http or https)</span>
-                <input value={url} onChange={(e) => setUrl(e.target.value)} maxLength={2000} placeholder="https://example.com/mcp" required />
+                <span>{tx("Server URL (http or https)")}</span>
+                <input value={url} onChange={(e) => setUrl(e.target.value)} maxLength={2000} placeholder={tx("https://example.com/mcp")} required />
               </label>
             ) : (
               <>
                 <label className="field">
-                  <span>Description</span>
+                  <span>{tx("Description")}</span>
                   <input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} />
                 </label>
                 <label className="field">
-                  <span>Instructions</span>
+                  <span>{tx("Instructions")}</span>
                   <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={6} maxLength={20000} required />
                 </label>
               </>
             )}
             <div className="form-actions">
               <button type="button" onClick={resetForm}>
-                Cancel
+                {tx("Cancel")}
               </button>
               <button className="primary" type="submit" disabled={!formValid}>
                 {addLabel}
@@ -180,14 +181,14 @@ export function CustomizePage({ workspaceId, isAdmin, onBack, onError }: Customi
 
         {section === "Connectors" ? (
           <>
-            {connectorItems.length === 0 && !creating && <p className="empty-state">No connectors yet.</p>}
+            {connectorItems.length === 0 && !creating && <p className="empty-state">{tx("No connectors yet.")}</p>}
             <div className="list">
               {connectorItems.map((c) => (
                 <div key={c.id} className="list-row">
                   <div className="list-main">
                     <div className="list-title">{c.name}</div>
                     <div className="list-sub">
-                      Web · <code>{c.key}</code> · {c.url}
+                      {tx("Web ·")} <code>{c.key}</code> · {c.url}
                     </div>
                   </div>
                   <div className="list-actions">
@@ -195,17 +196,17 @@ export function CustomizePage({ workspaceId, isAdmin, onBack, onError }: Customi
                       {connectorStatusLabel(c)}
                     </span>
                     {isAdmin && (
-                      <button onClick={() => void act(() => connectorApi.update(c.id, { enabled: !c.enabled }), "Could not update the connector.")}>
-                        {c.enabled ? "Disconnect" : "Connect"}
+                      <button onClick={() => void act(() => connectorApi.update(c.id, { enabled: !c.enabled }), tx("Could not update the connector."))}>
+                        {c.enabled ? tx("Disconnect") : tx("Connect")}
                       </button>
                     )}
-                    {isAdmin && <button onClick={() => void act(() => connectorApi.remove(c.id), "Could not remove the connector.")}>Remove</button>}
+                    {isAdmin && <button onClick={() => void act(() => connectorApi.remove(c.id), tx("Could not remove the connector."))}>{tx("Remove")}</button>}
                   </div>
                 </div>
               ))}
             </div>
             <p className="muted small">
-              Connected connectors are added to chats that start after the change. Status is the last report from codex in any chat; it shows "Not checked" until a chat has started with the connector. Connectors that need sign-in are not supported yet.
+              {tx("Connected connectors are added to chats that start after the change. Status is the last report from codex in any chat; it shows \"Not checked\" until a chat has started with the connector. Connectors that need sign-in are not supported yet.")}
             </p>
           </>
         ) : (
@@ -214,7 +215,7 @@ export function CustomizePage({ workspaceId, isAdmin, onBack, onError }: Customi
             return (
               <>
                 {items.length === 0 && !creating && (
-                  <p className="empty-state">{section === "Plugins" ? "No plugins yet." : "No skills added yet."}</p>
+                  <p className="empty-state">{section === "Plugins" ? tx("No plugins yet.") : tx("No skills added yet.")}</p>
                 )}
                 <div className="list">
                   {items.map((skill) => (
@@ -226,11 +227,11 @@ export function CustomizePage({ workspaceId, isAdmin, onBack, onError }: Customi
                       <div className="list-actions">
                         <span className={`status ${skill.enabled ? "status-on" : ""}`}>{skill.enabled ? "On" : "Off"}</span>
                         {isAdmin && (
-                          <button onClick={() => void act(() => skillApi.update(skill.id, { enabled: !skill.enabled }), "Could not update the item.")}>
-                            {skill.enabled ? "Turn off" : "Turn on"}
+                          <button onClick={() => void act(() => skillApi.update(skill.id, { enabled: !skill.enabled }), tx("Could not update the item."))}>
+                            {skill.enabled ? tx("Turn off") : tx("Turn on")}
                           </button>
                         )}
-                        {isAdmin && <button onClick={() => void act(() => skillApi.remove(skill.id), "Could not delete the item.")}>Delete</button>}
+                        {isAdmin && <button onClick={() => void act(() => skillApi.remove(skill.id), tx("Could not delete the item."))}>{tx("Delete")}</button>}
                       </div>
                     </div>
                   ))}

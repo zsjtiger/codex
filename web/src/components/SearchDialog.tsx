@@ -3,6 +3,7 @@ import { attachments as attachmentApi, search } from "../api/resources";
 import type { ProjectFileHit, SearchResults, Thread } from "../api/types";
 import { ChatIcon, PlusIcon, SearchIcon } from "./icons";
 import { useI18n } from "../i18n";
+import { tx } from "../i18n";
 
 interface SearchDialogProps {
   workspaceId: string;
@@ -47,7 +48,7 @@ export function SearchDialog({ workspaceId, threads, onOpenThread, onOpenArtifac
     const timer = setTimeout(() => {
       search(workspaceId, q)
         .then((found) => current && setResults(found))
-        .catch((err) => current && onError(err instanceof Error ? err.message : "Search failed."));
+        .catch((err) => current && onError(err instanceof Error ? err.message : tx("Search failed.")));
       attachmentApi
         .searchProjectFiles(workspaceId, q)
         .then((hits) => current && setFileHits(hits))
@@ -97,7 +98,7 @@ export function SearchDialog({ workspaceId, threads, onOpenThread, onOpenArtifac
         className="search-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="Search"
+        aria-label={tx("Search")}
         onMouseDown={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
           if (event.key === "Escape") close();
@@ -126,9 +127,9 @@ export function SearchDialog({ workspaceId, threads, onOpenThread, onOpenArtifac
               setQuery(event.target.value);
               setHighlight(0);
             }}
-            aria-label="Search"
+            aria-label={tx("Search")}
           />
-          <button className="icon-button" onClick={close} aria-label="Close search">
+          <button className="icon-button" onClick={close} aria-label={tx("Close search")}>
             ×
           </button>
         </div>
@@ -137,7 +138,7 @@ export function SearchDialog({ workspaceId, threads, onOpenThread, onOpenArtifac
           {sections.map((section) =>
             section.rows.length === 0 ? null : (
               <div key={section.heading}>
-                <div className="search-heading">{section.heading}</div>
+                <div className="search-heading">{tx(section.heading)}</div>
                 {section.rows.map((row) => {
                   const index = rows.indexOf(row);
                   return (
@@ -148,7 +149,7 @@ export function SearchDialog({ workspaceId, threads, onOpenThread, onOpenArtifac
                       onClick={() => run(row)}
                     >
                       {section.heading === "Actions" ? <PlusIcon width={18} height={18} /> : <ChatIcon width={18} height={18} />}
-                      <span className="search-row-label">{row.label}</span>
+                      <span className="search-row-label">{tx(row.label)}</span>
                       {row.detail && <span className="search-row-detail">{row.detail}</span>}
                     </button>
                   );
@@ -156,13 +157,13 @@ export function SearchDialog({ workspaceId, threads, onOpenThread, onOpenArtifac
               </div>
             ),
           )}
-          {query.trim() && results && rows.length === 1 && <p className="empty-note">No matches for “{query.trim()}”</p>}
+          {query.trim() && results && rows.length === 1 && <p className="empty-note">{tx("No matches for")} “{query.trim()}”</p>}
         </div>
 
         <footer className="search-footer">
-          <span>↑↓ to move</span>
-          <span>Enter to open</span>
-          <span>Esc to close</span>
+          <span>{tx("↑↓ to move")}</span>
+          <span>{tx("Enter to open")}</span>
+          <span>{tx("Esc to close")}</span>
         </footer>
       </div>
     </div>

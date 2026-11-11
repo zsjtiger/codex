@@ -126,8 +126,12 @@ interface I18nValue {
 
 const I18nContext = createContext<I18nValue | null>(null);
 
+// The language in use, for text looked up outside components (see tx).
+let activeLocale: Locale = "en";
+
 export function LocaleProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(initialLocale);
+  activeLocale = locale;
   const setLocale = (next: Locale) => {
     setLocaleState(next);
     try {
@@ -149,4 +153,19 @@ export function useI18n(): I18nValue {
   const value = useContext(I18nContext);
   if (!value) throw new Error("useI18n must be used inside LocaleProvider");
   return value;
+}
+
+/**
+ * Chinese for a piece of English interface text, found by the English text itself. Text with no
+ * entry, and English itself, is returned unchanged. Works outside components, because it reads the
+ * language the provider last rendered with.
+ */
+export function tx(text: string): string {
+  if (activeLocale !== "zh") return text;
+  return zhText[text] ?? text;
+}
+
+const zhText: Record<string, string> = {};
+export function addChinese(entries: Record<string, string>): void {
+  Object.assign(zhText, entries);
 }

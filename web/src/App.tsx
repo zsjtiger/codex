@@ -15,6 +15,7 @@ import { gatewayBase } from "./api/config";
 import { type NavLabel, Sidebar, type View } from "./components/Sidebar";
 import { SidebarIcon } from "./components/icons";
 import { useCodex } from "./state/useCodex";
+import { tx } from "./i18n";
 
 const NAV_KEY = "codex.sidebar.hidden";
 
@@ -53,7 +54,7 @@ export function App() {
   }, [workspaceId]);
 
   useEffect(() => {
-    void reloadProjects().catch((err) => setNotice(err instanceof Error ? err.message : "Could not load projects."));
+    void reloadProjects().catch((err) => setNotice(err instanceof Error ? err.message : tx("Could not load projects.")));
   }, [reloadProjects]);
 
   // Cmd/Ctrl+K opens search from anywhere in the app.
@@ -78,7 +79,7 @@ export function App() {
   };
 
   if (isDesktopApp() && !gatewayBase()) return <GatewaySetup />;
-  if (codex.checking) return <div className="loading">Loading…</div>;
+  if (codex.checking) return <div className="loading">{tx("Loading…")}</div>;
   if (!codex.user || !workspaceId) return <SignIn onSignIn={codex.signIn} onRegister={codex.register} />;
 
   const error = notice ?? codex.error;
@@ -87,7 +88,7 @@ export function App() {
     codex.dismissError();
   };
   const onError = (message: string) => setNotice(message);
-  const failWith = (err: unknown) => onError(err instanceof Error ? err.message : "Something went wrong.");
+  const failWith = (err: unknown) => onError(err instanceof Error ? err.message : tx("Something went wrong."));
   const canEditOwned = (createdBy: string | null) => isAdmin || createdBy === userId;
   const openThread = (threadId: string) => {
     setView("chat");
@@ -138,7 +139,7 @@ export function App() {
       )}
       <div className="workspace">
         {!sidebarOpen && (
-          <button className="icon-button reopen" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar">
+          <button className="icon-button reopen" onClick={() => setSidebarOpen(true)} aria-label={tx("Open sidebar")}>
             <SidebarIcon />
           </button>
         )}

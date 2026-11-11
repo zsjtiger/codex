@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { artifacts as artifactApi } from "../api/resources";
 import type { Artifact, ArtifactKind, Project } from "../api/types";
 import { MarkdownToc, MarkdownView, markdownHeadings } from "./Markdown";
+import { tx } from "../i18n";
 
 const kinds: { kind: ArtifactKind; label: string }[] = [
   { kind: "document", label: "Docs" },
@@ -34,7 +35,7 @@ export function ArtifactsPage({ workspaceId, userId, projects, canEdit, onBack, 
     artifactApi
       .list(workspaceId)
       .then(setItems)
-      .catch((err) => onError(err instanceof Error ? err.message : "Could not load artifacts."));
+      .catch((err) => onError(err instanceof Error ? err.message : tx("Could not load artifacts.")));
 
   useEffect(() => {
     void reload();
@@ -53,7 +54,7 @@ export function ArtifactsPage({ workspaceId, userId, projects, canEdit, onBack, 
       await reload();
       openArtifact(created);
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not create the artifact.");
+      onError(err instanceof Error ? err.message : tx("Could not create the artifact."));
     }
   };
 
@@ -64,7 +65,7 @@ export function ArtifactsPage({ workspaceId, userId, projects, canEdit, onBack, 
       setOpen(updated);
       await reload();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not save the artifact.");
+      onError(err instanceof Error ? err.message : tx("Could not save the artifact."));
     }
   };
 
@@ -75,7 +76,7 @@ export function ArtifactsPage({ workspaceId, userId, projects, canEdit, onBack, 
       setOpen(updated);
       await reload();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not move the artifact.");
+      onError(err instanceof Error ? err.message : tx("Could not move the artifact."));
     }
   };
 
@@ -85,7 +86,7 @@ export function ArtifactsPage({ workspaceId, userId, projects, canEdit, onBack, 
       setOpen(null);
       await reload();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not delete the artifact.");
+      onError(err instanceof Error ? err.message : tx("Could not delete the artifact."));
     }
   };
 
@@ -96,37 +97,37 @@ export function ArtifactsPage({ workspaceId, userId, projects, canEdit, onBack, 
       <main className="artifacts-page">
         <div className="artifacts-inner">
           <button className="link-button" onClick={() => setOpen(null)}>
-            ← All artifacts
+            {tx("← All artifacts")}
           </button>
           <div className="editor">
-            <input className="editor-title" value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)} maxLength={200} disabled={!editable} aria-label="Title" />
+            <input className="editor-title" value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)} maxLength={200} disabled={!editable} aria-label={tx("Title")} />
             <div className="muted small">
               {open.kind} · updated {new Date(open.updated_at).toLocaleString()}
             </div>
             {open.kind === "document" ? (
               <div className="doc-split">
-                <textarea className="editor-body" value={draftContent} onChange={(e) => setDraftContent(e.target.value)} rows={18} maxLength={500000} disabled={!editable} aria-label="Content" />
+                <textarea className="editor-body" value={draftContent} onChange={(e) => setDraftContent(e.target.value)} rows={18} maxLength={500000} disabled={!editable} aria-label={tx("Content")} />
                 <div className="doc-preview">
                   <MarkdownToc headings={headings} />
                   <MarkdownView source={draftContent} />
                 </div>
               </div>
             ) : (
-              <textarea className="editor-body" value={draftContent} onChange={(e) => setDraftContent(e.target.value)} rows={18} maxLength={500000} disabled={!editable} aria-label="Content" />
+              <textarea className="editor-body" value={draftContent} onChange={(e) => setDraftContent(e.target.value)} rows={18} maxLength={500000} disabled={!editable} aria-label={tx("Content")} />
             )}
             <div className="form-actions">
-              <select value={open.project_id ?? ""} onChange={(e) => void setProject(e.target.value)} disabled={!editable} aria-label="Project">
-                <option value="">No project</option>
+              <select value={open.project_id ?? ""} onChange={(e) => void setProject(e.target.value)} disabled={!editable} aria-label={tx("Project")}>
+                <option value="">{tx("No project")}</option>
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
                 ))}
               </select>
-              {editable && <button onClick={() => void remove(open)}>Delete</button>}
+              {editable && <button onClick={() => void remove(open)}>{tx("Delete")}</button>}
               {editable && (
                 <button className="primary" onClick={() => void save()} disabled={!draftTitle.trim()}>
-                  Save
+                  {tx("Save")}
                 </button>
               )}
             </div>
@@ -142,25 +143,25 @@ export function ArtifactsPage({ workspaceId, userId, projects, canEdit, onBack, 
     <main className="artifacts-page">
       <div className="artifacts-inner">
         <button className="link-button" onClick={onBack}>
-          ← Back to chat
+          {tx("← Back to chat")}
         </button>
-        <h1>Artifacts</h1>
+        <h1>{tx("Artifacts")}</h1>
 
         <div className="tabs" role="tablist">
           {(["All", "Yours"] as const).map((name) => (
             <button key={name} role="tab" aria-selected={tab === name} className={`tab ${tab === name ? "tab-active" : ""}`} onClick={() => setTab(name)}>
-              {name}
+              {tx(name)}
             </button>
           ))}
         </div>
 
         <section>
-          <h2 className="section-label">Make something new</h2>
+          <h2 className="section-label">{tx("Make something new")}</h2>
           <div className="creator-grid">
             {kinds.map(({ kind, label }, index) => (
               <button key={kind} className={`creator tone-${["blue", "orange", "purple", "red"][index]}`} onClick={() => void createNew(kind, label)}>
                 <span className="creator-icon" aria-hidden="true" />
-                <span className="creator-label">{label}</span>
+                <span className="creator-label">{tx(label)}</span>
               </button>
             ))}
           </div>
@@ -168,7 +169,7 @@ export function ArtifactsPage({ workspaceId, userId, projects, canEdit, onBack, 
 
         <section>
           {visible.length === 0 ? (
-            <p className="empty-state">{tab === "All" ? "No artifacts yet" : "Nothing created by you yet"}</p>
+            <p className="empty-state">{tab === "All" ? tx("No artifacts yet") : tx("Nothing created by you yet")}</p>
           ) : (
             <div className="artifact-grid">
               {visible.map((artifact) => (

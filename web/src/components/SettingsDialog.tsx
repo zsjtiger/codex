@@ -3,6 +3,7 @@ import { memory as memoryApi } from "../api/resources";
 import type { MemoryImportResult, MemoryNote, User, Workspace } from "../api/types";
 import { AuditSection, MembersSection, WorkspaceSection } from "./WorkspaceSections";
 import { useI18n } from "../i18n";
+import { tx } from "../i18n";
 
 /** Asked of claude.ai or Codex so their memory can be pasted here. */
 const IMPORT_PROMPT =
@@ -41,14 +42,14 @@ export function SettingsDialog({ user, workspace, onClose, onError }: SettingsDi
         setEnabled(view.enabled);
         setNotes(view.notes);
       })
-      .catch((err: unknown) => onError(err instanceof Error ? err.message : "Could not load memory."));
+      .catch((err: unknown) => onError(err instanceof Error ? err.message : tx("Could not load memory.")));
   }, [section, onError]);
 
   const reload = () =>
     memoryApi
       .get()
       .then((view) => setNotes(view.notes))
-      .catch((err: unknown) => onError(err instanceof Error ? err.message : "Could not load memory."));
+      .catch((err: unknown) => onError(err instanceof Error ? err.message : tx("Could not load memory.")));
 
   const toggle = async (next: boolean) => {
     setEnabled(next);
@@ -56,7 +57,7 @@ export function SettingsDialog({ user, workspace, onClose, onError }: SettingsDi
       await memoryApi.setEnabled(next);
     } catch (err) {
       setEnabled(!next);
-      onError(err instanceof Error ? err.message : "Could not change memory.");
+      onError(err instanceof Error ? err.message : tx("Could not change memory."));
     }
   };
 
@@ -68,7 +69,7 @@ export function SettingsDialog({ user, workspace, onClose, onError }: SettingsDi
       setDraft("");
       await reload();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not add the note.");
+      onError(err instanceof Error ? err.message : tx("Could not add the note."));
     } finally {
       setBusy(false);
     }
@@ -82,7 +83,7 @@ export function SettingsDialog({ user, workspace, onClose, onError }: SettingsDi
       setEditing(null);
       await reload();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not save the note.");
+      onError(err instanceof Error ? err.message : tx("Could not save the note."));
     } finally {
       setBusy(false);
     }
@@ -93,7 +94,7 @@ export function SettingsDialog({ user, workspace, onClose, onError }: SettingsDi
       await memoryApi.remove(note.id);
       await reload();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not delete the note.");
+      onError(err instanceof Error ? err.message : tx("Could not delete the note."));
     }
   };
 
@@ -106,7 +107,7 @@ export function SettingsDialog({ user, workspace, onClose, onError }: SettingsDi
       setPasted("");
       await reload();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not import the memory.");
+      onError(err instanceof Error ? err.message : tx("Could not import the memory."));
     } finally {
       setBusy(false);
     }
@@ -133,13 +134,13 @@ export function SettingsDialog({ user, workspace, onClose, onError }: SettingsDi
 
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
-      <div className="settings-dialog" role="dialog" aria-modal="true" aria-label="Settings" onMouseDown={(event) => event.stopPropagation()}>
+      <div className="settings-dialog" role="dialog" aria-modal="true" aria-label={tx("Settings")} onMouseDown={(event) => event.stopPropagation()}>
         <header className="settings-header">
           <h2>{t("settings.title")}</h2>
           <button className="icon-button" onClick={onClose} aria-label={t("settings.close")}>×</button>
         </header>
         <div className="settings-body">
-          <nav className="settings-nav" aria-label="Settings sections">
+          <nav className="settings-nav" aria-label={tx("Settings sections")}>
             <button className={section === "account" ? "settings-nav-item settings-nav-active" : "settings-nav-item"} onClick={() => setSection("account")}>{t("settings.account")}</button>
             <button className={section === "memory" ? "settings-nav-item settings-nav-active" : "settings-nav-item"} onClick={() => setSection("memory")}>{t("settings.memory")}</button>
             {isAdmin && workspace && (
@@ -174,7 +175,7 @@ export function SettingsDialog({ user, workspace, onClose, onError }: SettingsDi
                     <div className="muted small">{t("settings.languageHint")}</div>
                   </div>
                   <select value={locale} onChange={(e) => setLocale(e.target.value as "en" | "zh")} aria-label={t("settings.language")}>
-                    <option value="en">English</option>
+                    <option value="en">{tx("English")}</option>
                     <option value="zh">中文</option>
                   </select>
                 </div>
@@ -187,35 +188,35 @@ export function SettingsDialog({ user, workspace, onClose, onError }: SettingsDi
 
             {section === "memory" && (
               <>
-                <h3 className="settings-title">Memory</h3>
+                <h3 className="settings-title">{tx("Memory")}</h3>
                 <div className="settings-row">
                   <div>
-                    <div className="detail-label">Use saved memory in chats</div>
-                    <div className="muted small">Your notes below are added to new chats when this is on.</div>
+                    <div className="detail-label">{tx("Use saved memory in chats")}</div>
+                    <div className="muted small">{tx("Your notes below are added to new chats when this is on.")}</div>
                   </div>
-                  <input type="checkbox" className="switch" checked={enabled} onChange={(e) => void toggle(e.target.checked)} aria-label="Use saved memory in chats" />
+                  <input type="checkbox" className="switch" checked={enabled} onChange={(e) => void toggle(e.target.checked)} aria-label={tx("Use saved memory in chats")} />
                 </div>
 
                 <div className="settings-row settings-row-top">
                   <div className="settings-grow">
-                    <div className="detail-label">Your memory</div>
-                    <div className="muted small">Things Claude should remember about you and your work. Up to 200 notes.</div>
+                    <div className="detail-label">{tx("Your memory")}</div>
+                    <div className="muted small">{tx("Things Claude should remember about you and your work. Up to 200 notes.")}</div>
                     <div className="memory-list">
-                      {notes && notes.length === 0 && <p className="muted small">No notes yet.</p>}
+                      {notes && notes.length === 0 && <p className="muted small">{tx("No notes yet.")}</p>}
                       {notes?.map((note) =>
                         editing?.id === note.id ? (
                           <div key={note.id} className="memory-edit">
-                            <textarea value={editing.text} onChange={(e) => setEditing({ id: note.id, text: e.target.value })} rows={3} maxLength={2000} aria-label="Edit note" />
+                            <textarea value={editing.text} onChange={(e) => setEditing({ id: note.id, text: e.target.value })} rows={3} maxLength={2000} aria-label={tx("Edit note")} />
                             <div className="form-actions">
-                              <button onClick={() => setEditing(null)}>Cancel</button>
-                              <button className="primary" disabled={busy || !editing.text.trim()} onClick={() => void save()}>Save</button>
+                              <button onClick={() => setEditing(null)}>{tx("Cancel")}</button>
+                              <button className="primary" disabled={busy || !editing.text.trim()} onClick={() => void save()}>{tx("Save")}</button>
                             </div>
                           </div>
                         ) : (
                           <div key={note.id} className="memory-note">
                             <span className="memory-note-text">{note.content}</span>
-                            <button onClick={() => setEditing({ id: note.id, text: note.content })}>Edit</button>
-                            <button onClick={() => void remove(note)}>Delete</button>
+                            <button onClick={() => setEditing({ id: note.id, text: note.content })}>{tx("Edit")}</button>
+                            <button onClick={() => void remove(note)}>{tx("Delete")}</button>
                           </div>
                         ),
                       )}
@@ -227,41 +228,41 @@ export function SettingsDialog({ user, workspace, onClose, onError }: SettingsDi
                         void add();
                       }}
                     >
-                      <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Add a note, e.g. I prefer short answers" maxLength={2000} aria-label="New memory note" />
-                      <button className="primary" type="submit" disabled={busy || !draft.trim()}>Add</button>
+                      <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={tx("Add a note, e.g. I prefer short answers")} maxLength={2000} aria-label={tx("New memory note")} />
+                      <button className="primary" type="submit" disabled={busy || !draft.trim()}>{tx("Add")}</button>
                     </form>
                   </div>
                 </div>
 
                 <div className="settings-row settings-row-top">
                   <div className="settings-grow">
-                    <div className="detail-label">Import memory from other AI providers</div>
+                    <div className="detail-label">{tx("Import memory from other AI providers")}</div>
                     <div className="muted small">
-                      Bring notes from claude.ai or Codex. Duplicates are skipped.
+                      {tx("Bring notes from claude.ai or Codex. Duplicates are skipped.")}
                     </div>
                     {!importOpen && (
                       <div>
-                        <button onClick={() => setImportOpen(true)}>Start import</button>
+                        <button onClick={() => setImportOpen(true)}>{tx("Start import")}</button>
                       </div>
                     )}
                     {importOpen && (
                       <div className="import-panel">
-                        <div className="muted small">1. Copy this prompt and send it to claude.ai or Codex:</div>
+                        <div className="muted small">{tx("1. Copy this prompt and send it to claude.ai or Codex:")}</div>
                         <div className="import-prompt">
                           <code>{IMPORT_PROMPT}</code>
-                          <button onClick={() => void copyPrompt()}>Copy</button>
+                          <button onClick={() => void copyPrompt()}>{tx("Copy")}</button>
                         </div>
-                        <div className="muted small">2. Paste the answer here, or upload a file:</div>
+                        <div className="muted small">{tx("2. Paste the answer here, or upload a file:")}</div>
                         <textarea
                           value={pasted}
                           onChange={(e) => setPasted(e.target.value)}
                           rows={5}
-                          placeholder="- Prefers short answers&#10;- Works on a robotics team"
-                          aria-label="Pasted memory"
+                          placeholder={tx("- Prefers short answers&#10;- Works on a robotics team")}
+                          aria-label={tx("Pasted memory")}
                         />
                         <div className="import-actions">
                           <button className="primary" disabled={busy || !pasted.trim()} onClick={() => void runImport(pasted)}>
-                            Import text
+                            {tx("Import text")}
                           </button>
                           <label className="import-file">
                             Upload file (.zip, .md or .txt)
@@ -277,7 +278,7 @@ export function SettingsDialog({ user, workspace, onClose, onError }: SettingsDi
                               }}
                             />
                           </label>
-                          <span className="muted small">Codex keeps memory in MEMORY.md under its memories folder.</span>
+                          <span className="muted small">{tx("Codex keeps memory in MEMORY.md under its memories folder.")}</span>
                         </div>
                         {importResult && (
                           <p className="banner small">
@@ -292,10 +293,10 @@ export function SettingsDialog({ user, workspace, onClose, onError }: SettingsDi
 
                 <div className="settings-row">
                   <div>
-                    <div className="detail-label">Export memory</div>
-                    <div className="muted small">Download your notes as a Markdown file.</div>
+                    <div className="detail-label">{tx("Export memory")}</div>
+                    <div className="muted small">{tx("Download your notes as a Markdown file.")}</div>
                   </div>
-                  <button onClick={exportMarkdown} disabled={!notes || notes.length === 0}>Export</button>
+                  <button onClick={exportMarkdown} disabled={!notes || notes.length === 0}>{tx("Export")}</button>
                 </div>
               </>
             )}

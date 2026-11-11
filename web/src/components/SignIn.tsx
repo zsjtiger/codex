@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ApiError } from "../api/client";
 import { SparkIcon } from "./icons";
 import { useI18n } from "../i18n";
+import { tx } from "../i18n";
 
 interface SignInProps {
   onSignIn: (username: string, password: string) => Promise<void>;
@@ -30,7 +31,7 @@ export function SignIn({ onSignIn, onRegister }: SignInProps) {
         await onSignIn(username.trim(), password);
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Sign-in failed.");
+      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : tx("Sign-in failed."));
     } finally {
       setBusy(false);
     }
@@ -54,20 +55,20 @@ export function SignIn({ onSignIn, onRegister }: SignInProps) {
             autoComplete="username"
             value={username}
             onChange={(event) => setUsername(event.target.value)}
-            placeholder="your-name"
+            placeholder={tx("your-name")}
             pattern="[A-Za-z0-9_.\-]{3,32}"
-            title="3-32 letters, digits, _, . or -"
+            title={tx("3-32 letters, digits, _, . or -")}
           />
         </label>
         {registering && (
           <>
             <label className="signin-field">
-              <span>Email</span>
-              <input type="email" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
+              <span>{tx("Email")}</span>
+              <input type="email" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder={tx("you@example.com")} />
             </label>
             <label className="signin-field">
-              <span>Display name</span>
-              <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Optional" />
+              <span>{tx("Display name")}</span>
+              <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder={tx("Optional")} />
             </label>
           </>
         )}

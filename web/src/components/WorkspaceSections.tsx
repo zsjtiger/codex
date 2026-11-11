@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { audit as auditApi, members as memberApi, workspaceSettings as workspaceApi } from "../api/resources";
 import type { AuditEntry, Member, User, Workspace } from "../api/types";
+import { tx } from "../i18n";
 
 /** Workspace name and deletion. Only the owner can delete the workspace. */
 export function WorkspaceSection({ workspace, onError }: { workspace: Workspace; onError: (message: string) => void }) {
@@ -17,26 +18,26 @@ export function WorkspaceSection({ workspace, onError }: { workspace: Workspace;
       window.location.reload();
     } catch (err) {
       setBusy(false);
-      onError(err instanceof Error ? err.message : "Could not save the workspace.");
+      onError(err instanceof Error ? err.message : tx("Could not save the workspace."));
     }
   };
 
   const remove = async () => {
-    if (!window.confirm(`Delete the workspace “${workspace.name}”? Its chats, projects and files will be removed.`)) return;
+    if (!window.confirm(`${tx("Delete the workspace")} “${workspace.name}”? ${tx("Its chats, projects and files will be removed.")}`)) return;
     try {
       await workspaceApi.remove(workspace.id);
       window.location.reload();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not delete the workspace.");
+      onError(err instanceof Error ? err.message : tx("Could not delete the workspace."));
     }
   };
 
   return (
     <>
-      <h3 className="settings-title">Workspace</h3>
+      <h3 className="settings-title">{tx("Workspace")}</h3>
       <div className="settings-row">
         <div className="settings-grow">
-          <div className="detail-label">Name</div>
+          <div className="detail-label">{tx("Name")}</div>
           <form
             className="memory-add"
             onSubmit={(event) => {
@@ -44,9 +45,9 @@ export function WorkspaceSection({ workspace, onError }: { workspace: Workspace;
               if (name.trim()) void save();
             }}
           >
-            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} disabled={!isAdmin} aria-label="Workspace name" />
+            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} disabled={!isAdmin} aria-label={tx("Workspace name")} />
             <button className="primary" type="submit" disabled={!isAdmin || busy || !name.trim() || name.trim() === workspace.name}>
-              Save
+              {tx("Save")}
             </button>
           </form>
           <div className="muted small">Address: {workspace.slug}</div>
@@ -55,10 +56,10 @@ export function WorkspaceSection({ workspace, onError }: { workspace: Workspace;
       {isOwner && (
         <div className="settings-row">
           <div>
-            <div className="detail-label">Delete workspace</div>
-            <div className="muted small">Removes every chat, project and file in it. This cannot be undone.</div>
+            <div className="detail-label">{tx("Delete workspace")}</div>
+            <div className="muted small">{tx("Removes every chat, project and file in it. This cannot be undone.")}</div>
           </div>
-          <button onClick={() => void remove()}>Delete</button>
+          <button onClick={() => void remove()}>{tx("Delete")}</button>
         </div>
       )}
     </>
@@ -77,7 +78,7 @@ export function MembersSection({ workspace, user, onError }: { workspace: Worksp
     memberApi
       .list(workspace.id)
       .then(setList)
-      .catch((err: unknown) => onError(err instanceof Error ? err.message : "Could not load members."));
+      .catch((err: unknown) => onError(err instanceof Error ? err.message : tx("Could not load members.")));
 
   useEffect(() => {
     void reload();
@@ -95,7 +96,7 @@ export function MembersSection({ workspace, user, onError }: { workspace: Worksp
       setEmail("");
       await reload();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not add the member.");
+      onError(err instanceof Error ? err.message : tx("Could not add the member."));
     } finally {
       setBusy(false);
     }
@@ -106,27 +107,27 @@ export function MembersSection({ workspace, user, onError }: { workspace: Worksp
       await memberApi.changeRole(workspace.id, member.user_id, next);
       await reload();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not change the role.");
+      onError(err instanceof Error ? err.message : tx("Could not change the role."));
     }
   };
 
   const remove = async (member: Member) => {
-    if (!window.confirm(`Remove ${member.email} from this workspace?`)) return;
+    if (!window.confirm(`${tx("Remove")} ${member.email} ${tx("from this workspace?")}`)) return;
     try {
       await memberApi.remove(workspace.id, member.user_id);
       await reload();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not remove the member.");
+      onError(err instanceof Error ? err.message : tx("Could not remove the member."));
     }
   };
 
   return (
     <>
-      <h3 className="settings-title">Members</h3>
+      <h3 className="settings-title">{tx("Members")}</h3>
       <div className="settings-row settings-row-top">
         <div className="settings-grow">
           <div className="muted small">
-            Add someone by the email address of their account. They must have signed up first.
+            {tx("Add someone by the email address of their account. They must have signed up first.")}
           </div>
           <form
             className="memory-add"
@@ -135,18 +136,18 @@ export function MembersSection({ workspace, user, onError }: { workspace: Worksp
               if (email.trim()) void add();
             }}
           >
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" aria-label="Member email" />
-            <select value={role} onChange={(e) => setRole(e.target.value as "admin" | "member")} aria-label="Role">
-              <option value="member">Member</option>
-              <option value="admin">Admin</option>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={tx("name@example.com")} aria-label={tx("Member email")} />
+            <select value={role} onChange={(e) => setRole(e.target.value as "admin" | "member")} aria-label={tx("Role")}>
+              <option value="member">{tx("Member")}</option>
+              <option value="admin">{tx("Admin")}</option>
             </select>
             <button className="primary" type="submit" disabled={busy || !email.trim()}>
-              Add
+              {tx("Add")}
             </button>
           </form>
 
           <div className="member-list">
-            {list === null && <p className="muted small">Loading…</p>}
+            {list === null && <p className="muted small">{tx("Loading…")}</p>}
             {list?.map((member) => (
               <div key={member.user_id} className="member-row">
                 <div className="member-who">
@@ -155,13 +156,13 @@ export function MembersSection({ workspace, user, onError }: { workspace: Worksp
                 </div>
                 {canChangeRole(member) ? (
                   <select value={member.role} onChange={(e) => void changeRole(member, e.target.value as "admin" | "member")} aria-label={`Role of ${member.email}`}>
-                    <option value="member">Member</option>
-                    <option value="admin">Admin</option>
+                    <option value="member">{tx("Member")}</option>
+                    <option value="admin">{tx("Admin")}</option>
                   </select>
                 ) : (
-                  <span className="muted small">{member.role === "owner" ? "Owner" : member.role === "admin" ? "Admin" : "Member"}</span>
+                  <span className="muted small">{member.role === "owner" ? tx("Owner") : member.role === "admin" ? tx("Admin") : tx("Member")}</span>
                 )}
-                {canRemove(member) && <button onClick={() => void remove(member)}>Remove</button>}
+                {canRemove(member) && <button onClick={() => void remove(member)}>{tx("Remove")}</button>}
               </div>
             ))}
           </div>
@@ -189,7 +190,7 @@ export function AuditSection({ workspace, onError }: { workspace: Workspace; onE
       })
       .catch((err: unknown) => {
         setLoaded(true);
-        onError(err instanceof Error ? err.message : "Could not load the audit log.");
+        onError(err instanceof Error ? err.message : tx("Could not load the audit log."));
       });
 
   useEffect(() => {
@@ -200,15 +201,15 @@ export function AuditSection({ workspace, onError }: { workspace: Workspace; onE
 
   const who = (actorId: string | null) => {
     if (!actorId) return "System";
-    return members.find((m) => m.user_id === actorId)?.email ?? "Removed user";
+    return members.find((m) => m.user_id === actorId)?.email ?? tx("Removed user");
   };
 
   return (
     <>
-      <h3 className="settings-title">Audit log</h3>
+      <h3 className="settings-title">{tx("Audit log")}</h3>
       <div className="settings-row settings-row-top">
         <div className="settings-grow">
-          {loaded && entries.length === 0 && <p className="muted small">No activity yet.</p>}
+          {loaded && entries.length === 0 && <p className="muted small">{tx("No activity yet.")}</p>}
           <div className="audit-list">
             {entries.map((entry) => (
               <div key={entry.id} className="audit-row">
@@ -223,7 +224,7 @@ export function AuditSection({ workspace, onError }: { workspace: Workspace; onE
           </div>
           {more && (
             <div>
-              <button onClick={() => void load(entries.length)}>Load more</button>
+              <button onClick={() => void load(entries.length)}>{tx("Load more")}</button>
             </div>
           )}
         </div>

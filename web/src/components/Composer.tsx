@@ -30,6 +30,7 @@ function MicIcon() {
 }
 import type { SendOptions } from "../state/useCodex";
 import { ChevronIcon, PlusIcon } from "./icons";
+import { tx } from "../i18n";
 
 /** Text files are sent to the model, so they are kept small. Word and PDF files are only shown. */
 const MAX_TEXT_ATTACHMENT_BYTES = 200_000;
@@ -112,7 +113,7 @@ export function Composer(props: ComposerProps) {
     recognizer.onerror = () => {
       setListening(false);
       recognizerRef.current = null;
-      onError("Voice input could not hear anything. Check the microphone and try again.");
+      onError(tx("Voice input could not hear anything. Check the microphone and try again."));
     };
     recognizerRef.current = recognizer;
     setListening(true);
@@ -171,7 +172,7 @@ export function Composer(props: ComposerProps) {
   const menuItems: { key: string; label: string; run: () => void }[] = [
     {
       key: "attach",
-      label: "Add files",
+      label: tx("Add files"),
       run: () => {
         setDraft("");
         fileRef.current?.click();
@@ -190,7 +191,7 @@ export function Composer(props: ComposerProps) {
   const attach = async (file: File) => {
     const limit = attachmentLimit(file);
     if (file.size > limit) {
-      onError(`${file.name} is larger than ${limit / 1000} KB.`);
+      onError(`${file.name} ${tx("is larger than")} ${limit / 1000} KB.`);
       return;
     }
     setUploading(true);
@@ -198,7 +199,7 @@ export function Composer(props: ComposerProps) {
       const id = await upload(file);
       setPending((prev) => [...prev, { id, name: file.name }]);
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Upload failed.");
+      onError(err instanceof Error ? err.message : tx("Upload failed."));
     } finally {
       setUploading(false);
     }
@@ -263,7 +264,7 @@ export function Composer(props: ComposerProps) {
           }}
         />
         {menuOpen && (
-          <ul className="slash-menu" role="listbox" aria-label="Skills and actions">
+          <ul className="slash-menu" role="listbox" aria-label={tx("Skills and actions")}>
             {menuItems.map((item, index) => (
               <li
                 key={item.key}
@@ -279,12 +280,12 @@ export function Composer(props: ComposerProps) {
                 {item.label}
               </li>
             ))}
-            {menuItems.length === 1 && <li className="slash-empty muted">No matching skills</li>}
+            {menuItems.length === 1 && <li className="slash-empty muted">{tx("No matching skills")}</li>}
           </ul>
         )}
         <div className="composer-bar">
           <div className="add-menu">
-            <button type="button" className="icon-button" aria-label="Attach" onClick={() => setAttachOpen(!attachOpen)} disabled={uploading}>
+            <button type="button" className="icon-button" aria-label={tx("Attach")} onClick={() => setAttachOpen(!attachOpen)} disabled={uploading}>
               <PlusIcon />
             </button>
             {attachOpen && (
@@ -298,7 +299,7 @@ export function Composer(props: ComposerProps) {
                       fileRef.current?.click();
                     }}
                   >
-                    Attach a file
+                    {tx("Attach a file")}
                   </button>
                 </li>
               </ul>
@@ -316,14 +317,14 @@ export function Composer(props: ComposerProps) {
             />
           </div>
           <div className="composer-right">
-            {uploading && <span className="muted small">Uploading…</span>}
+            {uploading && <span className="muted small">{tx("Uploading…")}</span>}
             {SpeechInput && (
               <button
                 type="button"
                 className={`icon-button mic-button ${listening ? "mic-button-on" : ""}`}
-                aria-label={listening ? "Stop voice input" : "Voice input"}
+                aria-label={listening ? tx("Stop voice input") : tx("Voice input")}
                 aria-pressed={listening}
-                title={listening ? "Stop voice input" : "Voice input"}
+                title={listening ? tx("Stop voice input") : tx("Voice input")}
                 onClick={toggleVoice}
               >
                 <MicIcon />
@@ -331,11 +332,11 @@ export function Composer(props: ComposerProps) {
             )}
             {running && onStop ? (
               <button type="button" className="stop" onClick={onStop}>
-                Stop
+                {tx("Stop")}
               </button>
             ) : (
               <button type="submit" className="send" disabled={disabled || uploading || (!draft.trim() && pending.length === 0)}>
-                Send
+                {tx("Send")}
               </button>
             )}
           </div>
@@ -352,8 +353,8 @@ export function Composer(props: ComposerProps) {
               <div className="add-menu-list composer-menu project-picker" role="menu">
                 <input
                   className="project-search"
-                  placeholder="Search projects"
-                  aria-label="Search projects"
+                  placeholder={tx("Search projects")}
+                  aria-label={tx("Search projects")}
                   value={projectQuery}
                   onChange={(event) => setProjectQuery(event.target.value)}
                   autoFocus
@@ -384,7 +385,7 @@ export function Composer(props: ComposerProps) {
                 <div className="project-picker-footer">
                   {onCreateProject && newProjectName === null && (
                     <button type="button" role="menuitem" className="menu-action" onClick={() => setNewProjectName("")}>
-                      + New project
+                      {tx("+ New project")}
                     </button>
                   )}
                   {onCreateProject && newProjectName !== null && (
@@ -400,7 +401,7 @@ export function Composer(props: ComposerProps) {
                           setNewProjectName(null);
                           setPickerOpen(false);
                         } catch (err) {
-                          onError?.(err instanceof Error ? err.message : "Could not create the project.");
+                          onError?.(err instanceof Error ? err.message : tx("Could not create the project."));
                         }
                       }}
                     >
@@ -408,11 +409,11 @@ export function Composer(props: ComposerProps) {
                         autoFocus
                         value={newProjectName}
                         onChange={(event) => setNewProjectName(event.target.value)}
-                        placeholder="Project name"
+                        placeholder={tx("Project name")}
                         maxLength={100}
-                        aria-label="New project name"
+                        aria-label={tx("New project name")}
                       />
-                      <button type="submit" className="primary" disabled={!newProjectName.trim()}>Create</button>
+                      <button type="submit" className="primary" disabled={!newProjectName.trim()}>{tx("Create")}</button>
                     </form>
                   )}
                 </div>
@@ -423,7 +424,7 @@ export function Composer(props: ComposerProps) {
           <span />
         )}
         <div className="composer-options-right">
-          <select className="pill-select" value={model} onChange={(event) => setModel(event.target.value)} aria-label="Model">
+          <select className="pill-select" value={model} onChange={(event) => setModel(event.target.value)} aria-label={tx("Model")}>
             <option value="">{t("composer.model")}</option>
             {models.map((option) => (
               <option key={option.model} value={option.model}>
@@ -431,11 +432,11 @@ export function Composer(props: ComposerProps) {
               </option>
             ))}
           </select>
-          <select className="pill-select" value={effort} onChange={(event) => setEffort(event.target.value)} aria-label="Reasoning effort">
+          <select className="pill-select" value={effort} onChange={(event) => setEffort(event.target.value)} aria-label={tx("Reasoning effort")}>
             <option value="">{t("composer.effort")}</option>
             {efforts.map((level) => (
               <option key={level} value={level}>
-                {level.charAt(0).toUpperCase() + level.slice(1)}
+                {tx(level.charAt(0).toUpperCase() + level.slice(1))}
               </option>
             ))}
           </select>

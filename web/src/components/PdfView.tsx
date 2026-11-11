@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as pdfjs from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { tx } from "../i18n";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -33,12 +34,12 @@ export function PdfView({ data }: { data: ArrayBuffer }) {
           canvas.style.height = `${Math.floor(base.height * scale)}px`;
           element.appendChild(canvas);
           const context = canvas.getContext("2d");
-          if (!context) throw new Error("This browser cannot draw the preview.");
+          if (!context) throw new Error(tx("This browser cannot draw the preview."));
           await page.render({ canvasContext: context, viewport }).promise;
         }
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Could not show the PDF.");
+        if (!cancelled) setError(err instanceof Error ? err.message : tx("Could not show the PDF."));
       });
     return () => {
       cancelled = true;
