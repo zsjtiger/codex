@@ -466,3 +466,11 @@ addChinese({
   "Loading…": "加载中…",
   "Role": "角色",
 });
+
+// Home and sidebar layout.
+addChinese({
+  "You’re here!": "你来了！",
+  "Active": "进行中",
+  "Clear active": "清空",
+  "Gateway": "网关",
+});

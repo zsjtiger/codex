@@ -3,7 +3,9 @@ import type { Thread, User } from "../api/types";
 import type { SocketStatus } from "../realtime/socket";
 import { UsageDialog } from "./UsageDialog";
 import { useI18n, type MessageKey } from "../i18n";
-import { ArtifactIcon, ChatIcon, ChevronIcon, ClockIcon, CustomizeIcon, MoreIcon, PlusIcon, ProjectIcon, SearchIcon, SidebarIcon } from "./icons";
+import { ArtifactIcon, ChatIcon, ChevronIcon, ClockIcon, CustomizeIcon, MoreIcon, PlusIcon, ProjectIcon, SearchIcon, SidebarIcon, SparkIcon } from "./icons";
+import { isDesktop } from "../desktop";
+import { WindowLights } from "./TitleBar";
 import { tx } from "../i18n";
 
 export type NavLabel = "New" | "Search" | "Projects" | "Artifacts" | "Scheduled" | "Customize";
@@ -42,6 +44,7 @@ interface SidebarProps {
   hidden: NavLabel[];
   onHiddenChange: (hidden: NavLabel[]) => void;
   user: User;
+  workspaceName: string;
   socketStatus: SocketStatus;
   onSignOut: () => void;
 }
@@ -50,7 +53,7 @@ const statusLabel: Record<SocketStatus, string> = { open: "Live", connecting: tx
 
 export function Sidebar(props: SidebarProps) {
   const { t, locale, setLocale } = useI18n();
-  const { open, onOpenSettings, onRenameThread, onArchiveThread, onDeleteThread, onToggle, threads, activeId, activeView, onSelect, onNew, onSearch, onView, hidden, onHiddenChange, user, socketStatus, onSignOut } = props;
+  const { open, onOpenSettings, onRenameThread, onArchiveThread, onDeleteThread, onToggle, threads, activeId, activeView, onSelect, onNew, onSearch, onView, hidden, onHiddenChange, user, workspaceName, socketStatus, onSignOut } = props;
   const [chatMenuId, setChatMenuId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState("");
@@ -115,7 +118,8 @@ export function Sidebar(props: SidebarProps) {
 
   return (
     <aside className={`sidebar ${open ? "" : "sidebar-collapsed"}`} aria-label={tx("Sidebar")}>
-      <div className="sidebar-top">
+      <div className="sidebar-top" data-tauri-drag-region={isDesktop() ? "" : undefined}>
+        {isDesktop() && <WindowLights />}
         <div className="brand">
           <button className="icon-button" onClick={onToggle} aria-label={tx("Toggle sidebar")}>
             <SidebarIcon />
@@ -295,11 +299,12 @@ export function Sidebar(props: SidebarProps) {
           aria-expanded={accountOpen}
           onClick={() => setAccountOpen(!accountOpen)}
         >
-          <div className="avatar">{(user.display_name || user.email).charAt(0).toUpperCase()}</div>
+          <SparkIcon className="footer-mark" />
           <div className="account">
-            <span className="account-name">{user.display_name}</span>
-            <span className="account-plan"> · {statusLabel[socketStatus]}</span>
+            <span className="account-name">{workspaceName || user.display_name}</span>
+            <span className="account-plan"> · {tx("Gateway")}</span>
           </div>
+          <span className={`status-dot status-${socketStatus}`} title={statusLabel[socketStatus]} />
           <ChevronIcon />
         </button>
       </footer>

@@ -775,3 +775,27 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 html.desktop .app { height: calc(100vh - 32px); margin-top: 32px; }
 .memory-add select { min-width: 0; max-width: 100%; flex: 1 1 180px; }
 .invite-box { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 14px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 10px; }
+
+/* Desktop: macOS-style window buttons at the top of the sidebar, and a drag strip over the main area. */
+.window-lights { display: flex; gap: 8px; padding: 14px 0 4px 14px; }
+.light { width: 12px; height: 12px; border-radius: 50%; border: 0; padding: 0; cursor: pointer; }
+.light-close { background: #ff5f57; }
+.light-min { background: #febc2e; }
+.light-max { background: #28c840; }
+.desktop-drag-strip { position: absolute; top: 0; left: 0; right: 0; height: 24px; z-index: 2; }
+html.desktop .app { height: 100vh; margin-top: 0; }
+
+/* Home: greeting in the serif face, and the Active list. */
+.greeting { font-family: ui-serif, Georgia, "Times New Roman", serif; font-weight: 400; }
+.active-list { margin-top: 28px; }
+.active-header { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--text-muted); padding: 0 4px 8px; border-bottom: 1px solid var(--border); }
+.active-row { display: flex; gap: 10px; align-items: center; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--border); padding: 12px 4px; cursor: pointer; color: var(--text); }
+.active-row:hover { background: var(--hover); }
+.active-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+.active-text { display: flex; flex-direction: column; min-width: 0; }
+.active-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Sidebar footer: workspace name, gateway label, status dot. */
+.footer-mark { color: var(--accent); flex: none; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: #9a9a9a; flex: none; }
+.status-open { background: #28c840; }

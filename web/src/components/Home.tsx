@@ -7,20 +7,15 @@ import { Composer } from "./Composer";
 import { usePreview } from "./Preview";
 import { Conversation } from "./Conversation";
 import { ChevronIcon, SparkIcon } from "./icons";
-import { useI18n, type MessageKey } from "../i18n";
+import { useI18n } from "../i18n";
 import { tx } from "../i18n";
-
-function greeting(date: Date, t: (key: MessageKey) => string): string {
-  const hour = date.getHours();
-  if (hour < 12) return t("home.morning");
-  if (hour < 18) return t("home.afternoon");
-  return t("home.evening");
-}
 
 interface HomeProps {
   user: User;
   workspaceId: string;
   thread: Thread | null;
+  threads: Thread[];
+  onOpenThread: (threadId: string) => void;
   turns: Turn[];
   agentText: Record<string, string>;
   toolUses: Record<string, ToolUse[]>;
@@ -46,7 +41,7 @@ interface HomeProps {
 
 export function Home(props: HomeProps) {
   const { t } = useI18n();
-  const { user, workspaceId, thread, turns, agentText, toolUses, activity, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
+  const { user, workspaceId, thread, threads, onOpenThread, turns, agentText, toolUses, activity, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
   const pending = approvals.filter((a) => a.threadId === thread?.id);
   const runningTurn = [...turns].reverse().find((t) => (t.status === "running" || t.status === "queued") && t.codex_turn_id);
   const [recent, setRecent] = useState<Artifact[]>([]);
@@ -170,7 +165,7 @@ export function Home(props: HomeProps) {
         <div className="home-inner">
           <h1 className="greeting">
             <SparkIcon className="greeting-mark" />
-            <span>{`${greeting(new Date(), t)}, ${user.display_name}`}</span>
+            <span>{tx("You’re here!")}</span>
           </h1>
           <Composer
             environmentId={environment?.id ?? null}
@@ -184,6 +179,8 @@ export function Home(props: HomeProps) {
             upload={upload}
             onError={onError}
           />
+
+          <ActiveList threads={threads} onOpen={onOpenThread} />
 
           <section className="recent-artifacts">
             <button className="recent-heading link-button" onClick={onOpenArtifacts}>
@@ -247,4 +244,41 @@ function UsedPanel({ uses, onClose }: { uses: ToolUse[]; onClose: () => void }) 
       )}
     </aside>
   );
+}
+
+/** Threads that are running now. "Clear active" hides the current ones from this list. */
+function ActiveList({ threads, onOpen }: { threads: Thread[]; onOpen: (threadId: string) => void }) {
+  const [cleared, setCleared] = useState<Set<string>>(new Set());
+  const running = threads.filter((item) => item.state === "running" && !item.archived_at);
+  const shown = running.filter((item) => !cleared.has(item.id));
+  if (shown.length === 0) return null;
+  return (
+    <section className="active-list">
+      <header className="active-header">
+        <span>{tx("Active")}</span>
+        <button className="link-button" onClick={() => setCleared(new Set(running.map((item) => item.id)))}>
+          {tx("Clear active")}
+        </button>
+      </header>
+      {shown.map((item) => (
+        <button key={item.id} className="active-row" onClick={() => onOpen(item.id)}>
+          <span className="active-dot" aria-hidden="true" />
+          <span className="active-text">
+            <span className="active-title">{item.title}</span>
+            <span className="muted small">{relativeTime(item.last_activity_at)}</span>
+          </span>
+        </button>
+      ))}
+    </section>
+  );
+}
+
+function relativeTime(iso: string): string {
+  const seconds = Math.round((new Date(iso).getTime() - Date.now()) / 1000);
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [["day", 86400], ["hour", 3600], ["minute", 60]];
+  for (const [unit, size] of units) {
+    if (Math.abs(seconds) >= size) return rtf.format(Math.round(seconds / size), unit);
+  }
+  return rtf.format(0, "second");
 }

@@ -7,7 +7,6 @@ import { Home } from "./components/Home";
 import { PreviewProvider } from "./components/Preview";
 import { ProjectsPage } from "./components/ProjectsPage";
 import { SettingsDialog } from "./components/SettingsDialog";
-import { TitleBar } from "./components/TitleBar";
 import { isDesktop, notify, onMenuAction } from "./desktop";
 import { ScheduledPage } from "./components/ScheduledPage";
 import { SearchDialog } from "./components/SearchDialog";
@@ -151,7 +150,6 @@ export function App() {
 
   return (
     <PreviewProvider>
-    {isDesktop() && <TitleBar />}
     <div className="app">
       <Sidebar
         open={sidebarOpen}
@@ -170,6 +168,7 @@ export function App() {
         hidden={hidden}
         onHiddenChange={changeHidden}
         user={codex.user}
+        workspaceName={codex.workspace?.name ?? ""}
         socketStatus={codex.socketStatus}
         onSignOut={() => void codex.signOut()}
       />
@@ -188,6 +187,7 @@ export function App() {
         />
       )}
       <div className="workspace">
+        {isDesktop() && <div className="desktop-drag-strip" data-tauri-drag-region />}
         {!sidebarOpen && (
           <button className="icon-button reopen" onClick={() => setSidebarOpen(true)} aria-label={tx("Open sidebar")}>
             <SidebarIcon />
@@ -243,6 +243,8 @@ export function App() {
         {view === "chat" && (
           <Home
             user={codex.user}
+            threads={codex.threads}
+            onOpenThread={openThread}
             workspaceId={workspaceId}
             thread={activeThread}
             turns={codex.turns}
