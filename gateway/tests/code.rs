@@ -147,3 +147,73 @@ async fn code_session_runs_in_its_checkout_and_commits_to_its_branch(pool: PgPoo
 
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn finished_turns_commit_their_changes_to_the_session_branch(pool: PgPool) {
+    let root = std::env::temp_dir().join(format!("auto-commit-test-{}", Uuid::new_v4()));
+    make_remote(&root);
+    let state = AppState::new(pool.clone(), true, RuntimeConfig::default()).with_code(code_config(&root));
+    let mock = mock_app_server().await;
+    let token = login(&state, "auto@example.com").await;
+    let (ws_id, chat_id) = setup(&state, &token, Some(&mock.url)).await;
+
+    let me = call(&state, "GET", "/api/v1/me", &token, None).await.1;
+    let user_id = Uuid::parse_str(me["id"].as_str().unwrap()).unwrap();
+    let (ciphertext, nonce) = code::encrypt_token(&state.code, "ghp_auto").unwrap();
+    sqlx::query("INSERT INTO github_accounts (user_id, login, token_ciphertext, token_nonce) VALUES ($1, 'auto', $2, $3)")
+        .bind(user_id)
+        .bind(ciphertext)
+        .bind(nonce)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (status, repo) = call(&state, "POST", &format!("/api/v1/workspaces/{ws_id}/repos"), &token, Some(json!({ "full_name": "acme/demo" }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{repo}");
+    let repo_id = repo["id"].as_str().unwrap().to_string();
+    let environment_id = call(&state, "GET", &format!("/api/v1/threads/{chat_id}"), &token, None).await.1["environment_id"].clone();
+    let (_, code_chat) = call(
+        &state,
+        "POST",
+        &format!("/api/v1/workspaces/{ws_id}/threads"),
+        &token,
+        Some(json!({ "title": "Auto", "environment_id": environment_id, "repo_id": repo_id })),
+    )
+    .await;
+    let code_chat_id = code_chat["id"].as_str().unwrap().to_string();
+    let branch = code_chat["work_branch"].as_str().unwrap().to_string();
+
+    // The first turn creates the checkout. Nothing changes, so nothing is committed.
+    call(&state, "POST", &format!("/api/v1/threads/{code_chat_id}/turns"), &token, Some(json!({ "input": "look around" }))).await;
+    assert_eq!(wait_for_turn(&state, &token, &code_chat_id, 0).await["status"], "completed");
+    let worktree = root.join("data").join("worktrees").join(&code_chat_id);
+    let remote = root.join("acme").join("demo.git");
+    assert!(git_out(&remote, &["branch", "--list", &branch]).is_empty(), "no commit before a change");
+
+    // The second turn changes a file; when it finishes, the change is committed and pushed.
+    std::fs::write(worktree.join("README.md"), "changed by the second turn\n").unwrap();
+    call(&state, "POST", &format!("/api/v1/threads/{code_chat_id}/turns"), &token, Some(json!({ "input": "Change the readme" }))).await;
+    assert_eq!(wait_for_turn(&state, &token, &code_chat_id, 1).await["status"], "completed");
+
+    // The commit follows the turn's completion, so wait for the branch to reach the remote.
+    let mut subject = String::new();
+    for _ in 0..200 {
+        let found = Command::new("git").args(["log", "-1", "--format=%s", &branch]).current_dir(&remote).output().unwrap();
+        if found.status.success() {
+            subject = String::from_utf8_lossy(&found.stdout).trim().to_string();
+            if subject == "Change the readme" {
+                break;
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    assert_eq!(subject, "Change the readme");
+    assert_eq!(git_out(&worktree, &["status", "--porcelain"]), "", "the worktree is clean after the commit");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+fn git_out(dir: &PathBuf, args: &[&str]) -> String {
+    let out = Command::new("git").args(args).current_dir(dir).output().expect("git runs");
+    assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}

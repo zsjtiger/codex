@@ -163,6 +163,26 @@ async fn with_skills(
     Ok(text)
 }
 
+/// Commits and pushes what a finished code turn changed, to the session's own branch. A failure is
+/// logged; it does not fail the turn, and the person can still commit from the chat.
+async fn auto_commit_turn(state: &AppState, turn: &TurnRow, repo_id: Uuid) {
+    let Some(user_id) = turn.created_by else {
+        return;
+    };
+    let result: Result<(String, String), crate::code::CodeError> = async {
+        let (name, email) = crate::code::author(&state.pool, user_id).await?;
+        let token = crate::code::user_token(&state.code, &state.pool, user_id).await?;
+        let message = crate::code::auto_message(&turn.input);
+        crate::code::commit_and_push(&state.code, &state.pool, repo_id, turn.thread_id, &message, &name, &email, token.as_deref()).await
+    }
+    .await;
+    match result {
+        Ok((sha, branch)) => tracing::info!(%sha, %branch, "code turn committed"),
+        Err(crate::code::CodeError::NothingToCommit) => {}
+        Err(err) => tracing::warn!(%err, "code turn was not committed"),
+    }
+}
+
 async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> {
     let row = sqlx::query_as::<_, (Uuid, Uuid, Option<Uuid>, String, Option<String>, Option<String>, Option<String>, Option<Uuid>, Option<String>, Vec<Uuid>, Option<Uuid>)>(
         "SELECT th.id, th.workspace_id, t.created_by, t.input, t.model, t.effort, th.codex_thread_id, th.environment_id, e.endpoint, t.skill_ids, th.repo_id
@@ -313,6 +333,12 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
     .bind(thread_state)
     .execute(&state.pool)
     .await?;
+
+    if outcome.status == "completed" {
+        if let Some(repo_id) = turn.repo_id {
+            auto_commit_turn(state, &turn, repo_id).await;
+        }
+    }
 
     if let Some(dir) = &output_dir {
         outputs::collect(state, turn.workspace_id, turn.thread_id, turn_id, dir).await?;

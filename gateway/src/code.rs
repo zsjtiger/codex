@@ -256,3 +256,20 @@ pub async fn commit_and_push(
     git(Some(&worktree), &["push", "-u", "origin", &branch], token).await?;
     Ok((sha, branch))
 }
+
+/// The commit message for a turn: the request's first line, then a note that Baize made it.
+pub fn auto_message(request: &str) -> String {
+    let subject: String = request.lines().next().unwrap_or("").trim().chars().take(72).collect();
+    let subject = if subject.is_empty() { "Update from a Baize code session".to_string() } else { subject };
+    format!("{subject}\n\nMade in a Baize code session.")
+}
+
+/// The name and placeholder address that commits by a user carry.
+pub async fn author(pool: &PgPool, user_id: Uuid) -> Result<(String, String), CodeError> {
+    let display_name: String = sqlx::query_scalar("SELECT display_name FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_one(pool)
+        .await?;
+    let name: String = display_name.chars().filter(|c| !matches!(c, '<' | '>' | '\n' | '\r')).take(100).collect();
+    Ok((name, format!("{user_id}@users.noreply.baize")))
+}
