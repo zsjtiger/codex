@@ -814,3 +814,30 @@ html.desktop .app { height: 100vh; margin-top: 0; }
   .artifacts-page, .customize-page { padding-top: 56px; }
   .add-button { white-space: nowrap; }
 }
+
+/* Chat / code switch under the sidebar brand. */
+.mode-toggle { display: inline-flex; gap: 2px; padding: 3px; margin: 0 12px 8px; background: var(--hover); border-radius: 10px; }
+.mode-toggle button { width: 32px; height: 28px; border: none; border-radius: 8px; background: transparent; color: var(--text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.mode-toggle .mode-on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); }
+
+/* BaizeCode page: repositories and the connect form. */
+.code-page { width: 100%; max-width: 720px; margin: 0 auto; padding: 48px 24px; }
+.code-title { font-family: ui-serif, Georgia, "Times New Roman", serif; font-weight: 400; font-size: 32px; margin: 0 0 8px; }
+.code-repo { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 4px; border-bottom: 1px solid var(--border); }
+.code-repo-info { display: flex; flex-direction: column; min-width: 0; }
+.code-repo-actions { display: flex; align-items: center; gap: 12px; flex: none; }
+.code-connect { display: flex; flex-direction: column; gap: 10px; margin-top: 28px; padding: 16px; border: 1px dashed var(--border); border-radius: 12px; }
+.code-connect h2 { font-size: 16px; font-weight: 500; margin: 0; }
+.code-connect input { padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font: inherit; }
+.code-connect button { align-self: flex-start; }
+
+/* Code session: commit and push. */
+.commit-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 6px 16px; }
+.commit-form { display: flex; gap: 8px; width: 100%; }
+.commit-form input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font: inherit; }
+
+@media (max-width: 600px) {
+  .code-page { padding: 24px 16px; }
+  .code-repo { flex-direction: column; align-items: flex-start; }
+  .commit-form { flex-direction: column; }
+}

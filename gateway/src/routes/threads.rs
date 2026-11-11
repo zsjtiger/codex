@@ -33,6 +33,8 @@ pub struct ThreadView {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub last_activity_at: DateTime<Utc>,
+    pub repo_id: Option<Uuid>,
+    pub work_branch: Option<String>,
 }
 
 /// Only the fields needed for authorization.
@@ -47,6 +49,8 @@ pub struct CreateThread {
     title: Option<String>,
     environment_id: Option<Uuid>,
     project_id: Option<Uuid>,
+    /// A linked repository: the chat becomes a code session in its own checkout.
+    repo_id: Option<Uuid>,
 }
 
 #[derive(Deserialize)]
@@ -227,7 +231,7 @@ pub fn routes() -> Router<AppState> {
 }
 
 const COLUMNS: &str = "id, workspace_id, environment_id, project_id, created_by, title, state, codex_thread_id, \
-                       archived_at, created_at, updated_at, last_activity_at";
+                       archived_at, created_at, updated_at, last_activity_at, repo_id, work_branch";
 
 async fn thread_access(pool: &PgPool, id: Uuid) -> Result<ThreadAccess, ApiError> {
     Ok(sqlx::query_as::<_, ThreadAccess>(
@@ -325,16 +329,36 @@ async fn create_thread(
         }
     }
 
+    if let Some(repo_id) = req.repo_id {
+        let in_workspace: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM code_repos WHERE id = $1 AND workspace_id = $2)",
+        )
+        .bind(repo_id)
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
+        if !in_workspace {
+            return Err(ApiError::BadRequest(
+                "repository does not belong to this workspace".to_string(),
+            ));
+        }
+    }
+
+    let new_id = Uuid::new_v4();
+    let work_branch = req.repo_id.map(|_| crate::code::branch_for(new_id));
     let mut tx = state.pool.begin().await?;
     let thread_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO threads (workspace_id, environment_id, project_id, created_by, title)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id",
+        "INSERT INTO threads (id, workspace_id, environment_id, project_id, created_by, title, repo_id, work_branch)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
     )
+    .bind(new_id)
     .bind(id)
     .bind(req.environment_id)
     .bind(req.project_id)
     .bind(user.id)
     .bind(&title)
+    .bind(req.repo_id)
+    .bind(work_branch)
     .fetch_one(&mut *tx)
     .await?;
     audit::record(

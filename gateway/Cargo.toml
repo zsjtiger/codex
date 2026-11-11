@@ -8,7 +8,9 @@ publish = false
 [workspace]
 
 [dependencies]
+aes-gcm = "0.10"
 argon2 = "0.5"
+base64 = "0.22"
 aws-config = "1"
 aws-sdk-s3 = "1"
 axum = { version = "0.8", features = ["ws"] }

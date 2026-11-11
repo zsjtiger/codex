@@ -26,6 +26,9 @@ Not implemented yet: rate limiting, and resuming an interrupted turn with `threa
 |---|---|---|
 | `DATABASE_URL` | required | Postgres connection string |
 | `GATEWAY_ADDR` | `127.0.0.1:8080` | Listen address |
+| `GATEWAY_CODE_DIR` | `code-data` | Where code sessions keep clones (`repos/`) and checkouts (`worktrees/`) |
+| `GATEWAY_GIT_BASE` | `https://github.com` | Base for clone and push URLs |
+| `GATEWAY_SECRET_KEY` | unset | 64 hex characters. Encrypts GitHub tokens; required to link a repository with a token |
 | `GATEWAY_DEV_LOGIN` | unset | `1` or `true` also allows sign-in with only an email, through `POST /api/v1/auth/sessions`. Dev only |
 | `GATEWAY_CODEX_BIN` | unset | Path to the `codex` binary. Environments with no `endpoint` get a local app-server |
 | `GATEWAY_CODEX_HOME` | unset | Root for per-environment `CODEX_HOME`s. Required with `GATEWAY_CODEX_BIN` |

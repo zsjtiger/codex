@@ -3,6 +3,7 @@ import { invites as invitesApi, projects as projectApi } from "./api/resources";
 import type { Artifact, Project, ScheduledTask } from "./api/types";
 import { ArtifactsPage } from "./components/ArtifactsPage";
 import { CustomizePage } from "./components/CustomizePage";
+import { CodePage } from "./components/CodePage";
 import { Home } from "./components/Home";
 import { PreviewProvider } from "./components/Preview";
 import { ProjectsPage } from "./components/ProjectsPage";
@@ -33,6 +34,7 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia("(min-width: 761px)").matches);
   const [view, setView] = useState<View>("chat");
+  const [mode, setMode] = useState<"chat" | "code">("chat");
   // The project the Projects page opens on, set when a search result points into a project.
   const [projectFocus, setProjectFocus] = useState<string | null>(null);
   // Where the Scheduled page opens: a new task for a project, or an existing task.
@@ -139,11 +141,24 @@ export function App() {
   const failWith = (err: unknown) => onError(err instanceof Error ? err.message : tx("Something went wrong."));
   const canEditOwned = (createdBy: string | null) => isAdmin || createdBy === userId;
   const openThread = (threadId: string) => {
+    const thread = codex.threads.find((t) => t.id === threadId);
+    if (thread) setMode(thread.repo_id ? "code" : "chat");
     setView("chat");
     void codex.selectThread(threadId);
   };
   const newChat = () => {
+    if (mode === "code") {
+      setView("code");
+      codex.newChat();
+      return;
+    }
     setView("chat");
+    codex.newChat();
+  };
+  // Chat and code are separate: each mode lists only its own sessions.
+  const changeMode = (next: "chat" | "code") => {
+    setMode(next);
+    setView(next === "code" ? "code" : "chat");
     codex.newChat();
   };
   const activeThread = codex.threads.find((t) => t.id === codex.activeId) ?? null;
@@ -155,7 +170,9 @@ export function App() {
         open={sidebarOpen}
         onOpenSettings={() => setSettingsOpen(true)}
         onToggle={() => setSidebarOpen(!sidebarOpen)}
-        threads={codex.threads}
+        threads={codex.threads.filter((t) => (mode === "code") === Boolean(t.repo_id))}
+        mode={mode}
+        onMode={changeMode}
         activeId={codex.activeId}
         activeView={view}
         onSelect={openThread}
@@ -225,6 +242,15 @@ export function App() {
             projects={projects}
             canEdit={(a: Artifact) => canEditOwned(a.created_by)}
             onBack={() => setView("chat")}
+            onError={onError}
+          />
+        )}
+        {view === "code" && (
+          <CodePage
+            workspaceId={workspaceId}
+            isAdmin={isAdmin}
+            environmentId={codex.environment?.id ?? null}
+            onOpenThread={openThread}
             onError={onError}
           />
         )}

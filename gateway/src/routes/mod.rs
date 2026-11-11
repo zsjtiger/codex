@@ -3,6 +3,7 @@ use axum::Router;
 use crate::state::AppState;
 
 mod artifacts;
+mod code;
 mod attachments;
 mod auth;
 pub mod connectors;
@@ -25,6 +26,7 @@ pub fn router() -> Router<AppState> {
         .merge(members::routes())
         .merge(environments::routes())
         .merge(threads::routes())
+        .merge(code::routes())
         .merge(attachments::routes())
         .merge(usage::routes())
         .merge(projects::routes())

@@ -132,6 +132,7 @@ export function Home(props: HomeProps) {
               </button>
             )}
           </header>
+          {thread.repo_id && <CommitBar threadId={thread.id} branch={thread.work_branch} onError={onError} />}
           <div className="thread-scroll">
             <Conversation
               turns={turns}
@@ -281,4 +282,57 @@ function relativeTime(iso: string): string {
     if (Math.abs(seconds) >= size) return rtf.format(Math.round(seconds / size), unit);
   }
   return rtf.format(0, "second");
+}
+
+/** In a code session: commit what the session changed, and push its branch. */
+function CommitBar({ threadId, branch, onError }: { threadId: string; branch: string | null; onError: (message: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [pushed, setPushed] = useState<string | null>(null);
+
+  const commit = async () => {
+    setBusy(true);
+    setPushed(null);
+    try {
+      const result = await threadApi.commit(threadId, message.trim());
+      setPushed(`${tx("Pushed to")} ${result.branch} · ${result.sha.slice(0, 7)}`);
+      setMessage("");
+      setOpen(false);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : tx("Could not commit."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="commit-bar">
+      <button className="used-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        {tx("Commit and push")}
+      </button>
+      {branch && <span className="muted small">{branch}</span>}
+      {pushed && <span className="muted small">{pushed}</span>}
+      {open && (
+        <form
+          className="commit-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void commit();
+          }}
+        >
+          <input
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            placeholder={tx("Commit message")}
+            aria-label={tx("Commit message")}
+            maxLength={500}
+          />
+          <button className="primary" disabled={busy || !message.trim()}>
+            {tx("Commit and push")}
+          </button>
+        </form>
+      )}
+    </div>
+  );
 }

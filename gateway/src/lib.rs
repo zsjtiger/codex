@@ -4,6 +4,7 @@
 //! and the browser WebSocket at `/ws`, which is still an echo placeholder.
 
 pub mod audit;
+pub mod code;
 pub mod cors;
 pub mod auth;
 pub mod authz;

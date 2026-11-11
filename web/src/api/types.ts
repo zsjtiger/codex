@@ -24,6 +24,9 @@ export interface Environment {
 export interface Thread {
   id: string;
   workspace_id: string;
+  /** Set for a code session: the repository it works in, and its own branch. */
+  repo_id: string | null;
+  work_branch: string | null;
   environment_id: string | null;
   project_id: string | null;
   title: string;
@@ -263,4 +266,19 @@ export interface UsageReport {
   to: string;
   totals: UsageTotals;
   daily: UsageDay[];
+}
+
+/** A GitHub repository linked to the workspace for code sessions. The token is never sent to the browser. */
+export interface CodeRepo {
+  id: string;
+  full_name: string;
+  default_branch: string;
+  has_token: boolean;
+  created_at: string;
+  last_synced_at: string | null;
+}
+
+export interface CommitResult {
+  sha: string;
+  branch: string;
 }

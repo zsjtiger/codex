@@ -43,6 +43,9 @@ export const MoreIcon = (p: IconProps) => (
 export const ChatIcon = (p: IconProps) => (
   <svg {...base(p)}><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 3.5V17H6.5A2.5 2.5 0 0 1 4 14.5z" /></svg>
 );
+export const CodeIcon = (p: IconProps) => (
+  <svg {...base(p)}><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16" /></svg>
+);
 export const FileIcon = (p: IconProps) => (
   <svg {...base({ width: 14, height: 14, ...p })}><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></svg>
 );

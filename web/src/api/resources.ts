@@ -7,6 +7,8 @@ import type {
   Artifact,
   ArtifactKind,
   Attachment,
+  CodeRepo,
+  CommitResult,
   MemoryImportResult,
   AuditEntry,
   Member,
@@ -147,9 +149,19 @@ export const environments = {
   models: (id: string) => api<ModelOption[]>("GET", `/environments/${id}/models`),
 };
 
+/** GitHub repositories linked to the workspace for code sessions. */
+export const repos = {
+  list: (ws: string) => api<CodeRepo[]>("GET", `/workspaces/${ws}/repos`),
+  link: (ws: string, body: { full_name: string; default_branch?: string; token?: string }) =>
+    api<CodeRepo>("POST", `/workspaces/${ws}/repos`, body),
+  remove: (id: string) => api<void>("DELETE", `/repos/${id}`),
+};
+
 export const threads = {
-  create: (ws: string, body: { title: string; environment_id: string; project_id?: string | null }) =>
+  create: (ws: string, body: { title: string; environment_id: string; project_id?: string | null; repo_id?: string | null }) =>
     api<Thread>("POST", `/workspaces/${ws}/threads`, body),
+  /** Commits the code session's changes and pushes its branch. */
+  commit: (id: string, message: string) => api<CommitResult>("POST", `/threads/${id}/commit`, { message }),
   setProject: (id: string, projectId: string | null) =>
     api<Thread>("PATCH", `/threads/${id}`, { project_id: projectId }),
   rename: (id: string, title: string) => api<Thread>("PATCH", `/threads/${id}`, { title }),

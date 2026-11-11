@@ -18,6 +18,8 @@ pub struct Config {
     pub turns_per_minute: usize,
     /// Where attachment bytes are kept.
     pub storage: StorageConfig,
+    /// Code sessions: where clones live, the git host, and the token key.
+    pub code: crate::code::CodeConfig,
 }
 
 impl Config {
@@ -44,8 +46,22 @@ impl Config {
             Err(_) => crate::state::DEFAULT_TURNS_PER_MINUTE,
         };
         let storage = StorageConfig::from_env()?;
+        let code = {
+            let mut code = crate::code::CodeConfig::default();
+            if let Ok(dir) = std::env::var("GATEWAY_CODE_DIR") {
+                code.root = PathBuf::from(dir);
+            }
+            if let Ok(base) = std::env::var("GATEWAY_GIT_BASE") {
+                code.git_base = base;
+            }
+            if let Ok(key) = std::env::var("GATEWAY_SECRET_KEY") {
+                code.key = Some(crate::code::parse_key(&key)?);
+            }
+            code
+        };
         Ok(Self {
             storage,
+            code,
             turns_per_minute,
             addr: std::env::var("GATEWAY_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".to_string()),
             database_url,

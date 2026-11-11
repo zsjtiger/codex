@@ -133,6 +133,7 @@ struct TurnRow {
     environment_id: Option<Uuid>,
     endpoint: Option<String>,
     skill_ids: Vec<Uuid>,
+    repo_id: Option<Uuid>,
 }
 
 /// Approval policy sent to codex for every thread and turn. See `start_codex_thread`.
@@ -163,8 +164,8 @@ async fn with_skills(
 }
 
 async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> {
-    let row = sqlx::query_as::<_, (Uuid, Uuid, Option<Uuid>, String, Option<String>, Option<String>, Option<String>, Option<Uuid>, Option<String>, Vec<Uuid>)>(
-        "SELECT th.id, th.workspace_id, t.created_by, t.input, t.model, t.effort, th.codex_thread_id, th.environment_id, e.endpoint, t.skill_ids
+    let row = sqlx::query_as::<_, (Uuid, Uuid, Option<Uuid>, String, Option<String>, Option<String>, Option<String>, Option<Uuid>, Option<String>, Vec<Uuid>, Option<Uuid>)>(
+        "SELECT th.id, th.workspace_id, t.created_by, t.input, t.model, t.effort, th.codex_thread_id, th.environment_id, e.endpoint, t.skill_ids, th.repo_id
          FROM turns t
          JOIN threads th ON th.id = t.thread_id
          LEFT JOIN environments e ON e.id = th.environment_id
@@ -184,12 +185,24 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
         environment_id: row.7,
         endpoint: row.8,
         skill_ids: row.9,
+        repo_id: row.10,
     };
     let environment_id = turn.environment_id.ok_or(DispatchError::NoEnvironment)?;
     let lease = state
         .runtime
         .lease(environment_id, turn.endpoint.as_deref())
         .await?;
+
+    // A code thread runs in its own checkout of the repository.
+    let cwd = match turn.repo_id {
+        Some(repo_id) => {
+            let path = crate::code::checkout(&state.code, &state.pool, repo_id, turn.thread_id)
+                .await
+                .map_err(|err| DispatchError::Protocol(err.to_string()))?;
+            Some(path.to_string_lossy().to_string())
+        }
+        None => None,
+    };
 
     let codex_thread_id = match &turn.codex_thread_id {
         Some(id) => id.clone(),
@@ -202,6 +215,7 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
                 turn.thread_id,
                 turn.workspace_id,
                 instructions,
+                cwd.clone(),
             )
             .await?
         }
@@ -247,6 +261,9 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
     }
     if let Some(effort) = &turn.effort {
         params["effort"] = json!(effort);
+    }
+    if let Some(cwd) = &cwd {
+        params["cwd"] = json!(cwd);
     }
     let response = lease.request("turn/start", params).await?;
     let codex_turn_id = response
@@ -559,12 +576,16 @@ async fn start_codex_thread(
     thread_id: Uuid,
     workspace_id: Uuid,
     instructions: Option<String>,
+    cwd: Option<String>,
 ) -> Result<String, DispatchError> {
     // Ask for approval when a command needs it, so the browser can answer. With "never",
     // codex would run or fail such commands without asking anyone.
     let mut params = json!({ "approvalPolicy": APPROVAL_POLICY });
     if let Some(instructions) = instructions {
         params["developerInstructions"] = json!(instructions);
+    }
+    if let Some(cwd) = cwd {
+        params["cwd"] = json!(cwd);
     }
     if let Some(config) = codex_mcp_config(pool, workspace_id).await? {
         params["config"] = config;

@@ -474,3 +474,32 @@ addChinese({
   "Clear active": "清空",
   "Gateway": "网关",
 });
+
+// BaizeCode: code sessions.
+addChinese({
+  "BaizeCode": "BaizeCode",
+  "Chat": "聊天",
+  "Code": "代码",
+  "Mode": "模式",
+  "Connect a GitHub repository. Each session works on its own branch, and you choose when to commit and push.": "连接 GitHub 代码仓库。每个会话在自己的分支上工作，何时提交和推送由你决定。",
+  "No repositories connected yet.": "还没有连接代码仓库。",
+  "Loading…": "加载中…",
+  "New session": "新建会话",
+  "Remove": "移除",
+  "Private access": "私有访问",
+  "Public": "公开",
+  "Connect a repository": "连接代码仓库",
+  "Repository": "仓库",
+  "Default branch (main)": "默认分支（main）",
+  "Default branch": "默认分支",
+  "Access token (optional for public repositories)": "访问令牌（公开仓库可不填）",
+  "Access token": "访问令牌",
+  "The repository is cloned when you connect it. The token is stored encrypted and is never shown again.": "连接时会克隆仓库。令牌加密保存，之后不再显示。",
+  "Connect": "连接",
+  "No environment is ready yet.": "运行环境还没有准备好。",
+  "Remove this repository? Sessions that used it keep their history.": "移除这个代码仓库？使用它的会话会保留历史记录。",
+  "Commit and push": "提交并推送",
+  "Pushed to": "已推送到",
+  "Commit message": "提交说明",
+  "Could not commit.": "无法提交。",
+});

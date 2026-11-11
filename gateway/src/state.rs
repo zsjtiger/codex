@@ -21,6 +21,8 @@ pub struct AppState {
     pub turn_limiter: Arc<SlidingWindow>,
     /// Where attachment bytes are stored, under the keys recorded in the database.
     pub storage: Arc<ObjectStore>,
+    /// Clone locations, the git host and the token key for code sessions.
+    pub code: Arc<crate::code::CodeConfig>,
 }
 
 impl AppState {
@@ -36,6 +38,7 @@ impl AppState {
                 Duration::from_secs(60),
             )),
             storage: Arc::new(ObjectStore::local("storage")),
+            code: Arc::new(crate::code::CodeConfig::default()),
         }
     }
 
@@ -45,6 +48,11 @@ impl AppState {
 
     pub fn with_object_store(mut self, store: ObjectStore) -> Self {
         self.storage = Arc::new(store);
+        self
+    }
+
+    pub fn with_code(mut self, config: crate::code::CodeConfig) -> Self {
+        self.code = Arc::new(config);
         self
     }
 
