@@ -1,0 +1,24 @@
+[Unit]
+Description=Codex cloud gateway
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=codex
+Group=codex
+WorkingDirectory=/opt/codex/gateway
+EnvironmentFile=/etc/codex-gateway/env
+ExecStart=/opt/codex/gateway/codex-gateway
+Restart=on-failure
+RestartSec=3
+# The gateway spawns local runtimes; keep them tied to its lifetime.
+KillMode=control-group
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/codex-gateway
+
+[Install]
+WantedBy=multi-user.target
