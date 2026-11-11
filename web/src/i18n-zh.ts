@@ -531,3 +531,29 @@ addChinese({
   "Edited": "修改",
   "No text diff.": "没有文本差异。",
 });
+
+// Code page: GitHub connection and picker.
+addChinese({
+  "GitHub account connected.": "已连接 GitHub 账号。",
+  "GitHub access was not approved.": "没有批准 GitHub 访问。",
+  "That sign-in link has expired. Try connecting again.": "登录链接已过期，请重新连接。",
+  "GitHub could not be connected. Try again.": "无法连接 GitHub，请重试。",
+  "Connect GitHub": "连接 GitHub",
+  "Sign in with GitHub to pick from the repositories you can reach.": "用 GitHub 登录后，可以从你有权访问的仓库中选择。",
+  "Signed in to GitHub as": "已登录 GitHub，账号为",
+  "Disconnect": "断开连接",
+  "Disconnect your GitHub account? Sessions keep their history.": "断开 GitHub 账号？会话会保留历史记录。",
+  "Search your repositories": "搜索你的仓库",
+  "No matching repositories.": "没有匹配的仓库。",
+  "Private": "私有",
+  "Public": "公开",
+  "Branch": "分支",
+  "Add repository": "添加仓库",
+  "Repositories": "仓库",
+  "No repositories added yet.": "还没有添加仓库。",
+});
+
+// Code page: account label.
+addChinese({
+  "Uses your GitHub account": "使用你的 GitHub 账号",
+});

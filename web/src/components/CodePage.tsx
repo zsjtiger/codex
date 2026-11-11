@@ -1,52 +1,119 @@
 import { useEffect, useState } from "react";
-import { repos as repoApi, threads as threadApi } from "../api/resources";
-import type { CodeRepo } from "../api/types";
+import { github as githubApi, repos as repoApi, threads as threadApi } from "../api/resources";
+import type { CodeRepo, GitHubRepo } from "../api/types";
 import { tx } from "../i18n";
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : tx("Something went wrong.");
 }
 
+/** Messages for the result GitHub's callback leaves in the address. */
+const outcomes: Record<string, string> = {
+  connected: "GitHub account connected.",
+  denied: "GitHub access was not approved.",
+  expired: "That sign-in link has expired. Try connecting again.",
+  error: "GitHub could not be connected. Try again.",
+};
+
 interface CodePageProps {
   workspaceId: string;
-  isAdmin: boolean;
   environmentId: string | null;
   onOpenThread: (threadId: string) => void;
   onError: (message: string) => void;
 }
 
-/** The code mode's home: linked GitHub repositories, and the form to link another. */
-export function CodePage({ workspaceId, isAdmin, environmentId, onOpenThread, onError }: CodePageProps) {
-  const [list, setList] = useState<CodeRepo[] | null>(null);
-  const [fullName, setFullName] = useState("");
+/** Code's home: connect GitHub, pick a repository and branch, and start sessions on linked repositories. */
+export function CodePage({ workspaceId, environmentId, onOpenThread, onError }: CodePageProps) {
+  const [account, setAccount] = useState<{ connected: boolean; login: string | null } | null>(null);
+  const [linked, setLinked] = useState<CodeRepo[] | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [available, setAvailable] = useState<GitHubRepo[] | null>(null);
+  const [picked, setPicked] = useState<GitHubRepo | null>(null);
+  const [branches, setBranches] = useState<string[]>([]);
   const [branch, setBranch] = useState("");
-  const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const load = () =>
+  const loadLinked = () =>
     repoApi
       .list(workspaceId)
-      .then(setList)
+      .then(setLinked)
       .catch((err: unknown) => onError(errorText(err)));
 
+  const loadAccount = () =>
+    githubApi
+      .status()
+      .then(setAccount)
+      .catch((err: unknown) => onError(errorText(err)));
+
+  // Returning from GitHub: show the outcome once, then clean the address.
   useEffect(() => {
-    void load();
+    const params = new URLSearchParams(window.location.search);
+    const outcome = params.get("github");
+    if (outcome) {
+      setNotice(tx(outcomes[outcome] ?? "GitHub could not be connected. Try again."));
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    void loadAccount();
+    void loadLinked();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
 
-  const connect = async (event: React.FormEvent) => {
-    event.preventDefault();
+  // Repositories the account can reach, filtered as the person types.
+  useEffect(() => {
+    if (!account?.connected) return;
+    const timer = window.setTimeout(() => {
+      githubApi
+        .repos(search)
+        .then(setAvailable)
+        .catch((err: unknown) => onError(errorText(err)));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [account?.connected, search]);
+
+  const connect = async () => {
     setBusy(true);
     try {
-      await repoApi.link(workspaceId, {
-        full_name: fullName.trim(),
-        default_branch: branch.trim() || undefined,
-        token: token.trim() || undefined,
-      });
-      setFullName("");
-      setBranch("");
-      setToken("");
-      await load();
+      const { url } = await githubApi.connect();
+      window.location.href = url;
+    } catch (err) {
+      setBusy(false);
+      onError(errorText(err));
+    }
+  };
+
+  const disconnect = async () => {
+    if (!window.confirm(tx("Disconnect your GitHub account? Sessions keep their history."))) return;
+    try {
+      await githubApi.disconnect();
+      setPicked(null);
+      setAvailable(null);
+      await loadAccount();
+    } catch (err) {
+      onError(errorText(err));
+    }
+  };
+
+  const pick = async (repo: GitHubRepo) => {
+    setPicked(repo);
+    setBranch(repo.default_branch);
+    setBranches([]);
+    try {
+      const names = await githubApi.branches(repo.full_name);
+      setBranches(names);
+      if (!names.includes(repo.default_branch) && names.length > 0) setBranch(names[0]);
+    } catch (err) {
+      onError(errorText(err));
+    }
+  };
+
+  const addRepository = async () => {
+    if (!picked) return;
+    setBusy(true);
+    try {
+      await repoApi.link(workspaceId, { full_name: picked.full_name, default_branch: branch || picked.default_branch });
+      setPicked(null);
+      await loadLinked();
     } catch (err) {
       onError(errorText(err));
     } finally {
@@ -75,7 +142,7 @@ export function CodePage({ workspaceId, isAdmin, environmentId, onOpenThread, on
     if (!window.confirm(tx("Remove this repository? Sessions that used it keep their history."))) return;
     try {
       await repoApi.remove(repo.id);
-      await load();
+      await loadLinked();
     } catch (err) {
       onError(errorText(err));
     }
@@ -87,62 +154,93 @@ export function CodePage({ workspaceId, isAdmin, environmentId, onOpenThread, on
       <p className="muted">
         {tx("Connect a GitHub repository. Each session works on its own branch, and you choose when to commit and push.")}
       </p>
+      {notice && <p className="code-notice muted small">{notice}</p>}
 
-      {list === null && <p className="muted small">{tx("Loading…")}</p>}
-      {list?.length === 0 && <p className="muted">{tx("No repositories connected yet.")}</p>}
-      {list?.map((repo) => (
-        <div className="code-repo" key={repo.id}>
-          <div className="code-repo-info">
-            <strong>{repo.full_name}</strong>
+      {account === null && <p className="muted small">{tx("Loading…")}</p>}
+      {account && !account.connected && (
+        <div className="code-connect-github">
+          <button className="primary" onClick={() => void connect()} disabled={busy}>
+            {tx("Connect GitHub")}
+          </button>
+          <span className="muted small">{tx("Sign in with GitHub to pick from the repositories you can reach.")}</span>
+        </div>
+      )}
+
+      {account?.connected && (
+        <section className="code-picker">
+          <div className="code-account">
             <span className="muted small">
-              {repo.default_branch} · {repo.has_token ? tx("Private access") : tx("Public")}
+              {tx("Signed in to GitHub as")} <strong>{account.login}</strong>
             </span>
-          </div>
-          <div className="code-repo-actions">
-            <button className="primary" onClick={() => void startSession(repo)}>
-              {tx("New session")}
+            <button className="link-button" onClick={() => void disconnect()}>
+              {tx("Disconnect")}
             </button>
-            {isAdmin && (
+          </div>
+          <input
+            className="code-search"
+            placeholder={tx("Search your repositories")}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            aria-label={tx("Search your repositories")}
+          />
+          <div className="code-available">
+            {available === null && <p className="muted small">{tx("Loading…")}</p>}
+            {available?.length === 0 && <p className="muted small">{tx("No matching repositories.")}</p>}
+            {available?.slice(0, 50).map((repo) => (
+              <button
+                key={repo.full_name}
+                className={`code-available-row ${picked?.full_name === repo.full_name ? "code-available-on" : ""}`}
+                onClick={() => void pick(repo)}
+              >
+                <span>{repo.full_name}</span>
+                <span className="muted small">{repo.private ? tx("Private") : tx("Public")}</span>
+              </button>
+            ))}
+          </div>
+          {picked && (
+            <div className="code-add">
+              <strong>{picked.full_name}</strong>
+              <label className="muted small">
+                {tx("Branch")}{" "}
+                <select value={branch} onChange={(event) => setBranch(event.target.value)} aria-label={tx("Branch")}>
+                  {(branches.length > 0 ? branches : [picked.default_branch]).map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button className="primary" onClick={() => void addRepository()} disabled={busy}>
+                {tx("Add repository")}
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+
+      <section className="code-linked">
+        <h2>{tx("Repositories")}</h2>
+        {linked === null && <p className="muted small">{tx("Loading…")}</p>}
+        {linked?.length === 0 && <p className="muted">{tx("No repositories added yet.")}</p>}
+        {linked?.map((repo) => (
+          <div className="code-repo" key={repo.id}>
+            <div className="code-repo-info">
+              <strong>{repo.full_name}</strong>
+              <span className="muted small">
+                {repo.default_branch} · {repo.has_token ? tx("Uses your GitHub account") : tx("Public")}
+              </span>
+            </div>
+            <div className="code-repo-actions">
+              <button className="primary" onClick={() => void startSession(repo)}>
+                {tx("New session")}
+              </button>
               <button className="link-button" onClick={() => void remove(repo)}>
                 {tx("Remove")}
               </button>
-            )}
+            </div>
           </div>
-        </div>
-      ))}
-
-      {isAdmin && (
-        <form className="code-connect" onSubmit={connect}>
-          <h2>{tx("Connect a repository")}</h2>
-          <input
-            required
-            placeholder="owner/repository"
-            value={fullName}
-            onChange={(event) => setFullName(event.target.value)}
-            aria-label={tx("Repository")}
-          />
-          <input
-            placeholder={tx("Default branch (main)")}
-            value={branch}
-            onChange={(event) => setBranch(event.target.value)}
-            aria-label={tx("Default branch")}
-          />
-          <input
-            type="password"
-            autoComplete="off"
-            placeholder={tx("Access token (optional for public repositories)")}
-            value={token}
-            onChange={(event) => setToken(event.target.value)}
-            aria-label={tx("Access token")}
-          />
-          <p className="muted small">
-            {tx("The repository is cloned when you connect it. The token is stored encrypted and is never shown again.")}
-          </p>
-          <button className="primary" disabled={busy || !fullName.trim()}>
-            {tx("Connect")}
-          </button>
-        </form>
-      )}
+        ))}
+      </section>
     </main>
   );
 }

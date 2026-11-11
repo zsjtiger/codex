@@ -885,3 +885,18 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 .plan-mark { width: 14px; flex: none; color: var(--text-muted); }
 .plan-completed { color: var(--text-muted); text-decoration: line-through; }
 .plan-inProgress .plan-mark { color: var(--accent); }
+
+/* Code page: GitHub connection and the repository picker. */
+.code-notice { margin: 8px 0 0; }
+.code-connect-github { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 20px 0; }
+.code-picker { margin: 20px 0 8px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; display: flex; flex-direction: column; gap: 10px; }
+.code-account { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.code-search { padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font: inherit; }
+.code-available { display: flex; flex-direction: column; max-height: 260px; overflow-y: auto; }
+.code-available-row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 6px; border: none; background: none; border-radius: 6px; font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+.code-available-row:hover { background: var(--hover); }
+.code-available-on { background: var(--hover); }
+.code-add { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding-top: 8px; border-top: 1px solid var(--border); }
+.code-add select { margin-left: 4px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); font: inherit; }
+.code-linked { margin-top: 28px; }
+.code-linked h2 { font-size: 15px; font-weight: 500; color: var(--text-muted); margin: 0 0 4px; }

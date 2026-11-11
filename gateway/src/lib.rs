@@ -5,6 +5,7 @@
 
 pub mod audit;
 pub mod code;
+pub mod github;
 pub mod cors;
 pub mod auth;
 pub mod authz;

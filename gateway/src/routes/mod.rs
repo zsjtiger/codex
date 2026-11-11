@@ -8,6 +8,7 @@ mod attachments;
 mod auth;
 pub mod connectors;
 mod environments;
+mod github;
 mod memory;
 mod members;
 mod projects;
@@ -27,6 +28,7 @@ pub fn router() -> Router<AppState> {
         .merge(environments::routes())
         .merge(threads::routes())
         .merge(code::routes())
+        .merge(github::routes())
         .merge(attachments::routes())
         .merge(usage::routes())
         .merge(projects::routes())

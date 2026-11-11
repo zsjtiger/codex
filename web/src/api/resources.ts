@@ -9,6 +9,7 @@ import type {
   Attachment,
   CodeRepo,
   CommitResult,
+  GitHubRepo,
   MemoryImportResult,
   AuditEntry,
   Member,
@@ -152,9 +153,21 @@ export const environments = {
 /** GitHub repositories linked to the workspace for code sessions. */
 export const repos = {
   list: (ws: string) => api<CodeRepo[]>("GET", `/workspaces/${ws}/repos`),
-  link: (ws: string, body: { full_name: string; default_branch?: string; token?: string }) =>
+  link: (ws: string, body: { full_name: string; default_branch?: string }) =>
     api<CodeRepo>("POST", `/workspaces/${ws}/repos`, body),
   remove: (id: string) => api<void>("DELETE", `/repos/${id}`),
+};
+
+/** The user's GitHub account: connect through OAuth, then the repositories and branches it can reach. */
+export const github = {
+  status: () => api<{ connected: boolean; login: string | null }>("GET", "/github/status"),
+  connect: () => api<{ url: string }>("POST", "/github/connect"),
+  disconnect: () => api<void>("DELETE", "/github"),
+  repos: (q: string) => api<GitHubRepo[]>("GET", `/github/repos?q=${encodeURIComponent(q)}`),
+  branches: (fullName: string) => {
+    const [owner, name] = fullName.split("/").map(encodeURIComponent);
+    return api<string[]>("GET", `/github/repos/${owner}/${name}/branches`);
+  },
 };
 
 export const threads = {

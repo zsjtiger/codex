@@ -6,7 +6,7 @@ mod common;
 use std::{path::PathBuf, process::Command};
 
 use axum::http::StatusCode;
-use codex_gateway::{AppState, code::CodeConfig, runtime::RuntimeConfig};
+use codex_gateway::{AppState, code::{self, CodeConfig}, runtime::RuntimeConfig};
 use common::*;
 use serde_json::json;
 use sqlx::PgPool;
@@ -42,6 +42,7 @@ fn code_config(root: &PathBuf) -> CodeConfig {
         root: root.join("data"),
         git_base: format!("file://{}", root.display()),
         key: Some([7u8; 32]),
+        github: Default::default(),
     }
 }
 
@@ -54,13 +55,25 @@ async fn code_session_runs_in_its_checkout_and_commits_to_its_branch(pool: PgPoo
     let token = login(&state, "coder@example.com").await;
     let (ws_id, chat_id) = setup(&state, &token, Some(&mock.url)).await;
 
-    // Linking clones the repository and stores the token encrypted.
+    // The person connects a GitHub account. Linking then uses that account's token, stored encrypted.
+    let me = call(&state, "GET", "/api/v1/me", &token, None).await.1;
+    let user_id = Uuid::parse_str(me["id"].as_str().unwrap()).unwrap();
+    let (ciphertext, nonce) = code::encrypt_token(&state.code, "ghp_supersecret").unwrap();
+    sqlx::query("INSERT INTO github_accounts (user_id, login, token_ciphertext, token_nonce) VALUES ($1, 'coder', $2, $3)")
+        .bind(user_id)
+        .bind(ciphertext)
+        .bind(nonce)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Linking clones the repository with that token.
     let (status, repo) = call(
         &state,
         "POST",
         &format!("/api/v1/workspaces/{ws_id}/repos"),
         &token,
-        Some(json!({ "full_name": "acme/demo", "token": "ghp_supersecret" })),
+        Some(json!({ "full_name": "acme/demo" })),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "{repo}");

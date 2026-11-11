@@ -57,6 +57,15 @@ impl Config {
             if let Ok(key) = std::env::var("GATEWAY_SECRET_KEY") {
                 code.key = Some(crate::code::parse_key(&key)?);
             }
+            let env = |name: &str| std::env::var(name).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+            code.github.client_id = env("GATEWAY_GITHUB_CLIENT_ID");
+            code.github.client_secret = env("GATEWAY_GITHUB_CLIENT_SECRET");
+            if let Some(base) = env("GATEWAY_GITHUB_OAUTH_BASE") {
+                code.github.oauth_base = base;
+            }
+            if let Some(base) = env("GATEWAY_GITHUB_API_BASE") {
+                code.github.api_base = base;
+            }
             code
         };
         Ok(Self {

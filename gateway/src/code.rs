@@ -24,6 +24,7 @@ pub struct CodeConfig {
     pub git_base: String,
     /// Key for encrypting stored tokens. Without it, only tokenless (public) repos can be linked.
     pub key: Option<[u8; 32]>,
+    pub github: crate::github::GitHubConfig,
 }
 
 impl Default for CodeConfig {
@@ -32,6 +33,7 @@ impl Default for CodeConfig {
             root: PathBuf::from("code-data"),
             git_base: "https://github.com".to_string(),
             key: None,
+            github: crate::github::GitHubConfig::default(),
         }
     }
 }
@@ -89,6 +91,22 @@ fn open(key: &[u8; 32], ciphertext: &[u8], nonce: &[u8]) -> Result<String, CodeE
 pub fn encrypt_token(config: &CodeConfig, token: &str) -> Result<(Vec<u8>, Vec<u8>), CodeError> {
     let key = config.key.as_ref().ok_or(CodeError::NoKey)?;
     seal(key, token)
+}
+
+/// The GitHub token a user connected, if any. Git runs with it when that user works in a repository.
+pub async fn user_token(config: &CodeConfig, pool: &PgPool, user_id: Uuid) -> Result<Option<String>, CodeError> {
+    let row: Option<(Vec<u8>, Vec<u8>)> =
+        sqlx::query_as("SELECT token_ciphertext, token_nonce FROM github_accounts WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
+    match row {
+        Some((ciphertext, nonce)) => {
+            let key = config.key.as_ref().ok_or(CodeError::NoKey)?;
+            Ok(Some(open(key, &ciphertext, &nonce)?))
+        }
+        None => Ok(None),
+    }
 }
 
 fn clone_dir(config: &CodeConfig, repo_id: Uuid) -> PathBuf {
@@ -179,13 +197,20 @@ pub async fn sync(config: &CodeConfig, repo_id: Uuid, full_name: &str, token: Op
 }
 
 /// Returns the thread's checkout, creating its branch and worktree on first use.
-pub async fn checkout(config: &CodeConfig, pool: &PgPool, repo_id: Uuid, thread_id: Uuid) -> Result<PathBuf, CodeError> {
+pub async fn checkout(
+    config: &CodeConfig,
+    pool: &PgPool,
+    repo_id: Uuid,
+    thread_id: Uuid,
+    user_token: Option<&str>,
+) -> Result<PathBuf, CodeError> {
     let worktree = worktree_dir(config, thread_id);
     if worktree.join(".git").exists() {
         return Ok(worktree);
     }
     let repo = repo_access(config, pool, repo_id).await?;
-    let token = repo.token.as_deref();
+    // The person working in the thread authenticates; the repository's own token is the fallback.
+    let token = user_token.or(repo.token.as_deref());
     sync(config, repo_id, &repo.full_name, token).await?;
     let clone = clone_dir(config, repo_id);
     std::fs::create_dir_all(config.root.join("worktrees")).map_err(|err| CodeError::Io(err.to_string()))?;
@@ -205,13 +230,14 @@ pub async fn commit_and_push(
     message: &str,
     author_name: &str,
     author_email: &str,
+    user_token: Option<&str>,
 ) -> Result<(String, String), CodeError> {
     let worktree = worktree_dir(config, thread_id);
     if !worktree.join(".git").exists() {
         return Err(CodeError::NoCheckout);
     }
     let repo = repo_access(config, pool, repo_id).await?;
-    let token = repo.token.as_deref();
+    let token = user_token.or(repo.token.as_deref());
     let branch = branch_for(thread_id);
 
     git(Some(&worktree), &["add", "-A"], None).await?;

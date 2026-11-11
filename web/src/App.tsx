@@ -33,8 +33,10 @@ export function App() {
   // Open on wide screens; start closed on narrow ones, where it overlays the page.
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia("(min-width: 761px)").matches);
-  const [view, setView] = useState<View>("chat");
-  const [mode, setMode] = useState<"chat" | "code">("chat");
+  // Returning from GitHub lands on the Code page, where the connection result is shown.
+  const returnedFromGitHub = new URLSearchParams(window.location.search).has("github");
+  const [view, setView] = useState<View>(returnedFromGitHub ? "code" : "chat");
+  const [mode, setMode] = useState<"chat" | "code">(returnedFromGitHub ? "code" : "chat");
   // The project the Projects page opens on, set when a search result points into a project.
   const [projectFocus, setProjectFocus] = useState<string | null>(null);
   // Where the Scheduled page opens: a new task for a project, or an existing task.
@@ -249,7 +251,6 @@ export function App() {
         {view === "code" && (
           <CodePage
             workspaceId={workspaceId}
-            isAdmin={isAdmin}
             environmentId={codex.environment?.id ?? null}
             onOpenThread={openThread}
             onError={onError}

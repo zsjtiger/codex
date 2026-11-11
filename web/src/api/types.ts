@@ -278,6 +278,13 @@ export interface CodeRepo {
   last_synced_at: string | null;
 }
 
+/** A repository the connected GitHub account can reach. */
+export interface GitHubRepo {
+  full_name: string;
+  default_branch: string;
+  private: boolean;
+}
+
 export interface CommitResult {
   sha: string;
   branch: string;
