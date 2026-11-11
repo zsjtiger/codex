@@ -8,6 +8,9 @@ import type {
   ArtifactKind,
   Attachment,
   MemoryImportResult,
+  AuditEntry,
+  Member,
+  Workspace,
   MemoryNote,
   MemoryView,
   ProjectFileHit,
@@ -59,6 +62,24 @@ export interface TaskInput {
   weekday?: number | null;
   project_id?: string | null;
 }
+
+export const members = {
+  list: (ws: string) => api<Member[]>("GET", `/workspaces/${ws}/members`),
+  add: (ws: string, body: { email: string; role: "admin" | "member" }) => api<Member>("POST", `/workspaces/${ws}/members`, body),
+  changeRole: (ws: string, userId: string, role: "admin" | "member") =>
+    api<Member>("PATCH", `/workspaces/${ws}/members/${userId}`, { role }),
+  remove: (ws: string, userId: string) => api<void>("DELETE", `/workspaces/${ws}/members/${userId}`),
+};
+
+export const workspaceSettings = {
+  update: (id: string, body: { name: string }) => api<Workspace>("PATCH", `/workspaces/${id}`, body),
+  remove: (id: string) => api<void>("DELETE", `/workspaces/${id}`),
+};
+
+export const audit = {
+  list: (ws: string, offset: number, limit = 50) =>
+    api<AuditEntry[]>("GET", `/workspaces/${ws}/audit-logs?limit=${limit}&offset=${offset}`),
+};
 
 export const memory = {
   get: () => api<MemoryView>("GET", "/me/memory"),

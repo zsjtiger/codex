@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { memory as memoryApi } from "../api/resources";
-import type { MemoryImportResult, MemoryNote, User } from "../api/types";
+import type { MemoryImportResult, MemoryNote, User, Workspace } from "../api/types";
+import { AuditSection, MembersSection, WorkspaceSection } from "./WorkspaceSections";
 
 /** Asked of claude.ai or Codex so their memory can be pasted here. */
 const IMPORT_PROMPT =
@@ -9,15 +10,18 @@ const IMPORT_PROMPT =
 
 interface SettingsDialogProps {
   user: User;
+  workspace: Workspace | null;
   onClose: () => void;
   onError: (message: string) => void;
 }
 
-type Section = "account" | "memory";
+type Section = "account" | "memory" | "workspace" | "members" | "audit";
 
 /** Account settings. Memory holds notes that are added to the user's new chats when it is on. */
-export function SettingsDialog({ user, onClose, onError }: SettingsDialogProps) {
+export function SettingsDialog({ user, workspace, onClose, onError }: SettingsDialogProps) {
   const [section, setSection] = useState<Section>("memory");
+  // Workspace administration is for admins and owners only.
+  const isAdmin = workspace?.role === "owner" || workspace?.role === "admin";
   const [enabled, setEnabled] = useState(true);
   const [notes, setNotes] = useState<MemoryNote[] | null>(null);
   const [draft, setDraft] = useState("");
@@ -136,6 +140,14 @@ export function SettingsDialog({ user, onClose, onError }: SettingsDialogProps) 
           <nav className="settings-nav" aria-label="Settings sections">
             <button className={section === "account" ? "settings-nav-item settings-nav-active" : "settings-nav-item"} onClick={() => setSection("account")}>Account</button>
             <button className={section === "memory" ? "settings-nav-item settings-nav-active" : "settings-nav-item"} onClick={() => setSection("memory")}>Memory</button>
+            {isAdmin && workspace && (
+              <>
+                <div className="settings-nav-heading">Workspace</div>
+                <button className={section === "workspace" ? "settings-nav-item settings-nav-active" : "settings-nav-item"} onClick={() => setSection("workspace")}>Settings</button>
+                <button className={section === "members" ? "settings-nav-item settings-nav-active" : "settings-nav-item"} onClick={() => setSection("members")}>Members</button>
+                <button className={section === "audit" ? "settings-nav-item settings-nav-active" : "settings-nav-item"} onClick={() => setSection("audit")}>Audit log</button>
+              </>
+            )}
           </nav>
 
           <div className="settings-content">
@@ -147,6 +159,10 @@ export function SettingsDialog({ user, onClose, onError }: SettingsDialogProps) 
                 </div>
               </div>
             )}
+
+            {section === "workspace" && isAdmin && workspace && <WorkspaceSection workspace={workspace} onError={onError} />}
+            {section === "members" && isAdmin && workspace && <MembersSection workspace={workspace} user={user} onError={onError} />}
+            {section === "audit" && isAdmin && workspace && <AuditSection workspace={workspace} onError={onError} />}
 
             {section === "memory" && (
               <>

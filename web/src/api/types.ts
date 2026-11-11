@@ -172,6 +172,26 @@ export interface Attachment {
   read_bytes?: number | null;
 }
 
+/** A member of a workspace, as the gateway lists them. */
+export interface Member {
+  user_id: string;
+  email: string;
+  display_name: string;
+  role: "owner" | "admin" | "member";
+  joined_at: string;
+}
+
+/** One entry of the workspace audit log. */
+export interface AuditEntry {
+  id: number;
+  actor_id: string | null;
+  action: string;
+  target_type: string;
+  target_id: string;
+  metadata: unknown;
+  created_at: string;
+}
+
 /** A note in the user's saved memory. */
 export interface MemoryNote {
   id: string;

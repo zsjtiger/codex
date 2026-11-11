@@ -112,7 +112,7 @@ export function App() {
         socketStatus={codex.socketStatus}
         onSignOut={() => void codex.signOut()}
       />
-      {settingsOpen && <SettingsDialog user={codex.user!} onClose={() => setSettingsOpen(false)} onError={onError} />}
+      {settingsOpen && <SettingsDialog user={codex.user!} workspace={codex.workspace} onClose={() => setSettingsOpen(false)} onError={onError} />}
       {searchOpen && (
         <SearchDialog
           workspaceId={workspaceId}
