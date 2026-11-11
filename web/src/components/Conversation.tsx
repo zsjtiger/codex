@@ -3,6 +3,7 @@ import { MarkdownView } from "./Markdown";
 import { CopyIcon, RetryIcon, SpeakIcon, ThumbDownIcon, ThumbUpIcon } from "./icons";
 import type { Activity, Approval } from "../state/useCodex";
 import { ChevronIcon } from "./icons";
+import type { ToolUse } from "../state/toolUses";
 import { usePreview } from "./Preview";
 import { attachments as attachmentApi } from "../api/resources";
 import { isDesktop, saveFileAs, showInFolder } from "../desktop";
@@ -277,7 +278,66 @@ function ThinkingBlock({ activity, running }: { activity: Activity; running: boo
   );
 }
 
+type StepGroup = { kind: string; steps: Activity["steps"] };
+
+/** Steps of the same kind, in the order they first happened. */
+function groupSteps(steps: Activity["steps"]): StepGroup[] {
+  const groups = new Map<string, StepGroup>();
+  for (const step of steps) {
+    const group = groups.get(step.kind) ?? { kind: step.kind, steps: [] };
+    group.steps.push(step);
+    groups.set(step.kind, group);
+  }
+  return [...groups.values()];
+}
+
+/** The summary line for a group, e.g. "Ran 3 commands". Each kind has its own verb and noun. */
+function groupLabel(group: StepGroup): string {
+  const count = group.steps.length;
+  const [verb, noun] =
+    group.kind === "Command" ? ["Ran", count === 1 ? "command" : "commands"]
+    : group.kind === "File change" ? ["Changed", count === 1 ? "file" : "files"]
+    : group.kind === "Web search" ? ["Searched", count === 1 ? "time" : "times"]
+    : ["Used", count === 1 ? "tool" : "tools"];
+  return `${tx(verb)} ${count} ${tx(noun)}`;
+}
+
+/** One collapsed row per kind of step, like "Ran 3 commands ⌄". Expanding shows each step. */
+function CodeActivityRow({ group }: { group: StepGroup }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="code-activity-row">
+      <button type="button" className="code-activity-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span>{groupLabel(group)}</span>
+        <ChevronIcon className={open ? "thinking-chevron thinking-chevron-open" : "thinking-chevron"} />
+      </button>
+      {open && (
+        <ul className="code-activity-body">
+          {group.steps.map((step) => (
+            <li key={step.id}>
+              {group.kind === "Command" ? <code>{step.label}</code> : step.label}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** What a code turn did, grouped by kind. Shown above the reply, as the reference does. */
+function CodeActivity({ activity }: { activity: Activity }) {
+  return (
+    <div className="code-activity">
+      {groupSteps(activity.steps).map((group) => (
+        <CodeActivityRow key={group.kind} group={group} />
+      ))}
+    </div>
+  );
+}
+
 interface ConversationProps {
+  /** "code" shows replies as plain text with grouped activity, as in a code session. */
+  variant?: "chat" | "code";
   turns: Turn[];
   agentText: Record<string, string>;
   activity: Record<string, Activity>;
@@ -287,14 +347,44 @@ interface ConversationProps {
   onRegenerate: (input: string) => void;
 }
 
-export function Conversation({ turns, agentText, activity, approvals, onAnswer, onFeedback, onRegenerate }: ConversationProps) {
+export function Conversation({ variant = "chat", turns, agentText, activity, approvals, onAnswer, onFeedback, onRegenerate }: ConversationProps) {
+  const code = variant === "code";
   return (
-    <div className="conversation">
+    <div className={code ? "conversation code-conversation" : "conversation"}>
       {turns.map((turn) => {
         // Live text while the turn streams; the saved reply after a reload.
         const reply = (turn.codex_turn_id ? agentText[turn.codex_turn_id] : undefined) || turn.reply || undefined;
         const live = turn.codex_turn_id ? activity[turn.codex_turn_id] : undefined;
         const running = turn.status === "running" || turn.status === "queued";
+        if (code) {
+          return (
+            <div className="turn code-turn" key={turn.id}>
+              <div className="code-user">{turn.input}</div>
+              {turn.attachments && turn.attachments.length > 0 && (
+                <div className="turn-files">
+                  {turn.attachments.map((file) => (
+                    <FileChip key={file.id} id={file.id} name={file.filename} contentType={file.content_type} />
+                  ))}
+                </div>
+              )}
+              {live && live.steps.length > 0 && <CodeActivity activity={live} />}
+              {reply && (
+                <>
+                  <div className="code-reply">
+                    <MarkdownView source={reply} />
+                  </div>
+                  {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} />}
+                </>
+              )}
+              {(turn.status !== "completed" && turn.status !== "running" && turn.status !== "queued") || turn.error ? (
+                <div className={`turn-status status-${turn.status}`}>
+                  {tx(turn.status)}
+                  {turn.error && <span className="turn-error"> · {turn.error}</span>}
+                </div>
+              ) : null}
+            </div>
+          );
+        }
         return (
           <div className="turn" key={turn.id}>
             <div className="bubble user">{turn.input}</div>

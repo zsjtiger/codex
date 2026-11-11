@@ -502,3 +502,19 @@ addChinese({
   "Commit message": "提交说明",
   "Could not commit.": "无法提交。",
 });
+
+// Code sessions: activity summaries.
+addChinese({
+  "Ran": "运行了",
+  "commands": "个命令",
+  "command": "个命令",
+  "Changed": "修改了",
+  "files": "个文件",
+  "file": "个文件",
+  "Searched": "搜索了",
+  "times": "次",
+  "time": "次",
+  "Used": "使用了",
+  "tools": "个工具",
+  "tool": "个工具",
+});

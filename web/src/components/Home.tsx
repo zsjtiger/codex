@@ -135,6 +135,7 @@ export function Home(props: HomeProps) {
           {thread.repo_id && <CommitBar threadId={thread.id} branch={thread.work_branch} onError={onError} />}
           <div className="thread-scroll">
             <Conversation
+              variant={thread.repo_id ? "code" : "chat"}
               turns={turns}
               agentText={agentText}
               activity={activity}

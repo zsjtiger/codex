@@ -845,3 +845,18 @@ html.desktop .app { height: 100vh; margin-top: 0; }
   .code-repo { flex-direction: column; align-items: flex-start; }
   .commit-form { flex-direction: column; }
 }
+
+/* Code sessions: plain reply text, grouped activity rows, and no bubbles. */
+.code-conversation { gap: 28px; max-width: 800px; margin: 0 auto; width: 100%; padding: 8px 24px 24px; box-sizing: border-box; }
+.code-turn { gap: 12px; }
+.code-user { align-self: flex-end; max-width: 85%; background: var(--hover); border-radius: 14px; padding: 10px 14px; font-size: 15px; line-height: 1.55; white-space: pre-wrap; }
+.code-reply { font-size: 16px; line-height: 1.7; color: var(--text); overflow-wrap: anywhere; }
+.code-reply .markdown { font-size: 16px; line-height: 1.7; }
+.code-reply .markdown code { font-size: 14px; background: var(--hover); border-radius: 6px; padding: 2px 6px; }
+.code-reply .markdown pre { border-radius: 10px; font-size: 13px; }
+.code-activity { display: flex; flex-direction: column; gap: 4px; }
+.code-activity-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 4px 0; border: none; background: none; color: var(--text-muted); font: inherit; font-size: 15px; cursor: pointer; text-align: left; }
+.code-activity-toggle:hover { color: var(--text); }
+.code-activity-body { margin: 4px 0 8px; padding: 0 0 0 12px; list-style: none; border-left: 1px solid var(--border); color: var(--text-muted); font-size: 14px; }
+.code-activity-body li { padding: 3px 0; overflow-wrap: anywhere; }
+.code-activity-body code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
