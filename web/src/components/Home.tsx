@@ -3,6 +3,7 @@ import { artifacts as artifactApi, skills as skillApi, threads as threadApi } fr
 import type { Artifact, Environment, Project, Skill, Thread, Turn, User } from "../api/types";
 import type { Activity, Approval, SendOptions } from "../state/useCodex";
 import type { ToolUse } from "../state/toolUses";
+import type { WorkLog } from "../state/work";
 import { Composer } from "./Composer";
 import { usePreview } from "./Preview";
 import { Conversation } from "./Conversation";
@@ -21,6 +22,7 @@ interface HomeProps {
   toolUses: Record<string, ToolUse[]>;
   environment: Environment | null;
   activity: Record<string, Activity>;
+  work: Record<string, WorkLog>;
   approvals: Approval[];
   sending: boolean;
   projects: Project[];
@@ -41,7 +43,7 @@ interface HomeProps {
 
 export function Home(props: HomeProps) {
   const { t } = useI18n();
-  const { user, workspaceId, thread, threads, onOpenThread, turns, agentText, toolUses, activity, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
+  const { user, workspaceId, thread, threads, onOpenThread, turns, agentText, toolUses, activity, work, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
   const pending = approvals.filter((a) => a.threadId === thread?.id);
   const runningTurn = [...turns].reverse().find((t) => (t.status === "running" || t.status === "queued") && t.codex_turn_id);
   const [recent, setRecent] = useState<Artifact[]>([]);
@@ -139,6 +141,7 @@ export function Home(props: HomeProps) {
               turns={turns}
               agentText={agentText}
               activity={activity}
+              work={work}
               approvals={pending}
               onAnswer={onAnswer}
               onFeedback={onFeedback}

@@ -5,6 +5,7 @@ import type { Environment, LoginResponse, Thread, Turn, User, Workspace } from "
 import { type Frame, GatewaySocket, type SocketStatus } from "../realtime/socket";
 import { tx } from "../i18n";
 import { type ToolUse, mergeToolUses, toolUseFromItem } from "./toolUses";
+import { WORK_METHODS, applyWorkEvent, type WorkLog } from "./work";
 
 export interface SendOptions {
   model?: string;
@@ -47,6 +48,7 @@ export function useCodex() {
   const [toolUses, setToolUses] = useState<Record<string, ToolUse[]>>({});
   // Live thinking for each codex turn: reasoning text and the steps (searches, commands, ...) so far.
   const [activity, setActivity] = useState<Record<string, Activity>>({});
+  const [work, setWork] = useState<Record<string, WorkLog>>({});
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [socketStatus, setSocketStatus] = useState<SocketStatus>("closed");
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +90,11 @@ export function useCodex() {
               const current = prev[turnKey] ?? { reasoning: "", steps: [] };
               return { ...prev, [turnKey]: { ...current, reasoning: current.reasoning + delta } };
             });
+          }
+          // Commands, their output, file diffs and the plan, for the code view.
+          if (WORK_METHODS.has(method)) {
+            const key = params.turnId as string | undefined;
+            if (key) setWork((prev) => ({ ...prev, [key]: applyWorkEvent(prev[key], method, params) }));
           }
           const step = method === "item/started" || method === "item/completed" ? toolUseFromItem(params.item) : null;
           if (turnKey && step) {
@@ -320,6 +327,7 @@ export function useCodex() {
     agentText,
     toolUses,
     activity,
+    work,
     approvals,
     socketStatus,
     error,

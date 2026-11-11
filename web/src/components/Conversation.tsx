@@ -4,6 +4,7 @@ import { CopyIcon, RetryIcon, SpeakIcon, ThumbDownIcon, ThumbUpIcon } from "./ic
 import type { Activity, Approval } from "../state/useCodex";
 import { ChevronIcon } from "./icons";
 import type { ToolUse } from "../state/toolUses";
+import type { WorkFile, WorkItem, WorkLog } from "../state/work";
 import { usePreview } from "./Preview";
 import { attachments as attachmentApi } from "../api/resources";
 import { isDesktop, saveFileAs, showInFolder } from "../desktop";
@@ -278,6 +279,126 @@ function ThinkingBlock({ activity, running }: { activity: Activity; running: boo
   );
 }
 
+const FILE_VERB: Record<string, string> = { add: "Added", delete: "Deleted", update: "Edited" };
+
+/** Added and removed line counts of a unified diff. */
+function diffCounts(diff: string): { added: number; removed: number } {
+  let added = 0;
+  let removed = 0;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("+") && !line.startsWith("+++")) added++;
+    else if (line.startsWith("-") && !line.startsWith("---")) removed++;
+  }
+  return { added, removed };
+}
+
+function diffLineClass(line: string): string {
+  if (line.startsWith("@@")) return "diff-hunk";
+  if (line.startsWith("+") && !line.startsWith("+++")) return "diff-add-line";
+  if (line.startsWith("-") && !line.startsWith("---")) return "diff-del-line";
+  return "";
+}
+
+function StatusMark({ status }: { status: string }) {
+  const label =
+    status === "completed" ? tx("Done")
+    : status === "failed" ? tx("Failed")
+    : status === "declined" ? tx("Declined")
+    : tx("Running…");
+  return <span className={`work-status work-status-${status}`} role="img" aria-label={label} title={label} />;
+}
+
+/** A shell command. Open while it runs so its output streams in; the exit code shows when it ends. */
+function CommandRow({ item }: { item: WorkItem }) {
+  const running = item.status === "inProgress";
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="work-item">
+      <button type="button" className="work-head" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <StatusMark status={item.status} />
+        <code className="work-command">$ {item.command}</code>
+        <ChevronIcon className={open ? "thinking-chevron thinking-chevron-open" : "thinking-chevron"} />
+      </button>
+      {open && (
+        <>
+          {item.output && <pre className="work-output">{item.output}</pre>}
+          {!running && item.exitCode !== null && (
+            <div className="work-foot muted small">
+              {tx("exit")} {item.exitCode}
+              {item.durationMs !== null ? ` · ${(item.durationMs / 1000).toFixed(1)}s` : ""}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** One changed file. Expanding shows its diff, with added and removed lines coloured. */
+function FileChangeRow({ file, status }: { file: WorkFile; status: string }) {
+  const [open, setOpen] = useState(false);
+  const counts = diffCounts(file.diff);
+  return (
+    <div className="work-item">
+      <button type="button" className="work-head" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <StatusMark status={status} />
+        <span className="work-verb">{tx(FILE_VERB[file.kind] ?? "Edited")}</span>
+        <code className="work-path">{file.path}</code>
+        <span className="work-counts">
+          <span className="diff-add-count">+{counts.added}</span> <span className="diff-del-count">−{counts.removed}</span>
+        </span>
+        <ChevronIcon className={open ? "thinking-chevron thinking-chevron-open" : "thinking-chevron"} />
+      </button>
+      {open && (
+        <pre className="work-diff">
+          {file.diff
+            ? file.diff.split("\n").map((line, index) => (
+                <span key={index} className={diffLineClass(line)}>
+                  {line}
+                  {"\n"}
+                </span>
+              ))
+            : tx("No text diff.")}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+/** The plan Codex is working from, with each step's state. */
+function PlanView({ plan }: { plan: NonNullable<WorkLog["plan"]> }) {
+  const mark = (status: string) => (status === "completed" ? "✓" : status === "inProgress" ? "◐" : "○");
+  return (
+    <div className="work-plan">
+      <div className="muted small">{tx("Plan")}</div>
+      {plan.explanation && <div className="muted small">{plan.explanation}</div>}
+      <ul>
+        {plan.steps.map((step, index) => (
+          <li key={index} className={`plan-${step.status}`}>
+            <span className="plan-mark" aria-hidden="true">{mark(step.status)}</span>
+            <span>{step.step}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Everything Codex has done in a turn so far, in order: commands, file changes and the plan. */
+function WorkLogView({ log }: { log: WorkLog }) {
+  return (
+    <div className="work-log">
+      {log.plan && log.plan.steps.length > 0 && <PlanView plan={log.plan} />}
+      {log.order.map((id) => {
+        const item = log.items[id];
+        if (!item) return null;
+        if (item.type === "command") return <CommandRow key={id} item={item} />;
+        return item.files.map((file, index) => <FileChangeRow key={`${id}-${index}`} file={file} status={item.status} />);
+      })}
+    </div>
+  );
+}
+
 type StepGroup = { kind: string; steps: Activity["steps"] };
 
 /** Steps of the same kind, in the order they first happened. */
@@ -341,13 +462,15 @@ interface ConversationProps {
   turns: Turn[];
   agentText: Record<string, string>;
   activity: Record<string, Activity>;
+  /** What Codex is doing per turn: commands with live output, file diffs and the plan. */
+  work?: Record<string, WorkLog>;
   approvals: Approval[];
   onAnswer: (approval: Approval, result: unknown) => void;
   onFeedback: (turnId: string, rating: "up" | "down" | null) => void;
   onRegenerate: (input: string) => void;
 }
 
-export function Conversation({ variant = "chat", turns, agentText, activity, approvals, onAnswer, onFeedback, onRegenerate }: ConversationProps) {
+export function Conversation({ variant = "chat", turns, agentText, activity, work = {}, approvals, onAnswer, onFeedback, onRegenerate }: ConversationProps) {
   const code = variant === "code";
   return (
     <div className={code ? "conversation code-conversation" : "conversation"}>
@@ -357,6 +480,13 @@ export function Conversation({ variant = "chat", turns, agentText, activity, app
         const live = turn.codex_turn_id ? activity[turn.codex_turn_id] : undefined;
         const running = turn.status === "running" || turn.status === "queued";
         if (code) {
+          const workLog = turn.codex_turn_id ? work[turn.codex_turn_id] : undefined;
+          const hasWork = Boolean(workLog && workLog.order.length > 0);
+          // Commands and file changes show in the work log; the rest stays as grouped rows.
+          const otherSteps = live && {
+            ...live,
+            steps: hasWork ? live.steps.filter((step) => step.kind !== "Command" && step.kind !== "File change") : live.steps,
+          };
           return (
             <div className="turn code-turn" key={turn.id}>
               <div className="code-user">{turn.input}</div>
@@ -367,7 +497,8 @@ export function Conversation({ variant = "chat", turns, agentText, activity, app
                   ))}
                 </div>
               )}
-              {live && live.steps.length > 0 && <CodeActivity activity={live} />}
+              {workLog && (workLog.order.length > 0 || workLog.plan) && <WorkLogView log={workLog} />}
+              {otherSteps && otherSteps.steps.length > 0 && <CodeActivity activity={otherSteps} />}
               {reply && (
                 <>
                   <div className="code-reply">

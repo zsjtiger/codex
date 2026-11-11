@@ -860,3 +860,28 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 .code-activity-body { margin: 4px 0 8px; padding: 0 0 0 12px; list-style: none; border-left: 1px solid var(--border); color: var(--text-muted); font-size: 14px; }
 .code-activity-body li { padding: 3px 0; overflow-wrap: anywhere; }
 .code-activity-body code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+
+/* Code sessions: what Codex is doing while it writes code. */
+.work-log { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.work-item { border-left: 2px solid var(--border); padding-left: 10px; }
+.work-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 0; border: none; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.work-head:hover { background: var(--hover); border-radius: 6px; }
+.work-command, .work-path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.work-verb { color: var(--text-muted); flex: none; }
+.work-counts { margin-left: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; flex: none; }
+.diff-add-count, .diff-add-line { color: #15803d; }
+.diff-del-count, .diff-del-line { color: #b91c1c; }
+.diff-hunk { color: var(--text-muted); }
+.work-status { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--text-muted); }
+.work-status-inProgress { background: var(--accent); animation: work-pulse 1.2s ease-in-out infinite; }
+.work-status-completed { background: #15803d; }
+.work-status-failed, .work-status-declined { background: #b91c1c; }
+@keyframes work-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+.work-output, .work-diff { margin: 4px 0 8px; padding: 10px 12px; max-height: 240px; overflow: auto; background: var(--hover); border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+.work-foot { padding-bottom: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.work-plan { padding: 6px 0 8px; }
+.work-plan ul { list-style: none; margin: 4px 0 0; padding: 0; }
+.work-plan li { display: flex; gap: 8px; padding: 2px 0; }
+.plan-mark { width: 14px; flex: none; color: var(--text-muted); }
+.plan-completed { color: var(--text-muted); text-decoration: line-through; }
+.plan-inProgress .plan-mark { color: var(--accent); }

@@ -518,3 +518,16 @@ addChinese({
   "tools": "个工具",
   "tool": "个工具",
 });
+
+// Code sessions: live work log.
+addChinese({
+  "Plan": "计划",
+  "Running…": "运行中…",
+  "Failed": "失败",
+  "Declined": "已拒绝",
+  "exit": "退出码",
+  "Added": "新增",
+  "Deleted": "删除",
+  "Edited": "修改",
+  "No text diff.": "没有文本差异。",
+});
