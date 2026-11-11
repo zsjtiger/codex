@@ -257,6 +257,37 @@ async fn delete(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[derive(Deserialize, Default)]
+pub struct SignInRequest {
+    /// The runtime to sign in on. Defaults to the workspace's first environment.
+    environment_id: Option<Uuid>,
+}
+
+/// The host of a runtime endpoint such as `ws://10.0.0.5:4500`. Local runtimes have no endpoint
+/// and run on this host.
+pub fn endpoint_host(endpoint: Option<&str>) -> String {
+    let Some(endpoint) = endpoint else {
+        return "127.0.0.1".to_string();
+    };
+    let rest = endpoint.split_once("://").map_or(endpoint, |(_, rest)| rest);
+    let authority = rest.split(['/', '?']).next().unwrap_or_default();
+    let authority = authority.rsplit('@').next().unwrap_or_default();
+    if let Some(bracketed) = authority.strip_prefix('[') {
+        return bracketed.split(']').next().unwrap_or_default().to_string();
+    }
+    authority.rsplit_once(':').map_or(authority, |(host, _)| host).to_string()
+}
+
+/// The OAuth `state` value in an authorization URL.
+fn state_of(authorization_url: &str) -> Option<String> {
+    let query = authorization_url.split_once('?')?.1;
+    query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("state="))
+        .map(|value| value.split('#').next().unwrap_or_default().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 #[derive(Serialize)]
 pub struct SignInStarted {
     pub authorization_url: String,
@@ -269,7 +300,9 @@ async fn sign_in(
     State(state): State<AppState>,
     user: CurrentUser,
     Path(id): Path<Uuid>,
+    body: Option<Json<SignInRequest>>,
 ) -> Result<Json<SignInStarted>, ApiError> {
+    let requested = body.map(|Json(req)| req.environment_id).unwrap_or_default();
     if public_base().is_none() {
         return Err(ApiError::BadRequest(
             "sign-in needs GATEWAY_PUBLIC_URL to be set on the gateway".to_string(),
@@ -281,12 +314,15 @@ async fn sign_in(
         .await?;
     require_role(&state.pool, workspace_id, user.id, Role::Member).await?;
     let (environment_id, endpoint): (Uuid, Option<String>) = sqlx::query_as(
-        "SELECT id, endpoint FROM environments WHERE workspace_id = $1 ORDER BY created_at LIMIT 1",
+        "SELECT id, endpoint FROM environments
+         WHERE workspace_id = $1 AND ($2::uuid IS NULL OR id = $2)
+         ORDER BY created_at LIMIT 1",
     )
     .bind(workspace_id)
+    .bind(requested)
     .fetch_optional(&state.pool)
     .await?
-    .ok_or_else(|| ApiError::BadRequest("the workspace has no environment to sign in on".to_string()))?;
+    .ok_or_else(|| ApiError::BadRequest("the workspace has no matching environment to sign in on".to_string()))?;
 
     let lease = state
         .runtime
@@ -323,6 +359,19 @@ async fn sign_in(
         .ok_or(ApiError::Internal)?
         .to_string();
     let login_id = login.get("loginId").and_then(serde_json::Value::as_str).map(str::to_string);
+
+    // The provider's redirect carries the state; remember which runtime's listener it belongs to.
+    if let Some(oauth_state) = state_of(&authorization_url) {
+        sqlx::query(
+            "INSERT INTO oauth_callbacks (state, target_host, target_port) VALUES ($1, $2, $3)
+             ON CONFLICT (state) DO UPDATE SET target_host = EXCLUDED.target_host, target_port = EXCLUDED.target_port",
+        )
+        .bind(oauth_state)
+        .bind(endpoint_host(endpoint.as_deref()))
+        .bind(i32::from(callback_port()))
+        .execute(&state.pool)
+        .await?;
+    }
 
     sqlx::query("UPDATE connectors SET oauth_state = 'pending', oauth_error = NULL, oauth_updated_at = now() WHERE id = $1")
         .bind(id)
@@ -370,9 +419,10 @@ async fn sign_in(
     Ok(Json(SignInStarted { authorization_url }))
 }
 
-/// Receives the provider's redirect and hands it to codex's local listener, which checks the
-/// state and exchanges the code. Only the path and query are forwarded.
-async fn oauth_callback(uri: axum::http::Uri) -> Response {
+/// Receives the provider's redirect and hands it to codex's OAuth listener on the runtime that
+/// started the sign-in, which checks the state and exchanges the code. Only the path and query
+/// are forwarded.
+async fn oauth_callback(State(state): State<AppState>, uri: axum::http::Uri) -> Response {
     // Inside the nested API router the URI has lost the `/api/v1` prefix, but codex's listener
     // matches the full path from the redirect URI, so the prefix is put back.
     let relative = uri.path_and_query().map(|value| value.as_str().to_string()).unwrap_or_default();
@@ -380,7 +430,20 @@ async fn oauth_callback(uri: axum::http::Uri) -> Response {
         return (StatusCode::BAD_REQUEST, "not a sign-in callback").into_response();
     }
     let target = format!("/api/v1{relative}");
-    match forward_to_listener(&target).await {
+    let query = uri.query().unwrap_or_default();
+    let oauth_state = query.split('&').find_map(|pair| pair.strip_prefix("state=")).unwrap_or_default();
+    let destination: Option<(String, i32)> = sqlx::query_as(
+        "DELETE FROM oauth_callbacks WHERE state = $1 RETURNING target_host, target_port",
+    )
+    .bind(oauth_state)
+    .fetch_optional(&state.pool)
+    .await
+    .ok()
+    .flatten();
+    let Some((host, port)) = destination else {
+        return (StatusCode::BAD_REQUEST, "This sign-in is unknown or has already finished. Start it again from Baize.").into_response();
+    };
+    match forward_to_listener(&host, port as u16, &target).await {
         Ok((status, body)) => (
             StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
             [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
@@ -394,15 +457,15 @@ async fn oauth_callback(uri: axum::http::Uri) -> Response {
     }
 }
 
-/// A plain HTTP GET to codex's listener on this host.
-async fn forward_to_listener(target: &str) -> Result<(u16, Vec<u8>), String> {
+/// A plain HTTP GET to codex's OAuth listener on the runtime host.
+async fn forward_to_listener(host: &str, port: u16, target: &str) -> Result<(u16, Vec<u8>), String> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let address = format!("127.0.0.1:{}", callback_port());
+    let address = if host.contains(':') { format!("[{host}]:{port}") } else { format!("{host}:{port}") };
     let mut stream = tokio::time::timeout(std::time::Duration::from_secs(5), tokio::net::TcpStream::connect(&address))
         .await
         .map_err(|_| "connect timed out".to_string())?
         .map_err(|err| err.to_string())?;
-    let request = format!("GET {target} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+    let request = format!("GET {target} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
     stream.write_all(request.as_bytes()).await.map_err(|err| err.to_string())?;
     let mut raw = Vec::new();
     tokio::time::timeout(std::time::Duration::from_secs(20), stream.read_to_end(&mut raw))
@@ -417,4 +480,26 @@ async fn forward_to_listener(target: &str) -> Result<(u16, Vec<u8>), String> {
         .and_then(|code| code.parse::<u16>().ok())
         .ok_or("malformed status line")?;
     Ok((status, raw[split + 4..].to_vec()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{endpoint_host, state_of};
+
+    #[test]
+    fn endpoint_host_reads_the_runtime_address() {
+        assert_eq!(endpoint_host(None), "127.0.0.1");
+        assert_eq!(endpoint_host(Some("ws://10.0.0.5:4500")), "10.0.0.5");
+        assert_eq!(endpoint_host(Some("wss://runtime.example.com/path")), "runtime.example.com");
+        assert_eq!(endpoint_host(Some("ws://[2001:db8::1]:4500")), "2001:db8::1");
+        assert_eq!(endpoint_host(Some("ws://user@host.example:9/")), "host.example");
+    }
+
+    #[test]
+    fn state_is_read_from_the_authorization_url() {
+        let url = "https://idp.example/authorize?response_type=code&client_id=c&state=abc_DEF-1&redirect_uri=x";
+        assert_eq!(state_of(url).as_deref(), Some("abc_DEF-1"));
+        assert_eq!(state_of("https://idp.example/authorize?client_id=c"), None);
+        assert_eq!(state_of("not a url"), None);
+    }
 }
