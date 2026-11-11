@@ -1,3 +1,4 @@
+import { wsUrl } from "../api/config";
 // Browser end of the gateway's /ws channel.
 //
 // Each connection needs a fresh single-use ticket, so `start` fetches one every time.
@@ -26,8 +27,7 @@ export class GatewaySocket {
     const { ticket } = await api<{ ticket: string }>("POST", "/ws-tickets");
     if (this.stopped) return;
 
-    const scheme = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${scheme}://${location.host}/ws?ticket=${encodeURIComponent(ticket)}`);
+    const ws = new WebSocket(wsUrl(ticket));
     this.ws = ws;
     ws.onopen = () => {
       this.onStatus("open");

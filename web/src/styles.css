@@ -695,3 +695,8 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .import-panel textarea { width: 100%; box-sizing: border-box; border-radius: 8px; border: 1px solid var(--border); padding: 8px; font: inherit; font-size: 14px; background: var(--surface); color: var(--text); }
 .import-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .import-actions .primary { padding: 6px 12px; font-size: 13px; border-radius: 8px; }
+
+/* Desktop first run: pick the gateway. */
+.gateway-setup { display: grid; place-items: center; min-height: 100vh; padding: 24px; box-sizing: border-box; }
+.gateway-setup-card { width: min(440px, 100%); }
+.gateway-setup-card h1 { font-size: 22px; font-weight: 500; margin: 0 0 6px; }

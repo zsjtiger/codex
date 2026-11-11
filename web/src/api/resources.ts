@@ -1,3 +1,4 @@
+import { apiUrl } from "./config";
 // Typed calls for the gateway's resource routes. Each function maps to one route in
 // gateway/src/routes; see the gateway README for the full list.
 
@@ -70,7 +71,7 @@ export const memory = {
     const headers: Record<string, string> = { "content-type": typeof input === "string" ? "text/plain" : contentTypeOf(input) };
     const token = getToken();
     if (token) headers.authorization = `Bearer ${token}`;
-    const response = await fetch("/api/v1/me/memory/import", { method: "POST", headers, body: input });
+    const response = await fetch(apiUrl("/me/memory/import"), { method: "POST", headers, body: input });
     if (!response.ok) {
       const data = await response.json().catch(() => null);
       throw new ApiError(response.status, data?.error?.code ?? "error", data?.error?.message ?? response.statusText);
@@ -140,7 +141,7 @@ async function fetchBytes(path: string): Promise<ArrayBuffer> {
   const headers: Record<string, string> = {};
   const token = getToken();
   if (token) headers.authorization = `Bearer ${token}`;
-  const response = await fetch(`/api/v1${path}`, { headers });
+  const response = await fetch(apiUrl(path), { headers });
   if (!response.ok) {
     const data = await response.json().catch(() => null);
     throw new ApiError(response.status, data?.error?.code ?? "error", data?.error?.message ?? response.statusText);
@@ -166,7 +167,7 @@ export const attachments = {
     const headers: Record<string, string> = { "content-type": contentTypeOf(file) };
     const token = getToken();
     if (token) headers.authorization = `Bearer ${token}`;
-    const response = await fetch(`/api/v1/attachments/${id}/content`, { method: "PUT", headers, body: file });
+    const response = await fetch(apiUrl(`/attachments/${id}/content`), { method: "PUT", headers, body: file });
     if (!response.ok) {
       const data = await response.json().catch(() => null);
       throw new ApiError(response.status, data?.error?.code ?? "error", data?.error?.message ?? response.statusText);

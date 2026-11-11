@@ -222,3 +222,11 @@ tests/runtime.rs    turn dispatch against a mock app-server
 tests/realtime.rs   WebSocket, approvals, ordering, recovery, local launch
 tests/common/       mock app-server and helpers
 ```
+
+## Cross-origin access (desktop app)
+
+Front ends served from another origin, such as the Tauri desktop app, call the gateway
+across origins. List their origins in `GATEWAY_ALLOWED_ORIGINS` as a comma-separated list,
+for example `GATEWAY_ALLOWED_ORIGINS=tauri://localhost,http://tauri.localhost`. Allowed
+origins get CORS headers, and WebSocket upgrades from other origins are refused. The web
+app served by the gateway needs no entry.

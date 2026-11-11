@@ -1,3 +1,4 @@
+import { apiUrl } from "./config";
 // Thin fetch wrapper for the gateway. The session token lives in localStorage so a
 // reload keeps the user signed in. This is per-browser convenience, not a secret store.
 
@@ -42,7 +43,7 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
   if (body !== undefined) headers["content-type"] = "application/json";
   if (token) headers.authorization = `Bearer ${token}`;
 
-  const response = await fetch(`/api/v1${path}`, {
+  const response = await fetch(apiUrl(path), {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),

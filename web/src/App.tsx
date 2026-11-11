@@ -10,6 +10,8 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { ScheduledPage } from "./components/ScheduledPage";
 import { SearchDialog } from "./components/SearchDialog";
 import { SignIn } from "./components/SignIn";
+import { GatewaySetup, isDesktopApp } from "./components/GatewaySetup";
+import { gatewayBase } from "./api/config";
 import { type NavLabel, Sidebar, type View } from "./components/Sidebar";
 import { SidebarIcon } from "./components/icons";
 import { useCodex } from "./state/useCodex";
@@ -69,6 +71,7 @@ export function App() {
     }
   };
 
+  if (isDesktopApp() && !gatewayBase()) return <GatewaySetup />;
   if (codex.checking) return <div className="loading">Loading…</div>;
   if (!codex.user || !workspaceId) return <SignIn onSignIn={codex.signIn} onRegister={codex.register} />;
 

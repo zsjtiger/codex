@@ -58,9 +58,14 @@ struct Subscription {
 
 pub async fn ws_handler(
     State(state): State<AppState>,
+    axum::Extension(origins): axum::Extension<std::sync::Arc<Vec<String>>>,
+    headers: axum::http::HeaderMap,
     Query(query): Query<WsQuery>,
     ws: WebSocketUpgrade,
 ) -> Result<Response, ApiError> {
+    if !crate::cors::websocket_origin_allowed(&headers, &origins) {
+        return Err(ApiError::Forbidden);
+    }
     let ticket = query.ticket.ok_or(ApiError::Unauthorized)?;
     let user = state
         .tickets

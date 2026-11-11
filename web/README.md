@@ -38,3 +38,18 @@ src/
 └── styles.css    all styles, with light and dark theme variables
 ```
 
+
+## Desktop app (Tauri)
+
+`src-tauri/` wraps this web build in a native window. The app asks for the gateway
+address on first launch and keeps it in its local storage. To use a gateway from a build
+instead, set `VITE_GATEWAY_URL`. The gateway must list the desktop origin in
+`GATEWAY_ALLOWED_ORIGINS`, for example `tauri://localhost,http://tauri.localhost`.
+
+```sh
+npm run tauri -- dev            # desktop window on the Vite dev server
+npm run tauri -- build --debug  # debug build without installers
+```
+
+Linux builds need the WebKitGTK packages (`libwebkit2gtk-4.1-dev`, `libgtk-3-dev`,
+`librsvg2-dev`, `libayatana-appindicator3-dev`).
