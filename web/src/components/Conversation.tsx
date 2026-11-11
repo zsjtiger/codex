@@ -23,6 +23,31 @@ interface ReplyActionsProps {
   onRegenerate: (input: string) => void;
 }
 
+/**
+ * Copies text to the clipboard. The async clipboard API exists only in secure contexts (https,
+ * localhost and the desktop app), so plain-http pages fall back to a hidden text area.
+ */
+async function copyText(text: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fall through to the copy command below.
+    }
+  }
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.select();
+  const ok = document.execCommand("copy");
+  document.body.removeChild(area);
+  return ok;
+}
+
 /** Copy, read aloud, rate, and regenerate for an assistant reply. */
 function ReplyActions({ turn, reply, onFeedback, onRegenerate }: ReplyActionsProps) {
   const [copied, setCopied] = useState(false);
@@ -32,14 +57,12 @@ function ReplyActions({ turn, reply, onFeedback, onRegenerate }: ReplyActionsPro
   useEffect(() => () => window.speechSynthesis?.cancel(), []);
 
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(reply);
+    const done = () => {
       setCopied(true);
       window.clearTimeout(timer.current);
       timer.current = window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard access can be refused; the reply stays selectable.
-    }
+    };
+    if (await copyText(reply)) done();
   };
 
   const speak = () => {
@@ -65,9 +88,11 @@ function ReplyActions({ turn, reply, onFeedback, onRegenerate }: ReplyActionsPro
       <button type="button" className="reply-action" onClick={copy} aria-label={copied ? "Copied" : "Copy"} title={copied ? "Copied" : "Copy"}>
         <CopyIcon />
       </button>
+      {"speechSynthesis" in window && (
       <button type="button" className={`reply-action ${speaking ? "reply-action-on" : ""}`} onClick={speak} aria-pressed={speaking} aria-label="Read aloud" title="Read aloud">
         <SpeakIcon />
       </button>
+      )}
       <button type="button" className={`reply-action ${turn.feedback === "up" ? "reply-action-on" : ""}`} onClick={() => rate("up")} aria-pressed={turn.feedback === "up"} aria-label="Good response" title="Good response">
         <ThumbUpIcon />
       </button>

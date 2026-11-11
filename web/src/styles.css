@@ -741,3 +741,22 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .project-page-search { width: 100%; margin: 12px 0 0; }
 .search-snippet { white-space: normal; }
 .mic-button-on { color: #b3261e; background: var(--hover); }
+
+/* Phone width: Settings fills the screen; its navigation scrolls sideways and rows wrap. */
+@media (max-width: 640px) {
+  .settings-dialog { width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; border: none; }
+  .settings-body { grid-template-columns: minmax(0, 1fr); }
+  .settings-nav {
+    flex-direction: row; align-items: center; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--border); padding: 8px 12px; gap: 4px; white-space: nowrap;
+  }
+  .settings-nav-heading { display: none; }
+  .settings-nav-item { flex: none; padding: 6px 10px; }
+  .settings-content { padding: 16px; }
+  .settings-row { flex-wrap: wrap; gap: 12px; }
+  .settings-row > button, .settings-row > select, .settings-row > input { flex: none; }
+  .settings-grow { min-width: 0; width: 100%; }
+  .memory-add { flex-wrap: wrap; }
+  .memory-add input { min-width: 0; flex: 1 1 180px; }
+  .member-row { flex-wrap: wrap; }
+  .member-who { flex: 1 1 160px; }
+}

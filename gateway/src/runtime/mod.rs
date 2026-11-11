@@ -222,14 +222,29 @@ impl Runtime {
         let log_err = log
             .try_clone()
             .map_err(|err| RuntimeError::Launch(err.to_string()))?;
-        let mut child = tokio::process::Command::new(&local.codex_bin)
+        let mut command = tokio::process::Command::new(&local.codex_bin);
+        command
             .args(["app-server", "--listen", &url])
             .env("CODEX_HOME", &home)
             .current_dir(&workspace)
             .stdin(Stdio::null())
             .stdout(Stdio::from(log))
             .stderr(Stdio::from(log_err))
-            .kill_on_drop(true)
+            .kill_on_drop(true);
+        // If the gateway dies without dropping its children (a signal, a crash), the app-server
+        // would otherwise keep running and hold its threads, so the next gateway could not resume
+        // them. On Linux the kernel kills the child when the gateway exits.
+        #[cfg(target_os = "linux")]
+        // SAFETY: the closure only makes the prctl system call, which is async-signal-safe.
+        unsafe {
+            command.pre_exec(|| {
+                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let mut child = command
             .spawn()
             .map_err(|err| RuntimeError::Launch(format!("{}: {err}", local.codex_bin.display())))?;
 
