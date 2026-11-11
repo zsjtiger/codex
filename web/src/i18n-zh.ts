@@ -340,3 +340,8 @@ addChinese({
   "text": "文本",
   "File": "文件",
 });
+
+// Scheduled run history.
+addChinese({
+  "Needed approval, skipped": "需要审批，已跳过",
+});

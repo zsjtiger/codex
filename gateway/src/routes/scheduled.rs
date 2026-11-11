@@ -89,6 +89,9 @@ pub struct RunView {
     pub started_at: DateTime<Utc>,
     /// Title of the chat the run started, if it still exists.
     pub title: Option<String>,
+    /// True when the run asked to run a command or change a file and was declined, because no
+    /// one was there to approve it.
+    pub needs_approval: bool,
 }
 
 /// The latest runs of a task, newest first.
@@ -104,7 +107,10 @@ async fn list_runs(
             .await?;
     require_role(&state.pool, workspace_id, user.id, Role::Member).await?;
     let runs = sqlx::query_as::<_, RunView>(
-        "SELECT r.id, r.thread_id, r.started_at, t.title
+        "SELECT r.id, r.thread_id, r.started_at, t.title,
+                EXISTS (SELECT 1 FROM audit_logs a
+                        WHERE a.action = 'approval.declined_unattended'
+                          AND a.target_type = 'thread' AND a.target_id = r.thread_id::text) AS needs_approval
          FROM scheduled_task_runs r LEFT JOIN threads t ON t.id = r.thread_id
          WHERE r.task_id = $1
          ORDER BY r.started_at DESC

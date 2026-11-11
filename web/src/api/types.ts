@@ -131,6 +131,8 @@ export interface ScheduledRun {
   thread_id: string | null;
   started_at: string;
   title: string | null;
+  /** A command or file change was declined because no one was there to approve it. */
+  needs_approval: boolean;
 }
 
 export interface ScheduledTask {

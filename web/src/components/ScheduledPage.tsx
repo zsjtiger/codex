@@ -283,7 +283,9 @@ export function ScheduledPage({ workspaceId, projects, canEdit, onOpenThread, on
                     onClick={() => run.thread_id && onOpenThread(run.thread_id)}
                   >
                     <span>{whenLabel(run.started_at)}</span>
-                    <span className="muted small">{run.title ? "Open chat" : "Chat removed"}</span>
+                    <span className="muted small">
+                      {run.needs_approval ? tx("Needed approval, skipped") : run.title ? tx("Open chat") : tx("Chat removed")}
+                    </span>
                   </button>
                 ))}
               </div>

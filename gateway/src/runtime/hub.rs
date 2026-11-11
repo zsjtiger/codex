@@ -144,7 +144,12 @@ impl Hub {
             .unwrap_or_default();
         let thread_id = match self.gateway_thread(pool, codex_thread_id).await {
             Some(thread_id) if self.has_subscribers(thread_id) => thread_id,
-            _ => {
+            found => {
+                // Nobody is watching this chat (for example a scheduled run), so the request is declined
+                // at once. The decline is recorded so the task's history can say what was skipped.
+                if let Some(thread_id) = found {
+                    record_unattended_decline(pool, thread_id, &request.method).await;
+                }
                 decline(connection, &request.id, &request.method).await;
                 return;
             }
@@ -235,6 +240,22 @@ impl Hub {
 }
 
 /// The answer that means "do not run this" for each request kind. Unknown kinds get an error.
+/// Writes an audit entry for an approval that was declined because no one was watching the chat.
+async fn record_unattended_decline(pool: &PgPool, thread_id: Uuid, method: &str) {
+    let result = sqlx::query(
+        "INSERT INTO audit_logs (workspace_id, actor_id, action, target_type, target_id, metadata)
+         SELECT workspace_id, NULL, 'approval.declined_unattended', 'thread', id::text, $2
+         FROM threads WHERE id = $1",
+    )
+    .bind(thread_id)
+    .bind(json!({ "method": method }))
+    .execute(pool)
+    .await;
+    if let Err(err) = result {
+        tracing::warn!(%err, "could not record a declined approval");
+    }
+}
+
 async fn decline(connection: &RpcConnection, id: &Value, method: &str) {
     let result = match method {
         "item/commandExecution/requestApproval" | "item/fileChange/requestApproval" => {
