@@ -25,6 +25,7 @@ use crate::{
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/workspaces/{id}/repos", get(list).post(link))
+        .route("/workspaces/{id}/repos/probe", post(probe_remote))
         .route("/repos/{id}", axum::routing::delete(unlink))
         .route("/threads/{id}/commit", post(commit))
 }
@@ -35,16 +36,18 @@ pub struct RepoView {
     pub full_name: String,
     pub default_branch: String,
     pub has_token: bool,
+    /// True for a repository added by its git address rather than through GitHub.
+    pub by_url: bool,
     pub created_at: DateTime<Utc>,
     pub last_synced_at: Option<DateTime<Utc>>,
 }
 
-const REPO_COLUMNS: &str = "id, full_name, default_branch, (token_ciphertext IS NOT NULL) AS has_token, created_at, last_synced_at";
+const REPO_COLUMNS: &str = "id, full_name, default_branch, (token_ciphertext IS NOT NULL) AS has_token, (clone_url IS NOT NULL) AS by_url, created_at, last_synced_at";
 
 fn code_error(err: CodeError) -> ApiError {
     match err {
         CodeError::NothingToCommit | CodeError::NoCheckout => ApiError::Conflict(err.to_string()),
-        CodeError::Git(message) => ApiError::BadRequest(message),
+        CodeError::Git(message) | CodeError::Remote(message) => ApiError::BadRequest(message),
         CodeError::NoKey | CodeError::NotCodeThread => ApiError::BadRequest(err.to_string()),
         CodeError::Crypto | CodeError::Io(_) | CodeError::Db(_) => {
             tracing::error!(%err, "code workspace failure");
@@ -66,8 +69,27 @@ async fn list(
 
 #[derive(Deserialize)]
 pub struct LinkRepo {
-    full_name: String,
+    /// A GitHub repository as `owner/name`, reached through the person's connected account.
+    full_name: Option<String>,
+    /// Or any git remote, by its address (https), with the credentials it needs.
+    url: Option<String>,
+    username: Option<String>,
+    token: Option<String>,
     default_branch: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct ProbeRequest {
+    url: String,
+    username: Option<String>,
+    token: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ProbeResult {
+    name: Option<String>,
+    default_branch: Option<String>,
+    branches: Vec<String>,
 }
 
 /// `owner/name`, using only the characters GitHub allows in those parts.
@@ -98,27 +120,60 @@ async fn link(
     Path(id): Path<Uuid>,
     Json(req): Json<LinkRepo>,
 ) -> Result<(StatusCode, Json<RepoView>), ApiError> {
-    // Any member can link a repository they can reach; GitHub decides what that is, per person.
+    // Any member can link a repository they can reach; the host decides what that is, per credential.
     require_role(&state.pool, id, user.id, Role::Member).await?;
-    let full_name = req.full_name.trim().to_string();
-    if !valid_full_name(&full_name) {
-        return Err(ApiError::BadRequest("use the form owner/repository".to_string()));
-    }
-    let default_branch = req.default_branch.map(|b| b.trim().to_string()).filter(|b| !b.is_empty()).unwrap_or_else(|| "main".to_string());
+    let default_branch = req
+        .default_branch
+        .as_deref()
+        .map(str::trim)
+        .filter(|b| !b.is_empty())
+        .unwrap_or("main")
+        .to_string();
     if !valid_branch(&default_branch) {
         return Err(ApiError::BadRequest("the branch name is not valid".to_string()));
     }
-    // The repository is cloned with the linking person's GitHub token, so it stays as reachable as they are.
-    let account: Option<(Vec<u8>, Vec<u8>)> =
-        sqlx::query_as("SELECT token_ciphertext, token_nonce FROM github_accounts WHERE user_id = $1")
-            .bind(user.id)
-            .fetch_optional(&state.pool)
-            .await?;
-    let (ciphertext, nonce) = match account {
+
+    let url = req.url.as_deref().map(str::trim).filter(|u| !u.is_empty()).map(str::to_string);
+    let (full_name, clone_url, username, stored, auth) = match url {
+        Some(url) => {
+            // Any git remote: its own address and token, stored encrypted on the repository.
+            code::validate_url(&state.code, &url).map_err(code_error)?;
+            let full_name = code::name_from_url(&url)
+                .ok_or_else(|| ApiError::BadRequest("the address does not name a repository".to_string()))?;
+            let username = req
+                .username
+                .as_deref()
+                .map(str::trim)
+                .filter(|u| !u.is_empty())
+                .unwrap_or(code::TOKEN_USERNAME)
+                .to_string();
+            let secret = req.token.as_deref().map(str::trim).filter(|t| !t.is_empty()).map(str::to_string);
+            let stored = match &secret {
+                Some(secret) => Some(code::encrypt_token(&state.code, secret).map_err(code_error)?),
+                None => None,
+            };
+            let auth = secret.map(|secret| code::Auth { username: username.clone(), secret });
+            (full_name, Some(url), Some(username), stored, auth)
+        }
+        None => {
+            // A GitHub repository: cloned with the linking person's connected account.
+            let full_name = req.full_name.as_deref().map(str::trim).unwrap_or("").to_string();
+            if !valid_full_name(&full_name) {
+                return Err(ApiError::BadRequest("use the form owner/repository, or give a git address".to_string()));
+            }
+            let account: Option<(Vec<u8>, Vec<u8>)> =
+                sqlx::query_as("SELECT token_ciphertext, token_nonce FROM github_accounts WHERE user_id = $1")
+                    .bind(user.id)
+                    .fetch_optional(&state.pool)
+                    .await?;
+            let auth = code::user_auth(&state.code, &state.pool, user.id).await.map_err(code_error)?;
+            (full_name, None, None, account, auth)
+        }
+    };
+    let (ciphertext, nonce) = match stored {
         Some((ciphertext, nonce)) => (Some(ciphertext), Some(nonce)),
         None => (None, None),
     };
-    let token = code::user_token(&state.code, &state.pool, user.id).await.map_err(code_error)?;
 
     let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM code_repos WHERE workspace_id = $1 AND full_name = $2)")
         .bind(id)
@@ -130,8 +185,8 @@ async fn link(
     }
 
     let repo_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO code_repos (workspace_id, full_name, default_branch, token_ciphertext, token_nonce, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+        "INSERT INTO code_repos (workspace_id, full_name, default_branch, token_ciphertext, token_nonce, created_by, clone_url, username)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
     )
     .bind(id)
     .bind(&full_name)
@@ -139,13 +194,15 @@ async fn link(
     .bind(ciphertext)
     .bind(nonce)
     .bind(user.id)
+    .bind(&clone_url)
+    .bind(&username)
     .fetch_one(&state.pool)
     .await?;
 
-    // Clone now, so a wrong name or a bad token fails here rather than in a session.
-    if let Err(err) = code::sync(&state.code, repo_id, &full_name, token.as_deref()).await {
+    // Clone now, so a wrong address or a bad token fails here rather than in a session.
+    if let Err(err) = code::sync(&state.code, repo_id, &full_name, clone_url.as_deref(), auth.as_ref()).await {
         sqlx::query("DELETE FROM code_repos WHERE id = $1").bind(repo_id).execute(&state.pool).await?;
-        let hint = if token.is_none() { " (connect GitHub to use a private repository)" } else { "" };
+        let hint = if auth.is_none() && clone_url.is_none() { " (connect GitHub to use a private repository)" } else { "" };
         return Err(ApiError::BadRequest(format!("could not clone {full_name}: {err}{hint}")));
     }
     sqlx::query("UPDATE code_repos SET last_synced_at = now() WHERE id = $1")
@@ -157,6 +214,38 @@ async fn link(
     let sql = format!("SELECT {REPO_COLUMNS} FROM code_repos WHERE id = $1");
     let view = sqlx::query_as::<_, RepoView>(&sql).bind(repo_id).fetch_one(&state.pool).await?;
     Ok((StatusCode::CREATED, Json(view)))
+}
+
+/// Reads a git address's branches before anything is added. Nothing is stored; the token is used once.
+async fn probe_remote(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<ProbeRequest>,
+) -> Result<Json<ProbeResult>, ApiError> {
+    require_role(&state.pool, id, user.id, Role::Member).await?;
+    let url = req.url.trim().to_string();
+    let auth = req
+        .token
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(|secret| code::Auth {
+            username: req
+                .username
+                .as_deref()
+                .map(str::trim)
+                .filter(|u| !u.is_empty())
+                .unwrap_or(code::TOKEN_USERNAME)
+                .to_string(),
+            secret: secret.to_string(),
+        });
+    let found = code::probe(&state.code, &url, auth.as_ref()).await.map_err(code_error)?;
+    Ok(Json(ProbeResult {
+        name: code::name_from_url(&url),
+        default_branch: found.default_branch,
+        branches: found.branches,
+    }))
 }
 
 async fn unlink(
@@ -212,8 +301,8 @@ async fn commit(
     let author_name: String = display_name.chars().filter(|c| !matches!(c, '<' | '>' | '\n' | '\r')).take(100).collect();
     let author_email = format!("{}@users.noreply.baize", user.id);
 
-    let author_token = code::user_token(&state.code, &state.pool, user.id).await.map_err(code_error)?;
-    let (sha, branch) = code::commit_and_push(&state.code, &state.pool, repo_id, id, &message, &author_name, &author_email, author_token.as_deref())
+    let author_auth = code::user_auth(&state.code, &state.pool, user.id).await.map_err(code_error)?;
+    let (sha, branch) = code::commit_and_push(&state.code, &state.pool, repo_id, id, &message, &author_name, &author_email, author_auth)
         .await
         .map_err(code_error)?;
     audit::record(&state.pool, workspace_id, user.id, "thread.committed", "thread", id, json!({ "branch": branch, "sha": sha })).await?;

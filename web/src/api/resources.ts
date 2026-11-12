@@ -153,8 +153,13 @@ export const environments = {
 /** GitHub repositories linked to the workspace for code sessions. */
 export const repos = {
   list: (ws: string) => api<CodeRepo[]>("GET", `/workspaces/${ws}/repos`),
-  link: (ws: string, body: { full_name: string; default_branch?: string }) =>
-    api<CodeRepo>("POST", `/workspaces/${ws}/repos`, body),
+  link: (
+    ws: string,
+    body: { full_name?: string; url?: string; username?: string; token?: string; default_branch?: string },
+  ) => api<CodeRepo>("POST", `/workspaces/${ws}/repos`, body),
+  /** Reads a git address's branches; nothing is stored. */
+  probe: (ws: string, body: { url: string; username?: string; token?: string }) =>
+    api<{ name: string | null; default_branch: string | null; branches: string[] }>("POST", `/workspaces/${ws}/repos/probe`, body),
   remove: (id: string) => api<void>("DELETE", `/repos/${id}`),
 };
 

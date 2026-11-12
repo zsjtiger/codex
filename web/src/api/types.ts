@@ -274,6 +274,8 @@ export interface CodeRepo {
   full_name: string;
   default_branch: string;
   has_token: boolean;
+  /** True for a repository added by its git address. */
+  by_url: boolean;
   created_at: string;
   last_synced_at: string | null;
 }

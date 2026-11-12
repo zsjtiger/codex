@@ -171,9 +171,9 @@ async fn auto_commit_turn(state: &AppState, turn: &TurnRow, repo_id: Uuid) {
     };
     let result: Result<(String, String), crate::code::CodeError> = async {
         let (name, email) = crate::code::author(&state.pool, user_id).await?;
-        let token = crate::code::user_token(&state.code, &state.pool, user_id).await?;
+        let auth = crate::code::user_auth(&state.code, &state.pool, user_id).await?;
         let message = crate::code::auto_message(&turn.input);
-        crate::code::commit_and_push(&state.code, &state.pool, repo_id, turn.thread_id, &message, &name, &email, token.as_deref()).await
+        crate::code::commit_and_push(&state.code, &state.pool, repo_id, turn.thread_id, &message, &name, &email, auth).await
     }
     .await;
     match result {
@@ -216,13 +216,13 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
     // A code thread runs in its own checkout of the repository.
     let cwd = match turn.repo_id {
         Some(repo_id) => {
-            let author_token = match turn.created_by {
-                Some(user_id) => crate::code::user_token(&state.code, &state.pool, user_id)
+            let author_auth = match turn.created_by {
+                Some(user_id) => crate::code::user_auth(&state.code, &state.pool, user_id)
                     .await
                     .map_err(|err| DispatchError::Protocol(err.to_string()))?,
                 None => None,
             };
-            let path = crate::code::checkout(&state.code, &state.pool, repo_id, turn.thread_id, author_token.as_deref())
+            let path = crate::code::checkout(&state.code, &state.pool, repo_id, turn.thread_id, author_auth)
                 .await
                 .map_err(|err| DispatchError::Protocol(err.to_string()))?;
             Some(path.to_string_lossy().to_string())

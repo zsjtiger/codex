@@ -58,6 +58,7 @@ impl Config {
                 code.key = Some(crate::code::parse_key(&key)?);
             }
             let env = |name: &str| std::env::var(name).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+            code.allow_file_remotes = env("GATEWAY_ALLOW_FILE_REMOTES").is_some_and(|v| v == "1" || v == "true");
             code.github.client_id = env("GATEWAY_GITHUB_CLIENT_ID");
             code.github.client_secret = env("GATEWAY_GITHUB_CLIENT_SECRET");
             if let Some(base) = env("GATEWAY_GITHUB_OAUTH_BASE") {

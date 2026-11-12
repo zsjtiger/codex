@@ -154,9 +154,10 @@ async fn disconnect(State(state): State<AppState>, user: CurrentUser) -> Result<
 
 /// The token of the person asking, or a conflict telling them to connect first.
 async fn own_token(state: &AppState, user: &CurrentUser) -> Result<String, ApiError> {
-    code::user_token(&state.code, &state.pool, user.id)
+    code::user_auth(&state.code, &state.pool, user.id)
         .await
         .map_err(|_| ApiError::Internal)?
+        .map(|auth| auth.secret)
         .ok_or_else(|| ApiError::Conflict("connect a GitHub account first".to_string()))
 }
 

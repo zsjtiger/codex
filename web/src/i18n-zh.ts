@@ -580,3 +580,13 @@ addChinese({
   "All": "全部",
   "Code": "代码",
 });
+
+// Code page: git remotes by address.
+addChinese({
+  "Add a git repository by address": "按地址添加 Git 仓库",
+  "GitLab, Gitea or any git server. Use an https address and an access token that can read and write.": "GitLab、Gitea 或其他 Git 服务。使用 https 地址，以及可读写的访问令牌。",
+  "User name (optional)": "用户名（可选）",
+  "User name": "用户名",
+  "Check address": "检查地址",
+  "Git address": "Git 地址",
+});

@@ -33,6 +33,11 @@ export function CodePage({ workspaceId, environmentId, onOpenThread, onError }: 
   const [branches, setBranches] = useState<string[]>([]);
   const [branch, setBranch] = useState("");
   const [busy, setBusy] = useState(false);
+  const [gitUrl, setGitUrl] = useState("");
+  const [gitUser, setGitUser] = useState("");
+  const [gitToken, setGitToken] = useState("");
+  const [probed, setProbed] = useState<{ name: string | null; default_branch: string | null; branches: string[] } | null>(null);
+  const [gitBranch, setGitBranch] = useState("");
 
   const loadLinked = () =>
     repoApi
@@ -113,6 +118,45 @@ export function CodePage({ workspaceId, environmentId, onOpenThread, onError }: 
     try {
       await repoApi.link(workspaceId, { full_name: picked.full_name, default_branch: branch || picked.default_branch });
       setPicked(null);
+      await loadLinked();
+    } catch (err) {
+      onError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const checkAddress = async () => {
+    setBusy(true);
+    try {
+      const found = await repoApi.probe(workspaceId, {
+        url: gitUrl.trim(),
+        username: gitUser.trim() || undefined,
+        token: gitToken.trim() || undefined,
+      });
+      setProbed(found);
+      setGitBranch(found.default_branch ?? found.branches[0] ?? "main");
+    } catch (err) {
+      setProbed(null);
+      onError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addByAddress = async () => {
+    setBusy(true);
+    try {
+      await repoApi.link(workspaceId, {
+        url: gitUrl.trim(),
+        username: gitUser.trim() || undefined,
+        token: gitToken.trim() || undefined,
+        default_branch: gitBranch,
+      });
+      setGitUrl("");
+      setGitUser("");
+      setGitToken("");
+      setProbed(null);
       await loadLinked();
     } catch (err) {
       onError(errorText(err));
@@ -218,6 +262,62 @@ export function CodePage({ workspaceId, environmentId, onOpenThread, onError }: 
         </section>
       )}
 
+      <section className="code-picker">
+        <h2>{tx("Add a git repository by address")}</h2>
+        <p className="muted small">
+          {tx("GitLab, Gitea or any git server. Use an https address and an access token that can read and write.")}
+        </p>
+        <input
+          className="code-search"
+          placeholder="https://gitlab.example.com/group/project.git"
+          value={gitUrl}
+          onChange={(event) => {
+            setGitUrl(event.target.value);
+            setProbed(null);
+          }}
+          aria-label={tx("Git address")}
+        />
+        <input
+          className="code-search"
+          placeholder={tx("User name (optional)")}
+          value={gitUser}
+          onChange={(event) => setGitUser(event.target.value)}
+          aria-label={tx("User name")}
+        />
+        <input
+          className="code-search"
+          type="password"
+          autoComplete="off"
+          placeholder={tx("Access token")}
+          value={gitToken}
+          onChange={(event) => setGitToken(event.target.value)}
+          aria-label={tx("Access token")}
+        />
+        <div>
+          <button className="primary" onClick={() => void checkAddress()} disabled={busy || !gitUrl.trim()}>
+            {tx("Check address")}
+          </button>
+        </div>
+        {probed && (
+          <div className="code-add">
+            <strong>{probed.name ?? gitUrl.trim()}</strong>
+            <label className="muted small">
+              {tx("Branch")}{" "}
+              <select value={gitBranch} onChange={(event) => setGitBranch(event.target.value)} aria-label={tx("Branch")}>
+                {(probed.branches.length > 0 ? probed.branches : [gitBranch]).map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button className="primary" onClick={() => void addByAddress()} disabled={busy}>
+              {tx("Add repository")}
+            </button>
+          </div>
+        )}
+      </section>
+
       <section className="code-linked">
         <h2>{tx("Repositories")}</h2>
         {linked === null && <p className="muted small">{tx("Loading…")}</p>}
@@ -227,7 +327,7 @@ export function CodePage({ workspaceId, environmentId, onOpenThread, onError }: 
             <div className="code-repo-info">
               <strong>{repo.full_name}</strong>
               <span className="muted small">
-                {repo.default_branch} · {repo.has_token ? tx("Uses your GitHub account") : tx("Public")}
+                {repo.default_branch} · {repo.by_url ? tx("Git address") : repo.has_token ? tx("Uses your GitHub account") : tx("Public")}
               </span>
             </div>
             <div className="code-repo-actions">

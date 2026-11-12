@@ -43,6 +43,7 @@ fn code_config(root: &PathBuf) -> CodeConfig {
         git_base: format!("file://{}", root.display()),
         key: Some([7u8; 32]),
         github: Default::default(),
+        allow_file_remotes: false,
     }
 }
 
