@@ -157,7 +157,10 @@ async fn own_token(state: &AppState, user: &CurrentUser) -> Result<String, ApiEr
     code::user_auth(&state.code, &state.pool, user.id)
         .await
         .map_err(|_| ApiError::Internal)?
-        .map(|auth| auth.secret)
+        .and_then(|auth| match auth {
+            code::Auth::Token { secret, .. } => Some(secret),
+            code::Auth::Ssh { .. } => None,
+        })
         .ok_or_else(|| ApiError::Conflict("connect a GitHub account first".to_string()))
 }
 

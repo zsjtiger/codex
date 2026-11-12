@@ -33,6 +33,7 @@ export function CodePage({ workspaceId, environmentId, onOpenThread, onError }: 
   const [branches, setBranches] = useState<string[]>([]);
   const [branch, setBranch] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sshUrl, setSshUrl] = useState("");
   const [gitUrl, setGitUrl] = useState("");
   const [gitUser, setGitUser] = useState("");
   const [gitToken, setGitToken] = useState("");
@@ -157,6 +158,19 @@ export function CodePage({ workspaceId, environmentId, onOpenThread, onError }: 
       setGitUser("");
       setGitToken("");
       setProbed(null);
+      await loadLinked();
+    } catch (err) {
+      onError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addSsh = async () => {
+    setBusy(true);
+    try {
+      await repoApi.addSsh(workspaceId, { url: sshUrl.trim() });
+      setSshUrl("");
       await loadLinked();
     } catch (err) {
       onError(errorText(err));
@@ -318,29 +332,124 @@ export function CodePage({ workspaceId, environmentId, onOpenThread, onError }: 
         )}
       </section>
 
+      <section className="code-picker">
+        <h2>{tx("Add an SSH repository")}</h2>
+        <p className="muted small">
+          {tx("For addresses like git@host:group/project.git. Baize makes a key for the repository; you add its public key to the server as a deploy key.")}
+        </p>
+        <input
+          className="code-search"
+          placeholder="git@gitlab.example.com:group/project.git"
+          value={sshUrl}
+          onChange={(event) => setSshUrl(event.target.value)}
+          aria-label={tx("SSH address")}
+        />
+        <div>
+          <button className="primary" onClick={() => void addSsh()} disabled={busy || !sshUrl.trim()}>
+            {tx("Add SSH repository")}
+          </button>
+        </div>
+      </section>
+
       <section className="code-linked">
         <h2>{tx("Repositories")}</h2>
         {linked === null && <p className="muted small">{tx("Loading…")}</p>}
         {linked?.length === 0 && <p className="muted">{tx("No repositories added yet.")}</p>}
-        {linked?.map((repo) => (
-          <div className="code-repo" key={repo.id}>
-            <div className="code-repo-info">
-              <strong>{repo.full_name}</strong>
-              <span className="muted small">
-                {repo.default_branch} · {repo.by_url ? tx("Git address") : repo.has_token ? tx("Uses your GitHub account") : tx("Public")}
-              </span>
+        {linked?.map((repo) =>
+          repo.ready ? (
+            <div className="code-repo" key={repo.id}>
+              <div className="code-repo-info">
+                <strong>{repo.full_name}</strong>
+                <span className="muted small">
+                  {repo.default_branch} · {repo.by_url ? tx("Git address") : repo.has_token ? tx("Uses your GitHub account") : tx("Public")}
+                </span>
+              </div>
+              <div className="code-repo-actions">
+                <button className="primary" onClick={() => void startSession(repo)}>
+                  {tx("New session")}
+                </button>
+                <button className="link-button" onClick={() => void remove(repo)}>
+                  {tx("Remove")}
+                </button>
+              </div>
             </div>
-            <div className="code-repo-actions">
-              <button className="primary" onClick={() => void startSession(repo)}>
-                {tx("New session")}
-              </button>
-              <button className="link-button" onClick={() => void remove(repo)}>
-                {tx("Remove")}
-              </button>
-            </div>
-          </div>
-        ))}
+          ) : (
+            <PendingRepo key={repo.id} repo={repo} onChanged={() => void loadLinked()} onRemove={() => void remove(repo)} onError={onError} />
+          ),
+        )}
       </section>
     </main>
+  );
+}
+
+/** An SSH repository that is not ready: its public key to add as a deploy key, and the fingerprint to confirm. */
+function PendingRepo({
+  repo,
+  onChanged,
+  onRemove,
+  onError,
+}: {
+  repo: CodeRepo;
+  onChanged: () => void;
+  onRemove: () => void;
+  onError: (message: string) => void;
+}) {
+  const [fingerprint, setFingerprint] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const check = async () => {
+    setBusy(true);
+    try {
+      await repoApi.check(repo.id, fingerprint.trim());
+      onChanged();
+    } catch (err) {
+      onError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="code-pending">
+      <div className="code-repo">
+        <div className="code-repo-info">
+          <strong>{repo.full_name}</strong>
+          <span className="muted small">{tx("Waiting for the deploy key")}</span>
+        </div>
+        <div className="code-repo-actions">
+          <button className="link-button" onClick={onRemove}>
+            {tx("Remove")}
+          </button>
+        </div>
+      </div>
+      <p className="muted small">
+        {tx("Add this public key to the repository on the server as a deploy key with write access:")}
+      </p>
+      <pre className="code-key">{repo.public_key}</pre>
+      <button
+        className="link-button"
+        onClick={() => {
+          void navigator.clipboard?.writeText(repo.public_key ?? "");
+          setCopied(true);
+        }}
+      >
+        {copied ? tx("Copied") : tx("Copy key")}
+      </button>
+      <p className="muted small">{tx("Confirm the server's fingerprint, which must match:")}</p>
+      <pre className="code-key">{repo.host_fingerprint}</pre>
+      <div className="code-add">
+        <input
+          className="code-search"
+          placeholder={tx("Paste the fingerprint to confirm")}
+          value={fingerprint}
+          onChange={(event) => setFingerprint(event.target.value)}
+          aria-label={tx("Fingerprint")}
+        />
+        <button className="primary" onClick={() => void check()} disabled={busy || !fingerprint.trim()}>
+          {tx("Check repository")}
+        </button>
+      </div>
+    </div>
   );
 }

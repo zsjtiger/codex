@@ -26,6 +26,8 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/workspaces/{id}/repos", get(list).post(link))
         .route("/workspaces/{id}/repos/probe", post(probe_remote))
+        .route("/workspaces/{id}/repos/ssh", post(add_ssh))
+        .route("/repos/{id}/check", post(check_ssh))
         .route("/repos/{id}", axum::routing::delete(unlink))
         .route("/threads/{id}/commit", post(commit))
 }
@@ -38,11 +40,19 @@ pub struct RepoView {
     pub has_token: bool,
     /// True for a repository added by its git address rather than through GitHub.
     pub by_url: bool,
+    /// False until an SSH repository's deploy key has cloned it. Sessions start only when true.
+    pub ready: bool,
+    /// The public key to add as a deploy key, for an SSH repository that is not ready yet.
+    pub public_key: Option<String>,
+    /// The pinned host key fingerprint, to confirm against the server, while the repository is not ready.
+    pub host_fingerprint: Option<String>,
     pub created_at: DateTime<Utc>,
     pub last_synced_at: Option<DateTime<Utc>>,
 }
 
-const REPO_COLUMNS: &str = "id, full_name, default_branch, (token_ciphertext IS NOT NULL) AS has_token, (clone_url IS NOT NULL) AS by_url, created_at, last_synced_at";
+const REPO_COLUMNS: &str = "id, full_name, default_branch, (token_ciphertext IS NOT NULL) AS has_token, (clone_url IS NOT NULL) AS by_url, ready, \
+                            CASE WHEN ready THEN NULL ELSE ssh_public_key END AS public_key, \
+                            CASE WHEN ready THEN NULL ELSE ssh_fingerprint END AS host_fingerprint, created_at, last_synced_at";
 
 fn code_error(err: CodeError) -> ApiError {
     match err {
@@ -135,6 +145,9 @@ async fn link(
 
     let url = req.url.as_deref().map(str::trim).filter(|u| !u.is_empty()).map(str::to_string);
     let (full_name, clone_url, username, stored, auth) = match url {
+        Some(url) if code::is_ssh(&url) => {
+            return Err(ApiError::BadRequest("an SSH address is added with a deploy key; use the SSH option".to_string()));
+        }
         Some(url) => {
             // Any git remote: its own address and token, stored encrypted on the repository.
             code::validate_url(&state.code, &url).map_err(code_error)?;
@@ -152,7 +165,7 @@ async fn link(
                 Some(secret) => Some(code::encrypt_token(&state.code, secret).map_err(code_error)?),
                 None => None,
             };
-            let auth = secret.map(|secret| code::Auth { username: username.clone(), secret });
+            let auth = secret.map(|secret| code::Auth::Token { username: username.clone(), secret });
             (full_name, Some(url), Some(username), stored, auth)
         }
         None => {
@@ -230,7 +243,7 @@ async fn probe_remote(
         .as_deref()
         .map(str::trim)
         .filter(|t| !t.is_empty())
-        .map(|secret| code::Auth {
+        .map(|secret| code::Auth::Token {
             username: req
                 .username
                 .as_deref()
@@ -246,6 +259,125 @@ async fn probe_remote(
         default_branch: found.default_branch,
         branches: found.branches,
     }))
+}
+
+#[derive(Deserialize)]
+pub struct SshRequest {
+    url: String,
+    default_branch: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SshCreated {
+    repo: RepoView,
+    /// The server's host key fingerprints. The person confirms them before the repository is checked.
+    host_fingerprints: String,
+}
+
+/// Adds an SSH repository. The gateway makes its key and pins the server's host key; the repository
+/// stays not ready until the public key is a deploy key and the fingerprint is confirmed.
+async fn add_ssh(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<SshRequest>,
+) -> Result<(StatusCode, Json<SshCreated>), ApiError> {
+    require_role(&state.pool, id, user.id, Role::Member).await?;
+    let url = req.url.trim().to_string();
+    if !code::is_ssh(&url) {
+        return Err(ApiError::BadRequest("use an SSH address like git@host:group/project.git".to_string()));
+    }
+    code::validate_url(&state.code, &url).map_err(code_error)?;
+    let full_name = code::name_from_url(&url)
+        .ok_or_else(|| ApiError::BadRequest("the address does not name a repository".to_string()))?;
+    let default_branch = req.default_branch.as_deref().map(str::trim).filter(|b| !b.is_empty()).unwrap_or("main").to_string();
+    if !valid_branch(&default_branch) {
+        return Err(ApiError::BadRequest("the branch name is not valid".to_string()));
+    }
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM code_repos WHERE workspace_id = $1 AND full_name = $2)")
+        .bind(id)
+        .bind(&full_name)
+        .fetch_one(&state.pool)
+        .await?;
+    if exists {
+        return Err(ApiError::Conflict("this repository is already linked".to_string()));
+    }
+
+    let known_hosts = code::scan_host(&url).await.map_err(code_error)?;
+    let fingerprints = code::host_fingerprints(&known_hosts).await.map_err(code_error)?;
+    let (private_key, public_key) = code::generate_key().await.map_err(code_error)?;
+    let (ciphertext, nonce) = code::encrypt_token(&state.code, &private_key).map_err(code_error)?;
+
+    let repo_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO code_repos (workspace_id, full_name, default_branch, clone_url, created_by,
+                                 ssh_key_ciphertext, ssh_key_nonce, ssh_public_key, ssh_known_hosts, ssh_fingerprint, ready)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, false) RETURNING id",
+    )
+    .bind(id)
+    .bind(&full_name)
+    .bind(&default_branch)
+    .bind(&url)
+    .bind(user.id)
+    .bind(ciphertext)
+    .bind(nonce)
+    .bind(&public_key)
+    .bind(&known_hosts)
+    .bind(&fingerprints)
+    .fetch_one(&state.pool)
+    .await?;
+    let sql = format!("SELECT {REPO_COLUMNS} FROM code_repos WHERE id = $1");
+    let repo = sqlx::query_as::<_, RepoView>(&sql).bind(repo_id).fetch_one(&state.pool).await?;
+    Ok((StatusCode::CREATED, Json(SshCreated { repo, host_fingerprints: fingerprints })))
+}
+
+#[derive(Deserialize)]
+pub struct CheckRequest {
+    /// The fingerprint the person confirmed, copied from the value shown when the repository was added.
+    fingerprint: String,
+}
+
+/// Checks an SSH repository once its deploy key is in place: the confirmed fingerprint must match the
+/// pinned host key, then the repository is cloned with its key and marked ready.
+async fn check_ssh(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<CheckRequest>,
+) -> Result<Json<RepoView>, ApiError> {
+    let (workspace_id, ready, expected, full_name, clone_url): (Uuid, bool, Option<String>, String, Option<String>) =
+        sqlx::query_as("SELECT workspace_id, ready, ssh_fingerprint, full_name, clone_url FROM code_repos WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+    require_role(&state.pool, workspace_id, user.id, Role::Member).await?;
+    let sql = format!("SELECT {REPO_COLUMNS} FROM code_repos WHERE id = $1");
+    if ready {
+        return Ok(Json(sqlx::query_as::<_, RepoView>(&sql).bind(id).fetch_one(&state.pool).await?));
+    }
+    let expected = expected.ok_or(ApiError::Internal)?;
+    if req.fingerprint.trim() != expected.trim() {
+        return Err(ApiError::BadRequest("the fingerprint does not match the server; compare it again".to_string()));
+    }
+
+    let auth = code::stored_auth(&state.code, &state.pool, id).await.map_err(code_error)?;
+    let url = clone_url.clone().unwrap_or_default();
+    if let Err(err) = code::sync(&state.code, id, &full_name, clone_url.as_deref(), auth.as_ref()).await {
+        return Err(ApiError::BadRequest(format!(
+            "could not clone {full_name}: {err}. Add the public key shown for this repository as a deploy key with write access, then check again"
+        )));
+    }
+    // The remote's default branch replaces the one given when the repository was added.
+    let default_branch = code::probe(&state.code, &url, auth.as_ref()).await.ok().and_then(|found| found.default_branch);
+    sqlx::query(
+        "UPDATE code_repos SET ready = true, last_synced_at = now(), default_branch = COALESCE($2, default_branch) WHERE id = $1",
+    )
+    .bind(id)
+    .bind(default_branch)
+    .execute(&state.pool)
+    .await?;
+    audit::record(&state.pool, workspace_id, user.id, "repo.linked", "repo", id, json!({ "full_name": full_name })).await?;
+    Ok(Json(sqlx::query_as::<_, RepoView>(&sql).bind(id).fetch_one(&state.pool).await?))
 }
 
 async fn unlink(

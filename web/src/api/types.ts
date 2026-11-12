@@ -276,6 +276,12 @@ export interface CodeRepo {
   has_token: boolean;
   /** True for a repository added by its git address. */
   by_url: boolean;
+  /** False until an SSH repository's deploy key has been checked. */
+  ready: boolean;
+  /** The public key to add as a deploy key, while the repository is not ready. */
+  public_key: string | null;
+  /** The pinned host key fingerprint to confirm, while the repository is not ready. */
+  host_fingerprint: string | null;
   created_at: string;
   last_synced_at: string | null;
 }

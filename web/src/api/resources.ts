@@ -157,6 +157,11 @@ export const repos = {
     ws: string,
     body: { full_name?: string; url?: string; username?: string; token?: string; default_branch?: string },
   ) => api<CodeRepo>("POST", `/workspaces/${ws}/repos`, body),
+  /** Adds an SSH repository: the gateway makes its key and pins the host. Not ready until checked. */
+  addSsh: (ws: string, body: { url: string; default_branch?: string }) =>
+    api<{ repo: CodeRepo; host_fingerprints: string }>("POST", `/workspaces/${ws}/repos/ssh`, body),
+  /** Confirms the host fingerprint, clones with the key, and makes the repository ready. */
+  check: (id: string, fingerprint: string) => api<CodeRepo>("POST", `/repos/${id}/check`, { fingerprint }),
   /** Reads a git address's branches; nothing is stored. */
   probe: (ws: string, body: { url: string; username?: string; token?: string }) =>
     api<{ name: string | null; default_branch: string | null; branches: string[] }>("POST", `/workspaces/${ws}/repos/probe`, body),

@@ -315,6 +315,13 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
     .await
     .map_err(|_| DispatchError::Timeout)??;
 
+    // A code turn is committed before it reads as completed, so the commit exists by then.
+    if outcome.status == "completed" {
+        if let Some(repo_id) = turn.repo_id {
+            auto_commit_turn(state, &turn, repo_id).await;
+        }
+    }
+
     sqlx::query("UPDATE turns SET status = $2, error = $3, completed_at = now() WHERE id = $1")
         .bind(turn_id)
         .bind(&outcome.status)
@@ -333,12 +340,6 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
     .bind(thread_state)
     .execute(&state.pool)
     .await?;
-
-    if outcome.status == "completed" {
-        if let Some(repo_id) = turn.repo_id {
-            auto_commit_turn(state, &turn, repo_id).await;
-        }
-    }
 
     if let Some(dir) = &output_dir {
         outputs::collect(state, turn.workspace_id, turn.thread_id, turn_id, dir).await?;

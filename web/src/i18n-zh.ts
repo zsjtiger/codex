@@ -590,3 +590,19 @@ addChinese({
   "Check address": "检查地址",
   "Git address": "Git 地址",
 });
+
+// Code page: SSH repositories.
+addChinese({
+  "Add an SSH repository": "添加 SSH 仓库",
+  "For addresses like git@host:group/project.git. Baize makes a key for the repository; you add its public key to the server as a deploy key.": "地址形如 git@host:group/project.git。Baize 为这个仓库生成密钥，你需要把公钥添加到服务器上作为部署密钥。",
+  "SSH address": "SSH 地址",
+  "Add SSH repository": "添加 SSH 仓库",
+  "Waiting for the deploy key": "等待部署密钥",
+  "Add this public key to the repository on the server as a deploy key with write access:": "把这个公钥添加到服务器上的仓库，作为具有写权限的部署密钥：",
+  "Copy key": "复制公钥",
+  "Copied": "已复制",
+  "Confirm the server's fingerprint, which must match:": "确认服务器的指纹，必须一致：",
+  "Paste the fingerprint to confirm": "粘贴指纹以确认",
+  "Fingerprint": "指纹",
+  "Check repository": "检查仓库",
+});

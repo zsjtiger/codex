@@ -331,7 +331,7 @@ async fn create_thread(
 
     if let Some(repo_id) = req.repo_id {
         let in_workspace: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM code_repos WHERE id = $1 AND workspace_id = $2)",
+            "SELECT EXISTS (SELECT 1 FROM code_repos WHERE id = $1 AND workspace_id = $2 AND ready)",
         )
         .bind(repo_id)
         .bind(id)
@@ -339,7 +339,7 @@ async fn create_thread(
         .await?;
         if !in_workspace {
             return Err(ApiError::BadRequest(
-                "repository does not belong to this workspace".to_string(),
+                "this repository does not belong to the workspace, or is not ready yet".to_string(),
             ));
         }
     }

@@ -910,3 +910,7 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 .search-attention { position: absolute; top: -2px; right: -3px; width: 7px; height: 7px; border-radius: 50%; background: #2563eb; border: 1px solid var(--surface); }
 .search-row-hint { color: var(--text-muted); font-size: 12px; flex: none; }
 .search-footer kbd { font: inherit; font-size: 11px; padding: 1px 5px; border: 1px solid var(--border); border-radius: 4px; color: var(--text); margin-right: 2px; }
+
+/* Code page: a repository waiting for its deploy key. */
+.code-pending { padding: 10px 0 14px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+.code-key { margin: 0; padding: 10px 12px; background: var(--hover); border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
