@@ -557,3 +557,26 @@ addChinese({
 addChinese({
   "Uses your GitHub account": "使用你的 GitHub 账号",
 });
+
+// Search: types and sections.
+addChinese({
+  "Type": "类型",
+  "Needs attention": "需要关注",
+  "Sessions": "会话",
+  "Projects": "项目",
+  "Scheduled": "定时任务",
+  "Artifacts": "产物",
+  "Change type": "切换类型",
+  "change type": "切换类型",
+  "to move": "移动",
+  "to open": "打开",
+  "to close": "关闭",
+  "Nothing here yet.": "这里还没有内容。",
+  "Recents": "最近",
+  "Actions": "操作",
+  "Chats": "聊天",
+  "Messages": "消息",
+  "Project files": "项目文件",
+  "All": "全部",
+  "Code": "代码",
+});

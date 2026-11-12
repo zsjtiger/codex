@@ -900,3 +900,13 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 .code-add select { margin-left: 4px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); font: inherit; }
 .code-linked { margin-top: 28px; }
 .code-linked h2 { font-size: 15px; font-weight: 500; color: var(--text-muted); margin: 0 0 4px; }
+
+/* Search: type filter, row icons, attention dot, and key hints. */
+.search-types { display: flex; gap: 4px; flex-wrap: wrap; padding: 10px 16px 12px; border-bottom: 1px solid var(--border); }
+.search-type { padding: 6px 12px; border: none; border-radius: 8px; background: transparent; color: var(--text-muted); font: inherit; font-size: 14px; cursor: pointer; }
+.search-type:hover { color: var(--text); }
+.search-type-on { background: var(--hover); color: var(--text); }
+.search-row-icon { position: relative; display: inline-flex; flex: none; color: var(--text-muted); }
+.search-attention { position: absolute; top: -2px; right: -3px; width: 7px; height: 7px; border-radius: 50%; background: #2563eb; border: 1px solid var(--surface); }
+.search-row-hint { color: var(--text-muted); font-size: 12px; flex: none; }
+.search-footer kbd { font: inherit; font-size: 11px; padding: 1px 5px; border: 1px solid var(--border); border-radius: 4px; color: var(--text); margin-right: 2px; }

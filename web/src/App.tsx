@@ -201,6 +201,10 @@ export function App() {
           onOpenArtifacts={() => setView("artifacts")}
           onOpenProjects={() => setView("projects")}
           onOpenProject={openProject}
+          onOpenScheduled={(taskId) => {
+            setScheduledFocus({ projectId: null, taskId });
+            setView("scheduled");
+          }}
           onNew={newChat}
           onClose={() => setSearchOpen(false)}
           onError={onError}
