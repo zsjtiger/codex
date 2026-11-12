@@ -606,3 +606,10 @@ addChinese({
   "Fingerprint": "指纹",
   "Check repository": "检查仓库",
 });
+
+// Code page: repository popover.
+addChinese({
+  "Add": "添加",
+  "Choose a repository": "选择仓库",
+  "Load more repositories": "加载更多仓库",
+});

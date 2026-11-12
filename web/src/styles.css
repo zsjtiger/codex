@@ -914,3 +914,14 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 /* Code page: a repository waiting for its deploy key. */
 .code-pending { padding: 10px 0 14px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
 .code-key { margin: 0; padding: 10px 12px; background: var(--hover); border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Code page: the repository picker as a popover, as in the environment dialog. */
+.repo-picker { position: relative; }
+.repo-picker-head { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; }
+.repo-picker-add { padding: 5px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font: inherit; font-size: 14px; cursor: pointer; }
+.repo-popover { position: absolute; top: 100%; left: 0; right: 0; z-index: 20; margin-top: 6px; padding: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); max-height: 360px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.repo-popover-search { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font: inherit; margin-bottom: 4px; }
+.repo-popover-row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 10px; border: none; border-radius: 6px; background: none; font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+.repo-popover-row:hover, .repo-popover-row[aria-selected="true"] { background: var(--hover); }
+.repo-popover-more { margin-top: 4px; padding: 8px 10px; border: none; background: none; font: inherit; color: var(--text-muted); text-align: left; cursor: pointer; }
+.repo-popover-more:hover { color: var(--text); }

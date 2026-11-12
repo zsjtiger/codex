@@ -1,4 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+/** Repositories shown at a time in the picker; "Load more" adds this many. */
+const PAGE = 8;
 import { github as githubApi, repos as repoApi, threads as threadApi } from "../api/resources";
 import type { CodeRepo, GitHubRepo } from "../api/types";
 import { tx } from "../i18n";
@@ -28,6 +31,9 @@ export function CodePage({ workspaceId, environmentId, onOpenThread, onError }: 
   const [linked, setLinked] = useState<CodeRepo[] | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [shown, setShown] = useState(PAGE);
+  const pickerRef = useRef<HTMLDivElement>(null);
   const [available, setAvailable] = useState<GitHubRepo[] | null>(null);
   const [picked, setPicked] = useState<GitHubRepo | null>(null);
   const [branches, setBranches] = useState<string[]>([]);
@@ -76,6 +82,22 @@ export function CodePage({ workspaceId, environmentId, onOpenThread, onError }: 
     }, 250);
     return () => window.clearTimeout(timer);
   }, [account?.connected, search]);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const onDown = (event: MouseEvent) => {
+      if (!pickerRef.current?.contains(event.target as Node)) setPickerOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPickerOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [pickerOpen]);
 
   const connect = async () => {
     setBusy(true);
@@ -234,26 +256,56 @@ export function CodePage({ workspaceId, environmentId, onOpenThread, onError }: 
               {tx("Disconnect")}
             </button>
           </div>
-          <input
-            className="code-search"
-            placeholder={tx("Search your repositories")}
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            aria-label={tx("Search your repositories")}
-          />
-          <div className="code-available">
-            {available === null && <p className="muted small">{tx("Loading…")}</p>}
-            {available?.length === 0 && <p className="muted small">{tx("No matching repositories.")}</p>}
-            {available?.slice(0, 50).map((repo) => (
+          <div className="repo-picker" ref={pickerRef}>
+            <div className="repo-picker-head">
+              <span className="muted small">{tx("Repositories")}</span>
               <button
-                key={repo.full_name}
-                className={`code-available-row ${picked?.full_name === repo.full_name ? "code-available-on" : ""}`}
-                onClick={() => void pick(repo)}
+                className="repo-picker-add"
+                aria-expanded={pickerOpen}
+                onClick={() => {
+                  setShown(PAGE);
+                  setPickerOpen((open) => !open);
+                }}
               >
-                <span>{repo.full_name}</span>
-                <span className="muted small">{repo.private ? tx("Private") : tx("Public")}</span>
+                + {tx("Add")}
               </button>
-            ))}
+            </div>
+            {pickerOpen && (
+              <div className="repo-popover" role="listbox" aria-label={tx("Choose a repository")}>
+                <input
+                  autoFocus
+                  className="repo-popover-search"
+                  placeholder={tx("Choose a repository")}
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.target.value);
+                    setShown(PAGE);
+                  }}
+                />
+                {available === null && <p className="muted small">{tx("Loading…")}</p>}
+                {available?.length === 0 && <p className="muted small">{tx("No matching repositories.")}</p>}
+                {available?.slice(0, shown).map((repo) => (
+                  <button
+                    key={repo.full_name}
+                    role="option"
+                    aria-selected={picked?.full_name === repo.full_name}
+                    className="repo-popover-row"
+                    onClick={() => {
+                      setPickerOpen(false);
+                      void pick(repo);
+                    }}
+                  >
+                    <span>{repo.full_name}</span>
+                    <span className="muted small">{repo.private ? tx("Private") : ""}</span>
+                  </button>
+                ))}
+                {available !== null && available.length > shown && (
+                  <button className="repo-popover-more" onClick={() => setShown((count) => count + PAGE)}>
+                    {tx("Load more repositories")}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           {picked && (
             <div className="code-add">
