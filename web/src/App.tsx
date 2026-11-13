@@ -142,26 +142,38 @@ export function App() {
   const onError = (message: string) => setNotice(message);
   const failWith = (err: unknown) => onError(err instanceof Error ? err.message : tx("Something went wrong."));
   const canEditOwned = (createdBy: string | null) => isAdmin || createdBy === userId;
+  // On a phone the sidebar covers the page, so it closes once something is chosen from it.
+  const closeOnPhone = () => {
+    if (!window.matchMedia("(min-width: 761px)").matches) setSidebarOpen(false);
+  };
+  const navigate = (next: View) => {
+    setView(next);
+    closeOnPhone();
+  };
   const openThread = (threadId: string) => {
     const thread = codex.threads.find((t) => t.id === threadId);
     if (thread) setMode(thread.repo_id ? "code" : "chat");
     setView("chat");
+    closeOnPhone();
     void codex.selectThread(threadId);
   };
   const newChat = () => {
     if (mode === "code") {
       setView("code");
       codex.newChat();
+      closeOnPhone();
       return;
     }
     setView("chat");
     codex.newChat();
+    closeOnPhone();
   };
   // Chat and code are separate: each mode lists only its own sessions.
   const changeMode = (next: "chat" | "code") => {
     setMode(next);
     setView(next === "code" ? "code" : "chat");
     codex.newChat();
+    closeOnPhone();
   };
   const activeThread = codex.threads.find((t) => t.id === codex.activeId) ?? null;
 
@@ -184,7 +196,7 @@ export function App() {
         onDeleteThread={(id) => codex.deleteThread(id).catch(failWith)}
         onNew={newChat}
         onSearch={() => setSearchOpen(true)}
-        onView={setView}
+        onView={navigate}
         hidden={hidden}
         onHiddenChange={changeHidden}
         user={codex.user}

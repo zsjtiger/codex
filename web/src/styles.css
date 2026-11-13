@@ -925,3 +925,14 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 .repo-popover-row:hover, .repo-popover-row[aria-selected="true"] { background: var(--hover); }
 .repo-popover-more { margin-top: 4px; padding: 8px 10px; border: none; background: none; font: inherit; color: var(--text-muted); text-align: left; cursor: pointer; }
 .repo-popover-more:hover { color: var(--text); }
+
+/* Phones: the search footer hints wrap as whole items. */
+@media (max-width: 600px) {
+  .search-footer { flex-wrap: wrap; gap: 6px 14px; }
+  .search-footer > span { white-space: nowrap; }
+}
+
+/* Phones: banners start right of the sidebar-open button at the top left. */
+@media (max-width: 760px) {
+  .banner { margin-left: 48px; }
+}

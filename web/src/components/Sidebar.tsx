@@ -220,7 +220,7 @@ export function Sidebar(props: SidebarProps) {
                 ) : (
                   <div key={thread.id} className="chat-row-wrap" data-menu-for={thread.id}>
                     <button className={`chat-row ${thread.id === activeId ? "chat-row-active" : ""}`} onClick={() => onSelect(thread.id)} title={thread.title}>
-                      <ChatIcon className="chat-row-icon" />
+                      {thread.repo_id ? <CodeIcon className="chat-row-icon" /> : <ChatIcon className="chat-row-icon" />}
                       <span className="chat-row-title">{thread.title}</span>
                       {thread.state === "running" && <span className="unread-dot" aria-label={tx("running")} />}
                       {thread.state === "failed" && <span className="failed-dot" aria-label={tx("failed")} />}
