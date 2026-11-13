@@ -195,6 +195,8 @@ export const threads = {
     api<Attachment>("POST", `/threads/${id}/save-to-project`, { project_id: projectId }),
   turns: (id: string) => api<Turn[]>("GET", `/threads/${id}/turns?limit=100`),
   toolUses: (id: string) => api<ToolUseRecord[]>("GET", `/threads/${id}/tool-uses?limit=100`),
+  /** The finished commands and file changes of a thread, grouped by Codex turn. */
+  work: (id: string) => api<{ codex_turn_id: string; items: unknown[] }[]>("GET", `/threads/${id}/work`),
   send: (id: string, body: { input: string; model?: string; effort?: string; attachment_ids?: string[]; skill_ids?: string[] }) =>
     api<Turn>("POST", `/threads/${id}/turns`, body),
 };

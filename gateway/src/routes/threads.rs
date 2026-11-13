@@ -226,6 +226,7 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/threads/{id}/turns", get(list_turns).post(create_turn))
         .route("/threads/{id}/tool-uses", get(list_tool_uses))
+        .route("/threads/{id}/work", get(list_work))
         .route("/turns/{id}/interrupt", post(interrupt_turn))
         .route("/turns/{id}/feedback", put(set_feedback))
 }
@@ -287,6 +288,36 @@ async fn list_threads(
         .fetch_all(&state.pool)
         .await?;
     Ok(Json(rows))
+}
+
+#[derive(Serialize)]
+pub struct WorkTurn {
+    codex_turn_id: String,
+    /// The finished commands and file changes of that turn, in the order they happened.
+    items: Vec<serde_json::Value>,
+}
+
+/// The finished commands and file changes of a thread's code turns, grouped by turn.
+async fn list_work(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<WorkTurn>>, ApiError> {
+    let access = thread_access(&state.pool, id).await?;
+    require_role(&state.pool, access.workspace_id, user.id, Role::Member).await?;
+    let rows: Vec<(String, serde_json::Value)> =
+        sqlx::query_as("SELECT codex_turn_id, item FROM turn_work WHERE thread_id = $1 ORDER BY seq")
+            .bind(id)
+            .fetch_all(&state.pool)
+            .await?;
+    let mut turns: Vec<WorkTurn> = Vec::new();
+    for (codex_turn_id, item) in rows {
+        match turns.last_mut() {
+            Some(turn) if turn.codex_turn_id == codex_turn_id => turn.items.push(item),
+            _ => turns.push(WorkTurn { codex_turn_id, items: vec![item] }),
+        }
+    }
+    Ok(Json(turns))
 }
 
 async fn create_thread(

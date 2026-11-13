@@ -68,13 +68,24 @@ export function useCodex() {
   }, []);
 
   const loadTurns = useCallback(async (threadId: string) => {
-    const [list, uses] = await Promise.all([
+    const [list, uses, work] = await Promise.all([
       api<Turn[]>("GET", `/threads/${threadId}/turns?limit=100`),
       threadApi.toolUses(threadId),
+      threadApi.work(threadId),
     ]);
     if (activeRef.current === threadId) setTurns(list);
     const stored = uses.map((use) => ({ id: use.item_id, kind: use.kind, label: use.label }));
     setToolUses((prev) => ({ ...prev, [threadId]: mergeToolUses(stored, prev[threadId] ?? []) }));
+    // Finished work from before a reload. A live log for the same turn is the newer one, so it wins.
+    const saved: Record<string, WorkLog> = {};
+    for (const turn of work) {
+      let log: WorkLog | undefined;
+      for (const item of turn.items) {
+        log = applyWorkEvent(log, "item/completed", { turnId: turn.codex_turn_id, item: item as Record<string, unknown> });
+      }
+      if (log) saved[turn.codex_turn_id] = log;
+    }
+    setWork((prev) => ({ ...saved, ...prev }));
   }, []);
 
   const handleFrame = useCallback(

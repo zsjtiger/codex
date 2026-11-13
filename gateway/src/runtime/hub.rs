@@ -123,6 +123,7 @@ impl Hub {
         }
         if method == "item/completed" {
             record_tool_use(pool, thread_id, params).await;
+            record_work(pool, thread_id, params).await;
             record_reply(pool, thread_id, params).await;
         }
         self.send_to(
@@ -345,6 +346,60 @@ async fn record_reply(pool: &PgPool, thread_id: Uuid, params: &Value) {
 
 /// Stores a completed tool, search, or file action so the conversation can list what Codex used.
 /// Re-delivered items are ignored.
+/// Largest output or diff kept per item, in bytes. The end of a long output is what is kept.
+const WORK_TEXT_LIMIT: usize = 64 * 1024;
+
+fn capped(text: &str, limit: usize) -> String {
+    if text.len() <= limit {
+        return text.to_string();
+    }
+    let mut start = text.len() - limit;
+    while !text.is_char_boundary(start) {
+        start += 1;
+    }
+    format!("[earlier output cut]\n{}", &text[start..])
+}
+
+/// Keeps a finished command or file change, so the code view shows it again after a reload.
+async fn record_work(pool: &PgPool, thread_id: Uuid, params: &Value) {
+    let Some(item) = params.get("item") else {
+        return;
+    };
+    if !matches!(item.get("type").and_then(Value::as_str), Some("commandExecution" | "fileChange")) {
+        return;
+    }
+    let (Some(item_id), Some(codex_turn_id)) = (
+        item.get("id").and_then(Value::as_str),
+        params.get("turnId").and_then(Value::as_str),
+    ) else {
+        return;
+    };
+    let mut item = item.clone();
+    if let Some(output) = item.get("aggregatedOutput").and_then(Value::as_str).map(str::to_string) {
+        item["aggregatedOutput"] = Value::String(capped(&output, WORK_TEXT_LIMIT));
+    }
+    if let Some(changes) = item.get_mut("changes").and_then(Value::as_array_mut) {
+        for change in changes {
+            if let Some(diff) = change.get("diff").and_then(Value::as_str).map(str::to_string) {
+                change["diff"] = Value::String(capped(&diff, WORK_TEXT_LIMIT));
+            }
+        }
+    }
+    let result = sqlx::query(
+        "INSERT INTO turn_work (thread_id, codex_turn_id, item_id, item) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (thread_id, item_id) DO UPDATE SET item = EXCLUDED.item",
+    )
+    .bind(thread_id)
+    .bind(codex_turn_id)
+    .bind(item_id)
+    .bind(item)
+    .execute(pool)
+    .await;
+    if let Err(err) = result {
+        tracing::warn!(%err, "could not record work item");
+    }
+}
+
 async fn record_tool_use(pool: &PgPool, thread_id: Uuid, params: &Value) {
     let Some((item_id, kind, label)) = params.get("item").and_then(tool_use_from_item) else {
         return;
