@@ -613,3 +613,9 @@ addChinese({
   "Choose a repository": "选择仓库",
   "Load more repositories": "加载更多仓库",
 });
+
+// Code page: host key check.
+addChinese({
+  "Check host key": "检查主机密钥",
+  "The server's host key has not changed.": "服务器的主机密钥没有变化。",
+});

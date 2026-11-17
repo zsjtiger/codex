@@ -71,7 +71,14 @@ impl Drop for Sshd {
 
 fn start_sshd(dir: &Path) -> Sshd {
     let port = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    start_sshd_at(dir, port)
+}
+
+/// Starts sshd on `port`, with a new host key. Restarting it this way is how a host key changes.
+fn start_sshd_at(dir: &Path, port: u16) -> Sshd {
     let host_key = dir.join("hostkey");
+    let _ = std::fs::remove_file(&host_key);
+    let _ = std::fs::remove_file(dir.join("hostkey.pub"));
     let status = Command::new("ssh-keygen")
         .args(["-q", "-t", "ed25519", "-N", "", "-f"])
         .arg(&host_key)
@@ -220,5 +227,66 @@ async fn an_ssh_repository_is_added_checked_and_committed_to_over_ssh(pool: PgPo
     assert_eq!(git(Some(&remote), &["log", "-1", "--format=%s", &branch]), "Change over SSH");
     assert_eq!(git(Some(&remote), &["log", "-1", "--format=%s", "main"]), "init", "main is untouched");
 
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_changed_host_key_makes_the_repository_wait_for_confirmation(pool: PgPool) {
+    if !tools_present() {
+        eprintln!("skipping: sshd or the OpenSSH client tools are not installed");
+        return;
+    }
+    let root = std::env::temp_dir().join(format!("ssh-rotate-test-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&root).unwrap();
+    let remote = make_remote(&root);
+    let mut sshd = start_sshd(&root);
+    let port = sshd.port;
+    let mock = mock_app_server().await;
+    let config = CodeConfig {
+        root: root.join("data"),
+        git_base: "https://github.com".to_string(),
+        key: Some([4u8; 32]),
+        github: GitHubConfig::default(),
+        allow_file_remotes: false,
+    };
+    let state = AppState::new(pool.clone(), true, RuntimeConfig::default()).with_code(config);
+    let token = login(&state, "rotate@example.com").await;
+    let (ws_id, _) = setup(&state, &token, Some(&mock.url)).await;
+
+    let url = format!("ssh://root@127.0.0.1:{port}{}", remote.display());
+    let (_, created) = call(&state, "POST", &format!("/api/v1/workspaces/{ws_id}/repos/ssh"), &token, Some(json!({ "url": url }))).await;
+    let repo_id = created["repo"]["id"].as_str().unwrap().to_string();
+    let public_key = created["repo"]["public_key"].as_str().unwrap().to_string();
+    let fingerprint = created["host_fingerprints"].as_str().unwrap().to_string();
+    std::fs::write(&sshd.authorized_keys, format!("{public_key}\n")).unwrap();
+    let (status, ready) = call(&state, "POST", &format!("/api/v1/repos/{repo_id}/check"), &token, Some(json!({ "fingerprint": fingerprint }))).await;
+    assert_eq!(status, StatusCode::OK, "{ready}");
+
+    // The same host: nothing changes.
+    let (status, same) = call(&state, "POST", &format!("/api/v1/repos/{repo_id}/rescan-host"), &token, None).await;
+    assert_eq!(status, StatusCode::OK, "{same}");
+    assert_eq!(same["changed"], false);
+    assert_eq!(same["repo"]["ready"], true);
+
+    // The server gets a new host key on the same port: the repository waits for a confirmation.
+    let authorized = sshd.authorized_keys.clone();
+    drop(sshd);
+    sshd = start_sshd_at(&root, port);
+    std::fs::write(&authorized, format!("{public_key}\n")).unwrap();
+    let (status, changed) = call(&state, "POST", &format!("/api/v1/repos/{repo_id}/rescan-host"), &token, None).await;
+    assert_eq!(status, StatusCode::OK, "{changed}");
+    assert_eq!(changed["changed"], true);
+    assert_eq!(changed["repo"]["ready"], false);
+    let new_fingerprint = changed["repo"]["host_fingerprint"].as_str().unwrap().to_string();
+    assert_ne!(new_fingerprint, fingerprint);
+
+    // Confirming the new fingerprint makes it ready again; the old one no longer works.
+    let (status, _) = call(&state, "POST", &format!("/api/v1/repos/{repo_id}/check"), &token, Some(json!({ "fingerprint": fingerprint }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, back) = call(&state, "POST", &format!("/api/v1/repos/{repo_id}/check"), &token, Some(json!({ "fingerprint": new_fingerprint }))).await;
+    assert_eq!(status, StatusCode::OK, "{back}");
+    assert_eq!(back["ready"], true);
+
+    drop(sshd);
     let _ = std::fs::remove_dir_all(&root);
 }

@@ -28,6 +28,7 @@ pub fn routes() -> Router<AppState> {
         .route("/workspaces/{id}/repos/probe", post(probe_remote))
         .route("/workspaces/{id}/repos/ssh", post(add_ssh))
         .route("/repos/{id}/check", post(check_ssh))
+        .route("/repos/{id}/rescan-host", post(rescan_host))
         .route("/repos/{id}", axum::routing::delete(unlink))
         .route("/threads/{id}/commit", post(commit))
 }
@@ -40,6 +41,8 @@ pub struct RepoView {
     pub has_token: bool,
     /// True for a repository added by its git address rather than through GitHub.
     pub by_url: bool,
+    /// True for a repository reached over SSH, whose host key can be checked again.
+    pub ssh: bool,
     /// False until an SSH repository's deploy key has cloned it. Sessions start only when true.
     pub ready: bool,
     /// The public key to add as a deploy key, for an SSH repository that is not ready yet.
@@ -50,7 +53,7 @@ pub struct RepoView {
     pub last_synced_at: Option<DateTime<Utc>>,
 }
 
-const REPO_COLUMNS: &str = "id, full_name, default_branch, (token_ciphertext IS NOT NULL) AS has_token, (clone_url IS NOT NULL) AS by_url, ready, \
+const REPO_COLUMNS: &str = "id, full_name, default_branch, (token_ciphertext IS NOT NULL) AS has_token, (clone_url IS NOT NULL) AS by_url, (ssh_key_ciphertext IS NOT NULL) AS ssh, ready, \
                             CASE WHEN ready THEN NULL ELSE ssh_public_key END AS public_key, \
                             CASE WHEN ready THEN NULL ELSE ssh_fingerprint END AS host_fingerprint, created_at, last_synced_at";
 
@@ -338,6 +341,53 @@ pub struct CheckRequest {
 
 /// Checks an SSH repository once its deploy key is in place: the confirmed fingerprint must match the
 /// pinned host key, then the repository is cloned with its key and marked ready.
+#[derive(Serialize)]
+pub struct RescanResult {
+    /// True when the server's host key changed. The repository is then not ready until the new
+    /// fingerprint is confirmed and the deploy key is checked again.
+    changed: bool,
+    repo: RepoView,
+}
+
+/// Looks at an SSH repository's server again. An unchanged host key changes nothing. A changed one is
+/// pinned as the new key, and the repository becomes not ready until someone confirms it.
+async fn rescan_host(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<RescanResult>, ApiError> {
+    let (workspace_id, url, ready, stored): (Uuid, Option<String>, bool, Option<String>) =
+        sqlx::query_as("SELECT workspace_id, clone_url, ready, ssh_fingerprint FROM code_repos WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+    require_role(&state.pool, workspace_id, user.id, Role::Member).await?;
+    let url = match url {
+        Some(url) if code::is_ssh(&url) => url,
+        _ => return Err(ApiError::BadRequest("only SSH repositories have a host key to check".to_string())),
+    };
+    let known_hosts = code::scan_host(&url).await.map_err(code_error)?;
+    let fingerprints = code::host_fingerprints(&known_hosts).await.map_err(code_error)?;
+    let sql = format!("SELECT {REPO_COLUMNS} FROM code_repos WHERE id = $1");
+
+    if stored.as_deref().map(str::trim) == Some(fingerprints.trim()) {
+        let repo = sqlx::query_as::<_, RepoView>(&sql).bind(id).fetch_one(&state.pool).await?;
+        return Ok(Json(RescanResult { changed: false, repo }));
+    }
+    sqlx::query(
+        "UPDATE code_repos SET ssh_known_hosts = $2, ssh_fingerprint = $3, ready = false WHERE id = $1",
+    )
+    .bind(id)
+    .bind(&known_hosts)
+    .bind(&fingerprints)
+    .execute(&state.pool)
+    .await?;
+    audit::record(&state.pool, workspace_id, user.id, "repo.host_key_changed", "repo", id, json!({ "was_ready": ready })).await?;
+    let repo = sqlx::query_as::<_, RepoView>(&sql).bind(id).fetch_one(&state.pool).await?;
+    Ok(Json(RescanResult { changed: true, repo }))
+}
+
 async fn check_ssh(
     State(state): State<AppState>,
     user: CurrentUser,

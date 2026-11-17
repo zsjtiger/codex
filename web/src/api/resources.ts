@@ -160,6 +160,8 @@ export const repos = {
   /** Adds an SSH repository: the gateway makes its key and pins the host. Not ready until checked. */
   addSsh: (ws: string, body: { url: string; default_branch?: string }) =>
     api<{ repo: CodeRepo; host_fingerprints: string }>("POST", `/workspaces/${ws}/repos/ssh`, body),
+  /** Looks at the server's host key again. A changed key makes the repository wait for confirmation. */
+  rescanHost: (id: string) => api<{ changed: boolean; repo: CodeRepo }>("POST", `/repos/${id}/rescan-host`),
   /** Confirms the host fingerprint, clones with the key, and makes the repository ready. */
   check: (id: string, fingerprint: string) => api<CodeRepo>("POST", `/repos/${id}/check`, { fingerprint }),
   /** Reads a git address's branches; nothing is stored. */

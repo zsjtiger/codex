@@ -218,6 +218,18 @@ export function CodePage({ workspaceId, environmentId, onOpenThread, onError }: 
     }
   };
 
+  const rescanHost = async (repo: CodeRepo) => {
+    try {
+      const result = await repoApi.rescanHost(repo.id);
+      if (!result.changed) {
+        onError(tx("The server's host key has not changed."));
+      }
+      await loadLinked();
+    } catch (err) {
+      onError(errorText(err));
+    }
+  };
+
   const remove = async (repo: CodeRepo) => {
     if (!window.confirm(tx("Remove this repository? Sessions that used it keep their history."))) return;
     try {
@@ -420,6 +432,11 @@ export function CodePage({ workspaceId, environmentId, onOpenThread, onError }: 
                 <button className="primary" onClick={() => void startSession(repo)}>
                   {tx("New session")}
                 </button>
+                {repo.ssh && (
+                  <button className="link-button" onClick={() => void rescanHost(repo)}>
+                    {tx("Check host key")}
+                  </button>
+                )}
                 <button className="link-button" onClick={() => void remove(repo)}>
                   {tx("Remove")}
                 </button>

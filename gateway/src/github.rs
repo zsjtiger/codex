@@ -44,8 +44,8 @@ pub struct Repo {
     pub private: bool,
 }
 
-/// Most pages to read when listing; 100 items per page.
-const MAX_PAGES: u32 = 5;
+/// Most pages to read when listing: 3000 repositories at 100 per page.
+const MAX_PAGES: u32 = 30;
 
 fn client() -> reqwest::Client {
     reqwest::Client::builder()
