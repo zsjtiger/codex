@@ -31,6 +31,7 @@ pub fn routes() -> Router<AppState> {
         .route("/repos/{id}/rescan-host", post(rescan_host))
         .route("/repos/{id}", axum::routing::delete(unlink))
         .route("/threads/{id}/commit", post(commit))
+        .route("/threads/{id}/preview", post(preview))
 }
 
 #[derive(Serialize, FromRow)]
@@ -445,6 +446,84 @@ async fn unlink(
     sqlx::query("DELETE FROM code_repos WHERE id = $1").bind(id).execute(&state.pool).await?;
     audit::record(&state.pool, workspace_id, user.id, "repo.unlinked", "repo", id, json!({})).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub struct PreviewRequest {
+    /// An HTML file in the session's checkout, relative to its root, such as `web/dist/index.html`.
+    path: String,
+}
+
+/// Screenshots an HTML file of the session's checkout, as Chromium on this host draws it. The image is
+/// returned, not stored. Only files inside the checkout can be shown.
+async fn preview(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<PreviewRequest>,
+) -> Result<axum::response::Response, ApiError> {
+    use axum::response::IntoResponse;
+    let (workspace_id, repo_id): (Uuid, Option<Uuid>) =
+        sqlx::query_as("SELECT workspace_id, repo_id FROM threads WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+    require_role(&state.pool, workspace_id, user.id, Role::Member).await?;
+    if repo_id.is_none() {
+        return Err(ApiError::BadRequest("previews are for code sessions".to_string()));
+    }
+    let command = state
+        .code
+        .screenshot_cmd
+        .clone()
+        .filter(|command| !command.is_empty())
+        .ok_or_else(|| ApiError::BadRequest("previews are not enabled on this gateway (GATEWAY_SCREENSHOT_CMD)".to_string()))?;
+    let checkout = code::worktree_path(&state.code, id);
+    if !checkout.join(".git").exists() {
+        return Err(ApiError::Conflict("this session has no checkout yet; send a message first".to_string()));
+    }
+
+    let relative = req.path.trim().trim_start_matches('/');
+    if relative.is_empty() || relative.split('/').any(|part| part == "..") {
+        return Err(ApiError::BadRequest("give a path inside the checkout".to_string()));
+    }
+    let file = checkout
+        .join(relative)
+        .canonicalize()
+        .map_err(|_| ApiError::BadRequest("there is no such file in the checkout".to_string()))?;
+    let root = checkout.canonicalize().map_err(|_| ApiError::Internal)?;
+    if !file.starts_with(&root) {
+        return Err(ApiError::BadRequest("the path leaves the checkout".to_string()));
+    }
+    if file.extension().and_then(|ext| ext.to_str()).is_none_or(|ext| !ext.eq_ignore_ascii_case("html")) {
+        return Err(ApiError::BadRequest("a preview needs an .html file".to_string()));
+    }
+
+    let dir = state.code.root.join("previews");
+    std::fs::create_dir_all(&dir).map_err(|_| ApiError::Internal)?;
+    let output = dir.join(format!("{}.png", Uuid::new_v4()));
+    let url = format!("file://{}", file.display());
+    let run = tokio::process::Command::new(&command[0])
+        .args(&command[1..])
+        .arg(&url)
+        .arg(&output)
+        .kill_on_drop(true)
+        .output();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(90), run).await;
+    let outcome = match result {
+        Err(_) => Err("the screenshot took too long".to_string()),
+        Ok(Err(err)) => Err(format!("could not start the screenshot command: {err}")),
+        Ok(Ok(out)) if !out.status.success() => Err(String::from_utf8_lossy(&out.stderr).trim().to_string()),
+        Ok(Ok(_)) => Ok(()),
+    };
+    if let Err(message) = outcome {
+        let _ = std::fs::remove_file(&output);
+        return Err(ApiError::BadRequest(format!("the page could not be shown: {message}")));
+    }
+    let bytes = std::fs::read(&output).map_err(|_| ApiError::Internal)?;
+    let _ = std::fs::remove_file(&output);
+    Ok(([(axum::http::header::CONTENT_TYPE, "image/png")], bytes).into_response())
 }
 
 #[derive(Deserialize)]

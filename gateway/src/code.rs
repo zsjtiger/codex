@@ -32,6 +32,8 @@ pub struct CodeConfig {
     pub github: crate::github::GitHubConfig,
     /// Allows `file://` remotes. Off in production: a local path would let anyone read files on the gateway.
     pub allow_file_remotes: bool,
+    /// Command that screenshots a page: `<program> [args...] <url> <output.png>`. None turns previews off.
+    pub screenshot_cmd: Option<Vec<String>>,
 }
 
 impl Default for CodeConfig {
@@ -42,6 +44,7 @@ impl Default for CodeConfig {
             key: None,
             github: crate::github::GitHubConfig::default(),
             allow_file_remotes: false,
+            screenshot_cmd: None,
         }
     }
 }
@@ -137,6 +140,11 @@ pub async fn user_auth(config: &CodeConfig, pool: &PgPool, user_id: Uuid) -> Res
 
 fn clone_dir(config: &CodeConfig, repo_id: Uuid) -> PathBuf {
     config.root.join("repos").join(repo_id.to_string())
+}
+
+/// The checkout of a code session, whether or not it exists yet.
+pub fn worktree_path(config: &CodeConfig, thread_id: Uuid) -> PathBuf {
+    worktree_dir(config, thread_id)
 }
 
 fn worktree_dir(config: &CodeConfig, thread_id: Uuid) -> PathBuf {

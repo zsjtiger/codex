@@ -936,3 +936,10 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 @media (max-width: 760px) {
   .banner { margin-left: 48px; }
 }
+
+/* Code sessions: preview a page of the checkout. */
+.preview-bar { padding: 4px 16px 8px; display: flex; flex-direction: column; gap: 10px; }
+.preview-form { display: flex; gap: 8px; }
+.preview-form input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font: inherit; }
+.preview-shot { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.preview-shot img { max-width: 100%; border: 1px solid var(--border); border-radius: 10px; }

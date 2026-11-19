@@ -619,3 +619,13 @@ addChinese({
   "Check host key": "检查主机密钥",
   "The server's host key has not changed.": "服务器的主机密钥没有变化。",
 });
+
+// Code sessions: page preview.
+addChinese({
+  "Page in the checkout, such as site/index.html": "工作区里的页面，例如 site/index.html",
+  "Preview": "预览",
+  "Preview…": "预览中…",
+  "Page to preview": "要预览的页面",
+  "Screenshot of the page": "页面截图",
+  "The page could not be shown.": "无法显示这个页面。",
+});

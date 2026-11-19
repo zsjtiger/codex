@@ -30,6 +30,8 @@ Not implemented yet: rate limiting, and resuming an interrupted turn with `threa
 | `GATEWAY_GIT_BASE` | `https://github.com` | Base for clone and push URLs |
 | `GATEWAY_SECRET_KEY` | unset | 64 hex characters. Encrypts GitHub tokens; required to link a repository with a token |
 
+| `GATEWAY_SCREENSHOT_CMD` | unset | Enables page previews in code sessions. The command is run as `<command> <url> <output.png>`, for example `node tools/screenshot.cjs`. Needs Node, Playwright and Chromium on the gateway host |
+
 SSH repositories need the OpenSSH client on the gateway host: `ssh`, `ssh-keygen` and `ssh-keyscan`. Host keys are always checked; a repository's key is pinned when it is added.
 | `GATEWAY_DEV_LOGIN` | unset | `1` or `true` also allows sign-in with only an email, through `POST /api/v1/auth/sessions`. Dev only |
 | `GATEWAY_CODEX_BIN` | unset | Path to the `codex` binary. Environments with no `endpoint` get a local app-server |

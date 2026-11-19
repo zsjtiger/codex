@@ -197,6 +197,8 @@ export const threads = {
     api<Attachment>("POST", `/threads/${id}/save-to-project`, { project_id: projectId }),
   turns: (id: string) => api<Turn[]>("GET", `/threads/${id}/turns?limit=100`),
   toolUses: (id: string) => api<ToolUseRecord[]>("GET", `/threads/${id}/tool-uses?limit=100`),
+  /** Screenshots an HTML file of the session's checkout. The gateway draws it in headless Chromium. */
+  preview: (id: string, path: string) => postForImage(`/threads/${id}/preview`, { path }),
   /** The finished commands and file changes of a thread, grouped by Codex turn. */
   work: (id: string) => api<{ codex_turn_id: string; items: unknown[] }[]>("GET", `/threads/${id}/work`),
   send: (id: string, body: { input: string; model?: string; effort?: string; attachment_ids?: string[]; skill_ids?: string[] }) =>
@@ -231,6 +233,19 @@ async function fetchBytes(path: string): Promise<ArrayBuffer> {
     throw new ApiError(response.status, data?.error?.code ?? "error", data?.error?.message ?? response.statusText);
   }
   return response.arrayBuffer();
+}
+
+/** Posts JSON and returns the PNG or other bytes the gateway sends back. */
+async function postForImage(path: string, body: unknown): Promise<Blob> {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  const token = getToken();
+  if (token) headers.authorization = `Bearer ${token}`;
+  const response = await fetch(apiUrl(path), { method: "POST", headers, body: JSON.stringify(body) });
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new ApiError(response.status, data?.error?.code ?? "error", data?.error?.message ?? response.statusText);
+  }
+  return response.blob();
 }
 
 export const attachments = {

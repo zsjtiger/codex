@@ -46,6 +46,7 @@ fn config(root: &PathBuf, allow_file: bool) -> CodeConfig {
         key: Some([5u8; 32]),
         github: GitHubConfig::default(),
         allow_file_remotes: allow_file,
+        screenshot_cmd: None,
     }
 }
 

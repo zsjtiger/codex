@@ -135,6 +135,7 @@ export function Home(props: HomeProps) {
             )}
           </header>
           {thread.repo_id && <CommitBar threadId={thread.id} branch={thread.work_branch} onError={onError} />}
+          {thread.repo_id && <PreviewBar threadId={thread.id} onError={onError} />}
           <div className="thread-scroll">
             <Conversation
               variant={thread.repo_id ? "code" : "chat"}
@@ -336,6 +337,63 @@ function CommitBar({ threadId, branch, onError }: { threadId: string; branch: st
             {tx("Commit and push")}
           </button>
         </form>
+      )}
+    </div>
+  );
+}
+
+/** In a code session: screenshot an HTML page of the checkout, as Chromium draws it on the gateway. */
+function PreviewBar({ threadId, onError }: { threadId: string; onError: (message: string) => void }) {
+  const [path, setPath] = useState("index.html");
+  const [busy, setBusy] = useState(false);
+  const [shot, setShot] = useState<string | null>(null);
+
+  const preview = async () => {
+    setBusy(true);
+    try {
+      const blob = await threadApi.preview(threadId, path.trim());
+      setShot((previous) => {
+        if (previous) URL.revokeObjectURL(previous);
+        return URL.createObjectURL(blob);
+      });
+    } catch (err) {
+      onError(err instanceof Error ? err.message : tx("The page could not be shown."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="preview-bar">
+      <form
+        className="preview-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void preview();
+        }}
+      >
+        <input
+          value={path}
+          onChange={(event) => setPath(event.target.value)}
+          placeholder={tx("Page in the checkout, such as site/index.html")}
+          aria-label={tx("Page to preview")}
+        />
+        <button className="primary" disabled={busy || !path.trim()}>
+          {busy ? tx("Preview…") : tx("Preview")}
+        </button>
+      </form>
+      {shot && (
+        <figure className="preview-shot">
+          <img src={shot} alt={tx("Screenshot of the page")} />
+          <figcaption>
+            <button className="link-button" onClick={() => {
+              URL.revokeObjectURL(shot);
+              setShot(null);
+            }}>
+              {tx("Close")}
+            </button>
+          </figcaption>
+        </figure>
       )}
     </div>
   );

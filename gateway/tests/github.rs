@@ -79,6 +79,7 @@ fn state_for(pool: PgPool, root: &PathBuf, github: GitHubConfig) -> AppState {
         key: Some([9u8; 32]),
         github,
         allow_file_remotes: false,
+        screenshot_cmd: None,
     };
     AppState::new(pool, true, RuntimeConfig::default()).with_code(code)
 }

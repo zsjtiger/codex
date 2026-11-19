@@ -109,6 +109,7 @@ openssl rand -hex 32
 - **网页版地址**：授权完成后跳转回的地址。不设置时用 `GATEWAY_PUBLIC_URL`，这正是同一域名部署时想要的。
 - **S3 存储**：设置 `GATEWAY_STORAGE=s3`、`GATEWAY_S3_BUCKET`，并按需设置 `GATEWAY_S3_ENDPOINT`、`GATEWAY_S3_REGION`、`GATEWAY_S3_FORCE_PATH_STYLE`。AWS 凭据用标准的环境变量或实例角色。
 - **SSH 仓库**：不需要额外变量，只需要服务器上装好 OpenSSH 客户端。
+- **代码会话的页面预览**：设置 `GATEWAY_SCREENSHOT_CMD="node /opt/codex/gateway/tools/screenshot.cjs"`。服务器上需要 Node.js、Playwright 和 Chromium（`npx playwright install chromium`）。`tools/screenshot.cjs` 需要随网关一起拷到服务器。不设置时，预览按钮会报"预览未启用"。预览只能打开会话工作区里的 HTML 文件，资源路径要是相对的。
 - **文件远程**：`GATEWAY_ALLOW_FILE_REMOTES` 必须保持不设置。开启后，任何能添加仓库的人都能让网关读取本机文件。
 
 保存后启动：

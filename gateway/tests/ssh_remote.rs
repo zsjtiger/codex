@@ -130,6 +130,7 @@ async fn an_ssh_repository_is_added_checked_and_committed_to_over_ssh(pool: PgPo
         key: Some([3u8; 32]),
         github: GitHubConfig::default(),
         allow_file_remotes: false,
+        screenshot_cmd: None,
     };
     let state = AppState::new(pool.clone(), true, RuntimeConfig::default()).with_code(config);
     let token = login(&state, "ssh@example.com").await;
@@ -248,6 +249,7 @@ async fn a_changed_host_key_makes_the_repository_wait_for_confirmation(pool: PgP
         key: Some([4u8; 32]),
         github: GitHubConfig::default(),
         allow_file_remotes: false,
+        screenshot_cmd: None,
     };
     let state = AppState::new(pool.clone(), true, RuntimeConfig::default()).with_code(config);
     let token = login(&state, "rotate@example.com").await;
