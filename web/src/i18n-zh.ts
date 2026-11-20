@@ -629,3 +629,19 @@ addChinese({
   "Screenshot of the page": "页面截图",
   "The page could not be shown.": "无法显示这个页面。",
 });
+
+// Documents from a chat.
+addChinese({
+  "Save as document": "保存为文档",
+  "Document": "文档",
+  "Only you": "仅自己",
+  "Edit": "编辑",
+  "Expand": "放大",
+  "Collapse": "还原",
+  "Title": "标题",
+  "Content": "内容",
+  "Cancel": "取消",
+  "Save": "保存",
+  "Saving…": "保存中…",
+  "Could not save the document.": "无法保存文档。",
+});

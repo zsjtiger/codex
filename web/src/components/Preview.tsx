@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import * as mammoth from "mammoth";
-import { attachments as attachmentApi } from "../api/resources";
+import { artifacts as artifactApi, attachments as attachmentApi } from "../api/resources";
 import { MarkdownView, highlightCode } from "./Markdown";
 import { CopyIcon } from "./icons";
 import { PdfView } from "./PdfView";
@@ -9,7 +9,7 @@ import { tx } from "../i18n";
 /** What the side panel shows: a code block, a document artifact, or a file sent in a message. */
 export type PreviewItem =
   | { kind: "code"; title: string; lang: string; text: string }
-  | { kind: "document"; title: string; content: string }
+  | { kind: "document"; title: string; content: string; artifactId?: string; onSaved?: (doc: { title: string; content: string }) => void }
   | { kind: "file"; title: string; attachmentId: string; contentType: string };
 
 interface PreviewContextValue {
@@ -106,9 +106,18 @@ type ReactViewState =
 
 function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
-  const text = item.kind === "code" ? item.text : item.kind === "document" ? item.content : null;
-  const label = item.kind === "code" ? item.lang || "code" : item.kind === "document" ? "document" : contentLabel(item.contentType, item.title);
+  // A document keeps its own copy, so an edit shows at once and survives the panel being redrawn.
+  const [doc, setDoc] = useState(() => (item.kind === "document" ? { title: item.title, content: item.content } : null));
+  const [editing, setEditing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [draft, setDraft] = useState({ title: "", content: "" });
+  const [saving, setSaving] = useState(false);
+
+  const text = item.kind === "code" ? item.text : doc ? doc.content : null;
+  const label = item.kind === "code" ? item.lang || "code" : item.kind === "document" ? tx("Document") : contentLabel(item.contentType, item.title);
   const highlighted = item.kind === "code" ? highlightCode(item.text, item.lang) : null;
+  const title = doc ? doc.title : item.title;
+  const editable = item.kind === "document" && Boolean(item.artifactId);
 
   const copy = async () => {
     if (text === null) return;
@@ -121,13 +130,45 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
     }
   };
 
+  const startEditing = () => {
+    if (!doc) return;
+    setDraft(doc);
+    setEditing(true);
+  };
+
+  const save = async () => {
+    if (item.kind !== "document" || !item.artifactId) return;
+    setSaving(true);
+    try {
+      const saved = { title: draft.title.trim() || doc?.title || tx("Document"), content: draft.content };
+      await artifactApi.update(item.artifactId, saved);
+      setDoc(saved);
+      setEditing(false);
+      item.onSaved?.(saved);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : tx("Could not save the document."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <aside className="preview-panel" role="dialog" aria-label={item.title}>
+    <aside className={`preview-panel ${expanded ? "preview-panel-wide" : ""}`} role="dialog" aria-label={title}>
       <header className="preview-header">
         <div className="preview-title">
-          <span className="preview-name">{item.title}</span>
+          <span className="preview-name">{title}</span>
           <span className="muted small">{label}</span>
         </div>
+        {editable && !editing && (
+          <button type="button" className="link-button" onClick={startEditing}>
+            {tx("Edit")}
+          </button>
+        )}
+        {item.kind === "document" && (
+          <button type="button" className="icon-button" onClick={() => setExpanded((open) => !open)} aria-label={expanded ? tx("Collapse") : tx("Expand")} title={expanded ? tx("Collapse") : tx("Expand")}>
+            {expanded ? "⤡" : "⤢"}
+          </button>
+        )}
         {text !== null && (
           <button type="button" className="icon-button" onClick={copy} aria-label={copied ? "Copied" : "Copy"} title={copied ? "Copied" : "Copy"}>
             <CopyIcon />
@@ -140,8 +181,37 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
       <div className="preview-body">
         {item.kind === "file" ? (
           <FilePreview attachmentId={item.attachmentId} title={item.title} contentType={item.contentType} />
+        ) : item.kind === "document" && editing ? (
+          <form
+            className="doc-editor"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void save();
+            }}
+          >
+            <input
+              className="doc-title-input"
+              value={draft.title}
+              onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+              aria-label={tx("Title")}
+            />
+            <textarea
+              className="doc-content-input"
+              value={draft.content}
+              onChange={(event) => setDraft({ ...draft, content: event.target.value })}
+              aria-label={tx("Content")}
+            />
+            <div className="doc-editor-actions">
+              <button type="button" className="link-button" onClick={() => setEditing(false)} disabled={saving}>
+                {tx("Cancel")}
+              </button>
+              <button className="primary" disabled={saving}>
+                {saving ? tx("Saving…") : tx("Save")}
+              </button>
+            </div>
+          </form>
         ) : item.kind === "document" ? (
-          <MarkdownView source={item.content} />
+          <MarkdownView source={doc?.content ?? ""} />
         ) : highlighted?.known ? (
           <pre className="code-block">
             <code dangerouslySetInnerHTML={{ __html: highlighted.html }} />

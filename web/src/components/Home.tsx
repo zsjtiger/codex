@@ -7,7 +7,7 @@ import type { WorkLog } from "../state/work";
 import { Composer } from "./Composer";
 import { usePreview } from "./Preview";
 import { Conversation } from "./Conversation";
-import { ChevronIcon, SparkIcon } from "./icons";
+import { ChevronIcon, FileIcon, SparkIcon } from "./icons";
 import { useI18n } from "../i18n";
 import { tx } from "../i18n";
 
@@ -47,6 +47,8 @@ export function Home(props: HomeProps) {
   const pending = approvals.filter((a) => a.threadId === thread?.id);
   const runningTurn = [...turns].reverse().find((t) => (t.status === "running" || t.status === "queued") && t.codex_turn_id);
   const [recent, setRecent] = useState<Artifact[]>([]);
+  // Documents saved from this chat, shown as cards under the conversation.
+  const [docs, setDocs] = useState<Artifact[]>([]);
   const { open } = usePreview();
   const [skills, setSkills] = useState<Skill[]>([]);
 
@@ -61,12 +63,49 @@ export function Home(props: HomeProps) {
   const showUsedPanel = showUsed && used.length > 0;
 
   useEffect(() => {
+    if (!thread) {
+      setDocs([]);
+      return;
+    }
+    artifactApi
+      .list(workspaceId, `?kind=document&thread_id=${thread.id}`)
+      .then(setDocs)
+      .catch(() => setDocs([]));
+  }, [workspaceId, thread?.id]);
+
+  useEffect(() => {
     if (thread) return;
     artifactApi
       .list(workspaceId, "?limit=4")
       .then(setRecent)
       .catch(() => setRecent([]));
   }, [workspaceId, thread]);
+
+  const openDoc = (doc: Artifact) =>
+    open({
+      kind: "document",
+      title: doc.title,
+      content: doc.content,
+      artifactId: doc.id,
+      onSaved: (saved) => setDocs((prev) => prev.map((d) => (d.id === doc.id ? { ...d, ...saved } : d))),
+    });
+
+  // A reply saved as a document: its title is its first heading, or its first line.
+  const saveDocument = async (reply: string) => {
+    if (!thread) return;
+    try {
+      const doc = await artifactApi.create(workspaceId, {
+        title: documentTitle(reply),
+        kind: "document",
+        content: reply,
+        thread_id: thread.id,
+      });
+      setDocs((prev) => [doc, ...prev]);
+      openDoc(doc);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : tx("Could not save the document."));
+    }
+  };
 
   const [savedNote, setSavedNote] = useState<string | null>(null);
   const saveToProject = async (projectId: string) => {
@@ -147,7 +186,19 @@ export function Home(props: HomeProps) {
               onAnswer={onAnswer}
               onFeedback={onFeedback}
               onRegenerate={(input) => onSend(input, {})}
+              onSaveDocument={(reply) => void saveDocument(reply)}
             />
+            {docs.map((doc) => (
+              <button key={doc.id} className="doc-card" onClick={() => openDoc(doc)}>
+                <span className="doc-card-icon">
+                  <FileIcon />
+                </span>
+                <span className="doc-card-text">
+                  <strong>{doc.title}</strong>
+                  <span className="muted small">{tx("Document")} · {tx("Only you")}</span>
+                </span>
+              </button>
+            ))}
           </div>
           <div className="composer-dock">
             <Composer
@@ -216,6 +267,15 @@ export function Home(props: HomeProps) {
       )}
     </main>
   );
+}
+
+/** A title from a reply: its first heading, else its first line, cut to a short length. */
+function documentTitle(reply: string): string {
+  const lines = reply.split("\n").map((line) => line.trim()).filter(Boolean);
+  const heading = lines.find((line) => /^#{1,6}\s/.test(line));
+  const first = (heading ?? lines[0] ?? "").replace(/^#{1,6}\s*/, "").replace(/[*_`]/g, "").trim();
+  if (!first) return tx("Document");
+  return first.length > 60 ? `${first.slice(0, 57)}…` : first;
 }
 
 function UsedPanel({ uses, onClose }: { uses: ToolUse[]; onClose: () => void }) {

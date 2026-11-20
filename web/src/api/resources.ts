@@ -52,7 +52,7 @@ export const skills = {
 
 export const artifacts = {
   list: (ws: string, query = "") => api<Artifact[]>("GET", `/workspaces/${ws}/artifacts${query}`),
-  create: (ws: string, body: { title: string; kind: ArtifactKind; content?: string; project_id?: string }) =>
+  create: (ws: string, body: { title: string; kind: ArtifactKind; content?: string; project_id?: string; thread_id?: string }) =>
     api<Artifact>("POST", `/workspaces/${ws}/artifacts`, body),
   update: (id: string, body: { title?: string; content?: string; project_id?: string | null }) =>
     api<Artifact>("PATCH", `/artifacts/${id}`, body),

@@ -58,6 +58,8 @@ pub struct UpdateArtifact {
 pub struct ListArtifactsQuery {
     project_id: Option<Uuid>,
     kind: Option<String>,
+    /// Only the documents of one chat.
+    thread_id: Option<Uuid>,
 }
 
 pub fn routes() -> Router<AppState> {
@@ -102,6 +104,7 @@ async fn list(
          WHERE workspace_id = $1
            AND ($2::uuid IS NULL OR project_id = $2)
            AND ($3::text IS NULL OR kind = $3)
+           AND ($4::uuid IS NULL OR thread_id = $4)
          ORDER BY updated_at DESC
          LIMIT 200"
     );
@@ -109,6 +112,7 @@ async fn list(
         .bind(id)
         .bind(query.project_id)
         .bind(query.kind.as_deref())
+        .bind(query.thread_id)
         .fetch_all(&state.pool)
         .await?;
     Ok(Json(rows))

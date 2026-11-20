@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { MarkdownView } from "./Markdown";
-import { CopyIcon, RetryIcon, SpeakIcon, ThumbDownIcon, ThumbUpIcon } from "./icons";
+import { CopyIcon, FileIcon, RetryIcon, SpeakIcon, ThumbDownIcon, ThumbUpIcon } from "./icons";
 import type { Activity, Approval } from "../state/useCodex";
 import { ChevronIcon } from "./icons";
 import type { ToolUse } from "../state/toolUses";
@@ -25,6 +25,7 @@ interface ReplyActionsProps {
   reply: string;
   onFeedback: (turnId: string, rating: "up" | "down" | null) => void;
   onRegenerate: (input: string) => void;
+  onSaveDocument?: (reply: string) => void;
 }
 
 /**
@@ -53,7 +54,7 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 /** Copy, read aloud, rate, and regenerate for an assistant reply. */
-function ReplyActions({ turn, reply, onFeedback, onRegenerate }: ReplyActionsProps) {
+function ReplyActions({ turn, reply, onFeedback, onRegenerate, onSaveDocument }: ReplyActionsProps) {
   const [copied, setCopied] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const timer = useRef<number | undefined>(undefined);
@@ -103,6 +104,11 @@ function ReplyActions({ turn, reply, onFeedback, onRegenerate }: ReplyActionsPro
       <button type="button" className={`reply-action ${turn.feedback === "down" ? "reply-action-on" : ""}`} onClick={() => rate("down")} aria-pressed={turn.feedback === "down"} aria-label={tx("Bad response")} title={tx("Bad response")}>
         <ThumbDownIcon />
       </button>
+      {onSaveDocument && (
+        <button type="button" className="reply-action" onClick={() => onSaveDocument(reply)} aria-label={tx("Save as document")} title={tx("Save as document")}>
+          <FileIcon />
+        </button>
+      )}
       <button type="button" className="reply-action" onClick={() => onRegenerate(turn.input)} aria-label={tx("Retry")} title={tx("Retry")}>
         <RetryIcon />
       </button>
@@ -468,9 +474,11 @@ interface ConversationProps {
   onAnswer: (approval: Approval, result: unknown) => void;
   onFeedback: (turnId: string, rating: "up" | "down" | null) => void;
   onRegenerate: (input: string) => void;
+  /** Saves a reply as a document of this chat. */
+  onSaveDocument?: (reply: string) => void;
 }
 
-export function Conversation({ variant = "chat", turns, agentText, activity, work = {}, approvals, onAnswer, onFeedback, onRegenerate }: ConversationProps) {
+export function Conversation({ variant = "chat", turns, agentText, activity, work = {}, approvals, onAnswer, onFeedback, onRegenerate, onSaveDocument }: ConversationProps) {
   const code = variant === "code";
   return (
     <div className={code ? "conversation code-conversation" : "conversation"}>
@@ -504,7 +512,7 @@ export function Conversation({ variant = "chat", turns, agentText, activity, wor
                   <div className="code-reply">
                     <MarkdownView source={reply} />
                   </div>
-                  {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} />}
+                  {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} />}
                 </>
               )}
               {(turn.status !== "completed" && turn.status !== "running" && turn.status !== "queued") || turn.error ? (
@@ -532,7 +540,7 @@ export function Conversation({ variant = "chat", turns, agentText, activity, wor
                 <div className="bubble agent">
                   <MarkdownView source={reply} />
                 </div>
-                {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} />}
+                {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} />}
               </>
             )}
             <div className={`turn-status status-${turn.status}`}>
