@@ -674,4 +674,5 @@ addChinese({
   "Add custom connector": "添加自定义连接器",
   "Create a skill": "创建技能",
   "Updated a document in this chat.": "已更新本对话中的文档。",
+  "Updating…": "正在更新…",
 });

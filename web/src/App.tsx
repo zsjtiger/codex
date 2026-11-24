@@ -293,6 +293,7 @@ export function App() {
             thread={activeThread}
             turns={codex.turns}
             agentText={codex.agentText}
+            streamText={codex.streamText}
             toolUses={codex.toolUses}
             environment={codex.environment}
             activity={codex.activity}

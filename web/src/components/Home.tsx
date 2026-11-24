@@ -7,6 +7,7 @@ import type { WorkLog } from "../state/work";
 import { Composer } from "./Composer";
 import { usePreview } from "./Preview";
 import { Conversation } from "./Conversation";
+import { liveDocumentEdit } from "./documentEdits";
 import { ChevronIcon, FileIcon, SparkIcon } from "./icons";
 import { useI18n } from "../i18n";
 import { tx } from "../i18n";
@@ -19,6 +20,8 @@ interface HomeProps {
   onOpenThread: (threadId: string) => void;
   turns: Turn[];
   agentText: Record<string, string>;
+  /** The assistant message each running codex turn is writing now, as it streams. */
+  streamText: Record<string, string>;
   toolUses: Record<string, ToolUse[]>;
   environment: Environment | null;
   activity: Record<string, Activity>;
@@ -43,13 +46,13 @@ interface HomeProps {
 
 export function Home(props: HomeProps) {
   const { t } = useI18n();
-  const { user, workspaceId, thread, threads, onOpenThread, turns, agentText, toolUses, activity, work, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
+  const { user, workspaceId, thread, threads, onOpenThread, turns, agentText, streamText, toolUses, activity, work, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
   const pending = approvals.filter((a) => a.threadId === thread?.id);
   const runningTurn = [...turns].reverse().find((t) => (t.status === "running" || t.status === "queued") && t.codex_turn_id);
   const [recent, setRecent] = useState<Artifact[]>([]);
   // Documents saved from this chat, shown as cards under the conversation.
   const [docs, setDocs] = useState<Artifact[]>([]);
-  const { open } = usePreview();
+  const { open, current } = usePreview();
   const [skills, setSkills] = useState<Skill[]>([]);
 
   useEffect(() => {
@@ -74,6 +77,26 @@ export function Home(props: HomeProps) {
       .then(setDocs)
       .catch(() => setDocs([]));
   }, [workspaceId, thread?.id, finishedTurns]);
+
+  // The model's change to a document is read from the reply as it streams. When that document is open,
+  // its panel shows the change as it is written, and stops marking it as updating once the change closes.
+  const liveText = runningTurn?.codex_turn_id
+    ? [agentText[runningTurn.codex_turn_id], streamText[runningTurn.codex_turn_id]].filter(Boolean).join("\n\n")
+    : "";
+  const liveEdit = liveText ? liveDocumentEdit(liveText) : null;
+  const liveId = liveEdit?.id ?? null;
+  const liveContent = liveEdit?.content ?? null;
+  const liveClosed = liveEdit?.closed ?? false;
+  useEffect(() => {
+    if (!current || current.kind !== "document" || !current.artifactId) return;
+    if (liveId !== null && liveContent !== null && current.artifactId === liveId) {
+      if (current.content !== liveContent || current.live !== !liveClosed) {
+        open({ ...current, content: liveContent, live: !liveClosed });
+      }
+    } else if (current.live) {
+      open({ ...current, live: false });
+    }
+  }, [liveId, liveContent, liveClosed, current, open]);
 
   useEffect(() => {
     if (thread) return;

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { MarkdownView } from "./Markdown";
+import { splitDocumentEdits } from "./documentEdits";
 import { CopyIcon, FileIcon, RetryIcon, SpeakIcon, SparkIcon, ThumbDownIcon, ThumbUpIcon } from "./icons";
 import type { Activity, Approval } from "../state/useCodex";
 import { ChevronIcon } from "./icons";
@@ -18,33 +19,6 @@ function relativeTime(iso: string): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)} ${tx("min ago")}`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)} ${tx("h ago")}`;
   return new Date(iso).toLocaleDateString();
-}
-
-/**
- * Takes the `document-edit` blocks out of a reply. Each block is a change the gateway has applied to
- * a document; the reader sees that a document changed, not the text of the change.
- */
-export function splitDocumentEdits(reply: string): { text: string; edited: number } {
-  const out: string[] = [];
-  let edited = 0;
-  const lines = reply.split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    const open = /^\s*(`{3,})document-edit\s+id=/.exec(lines[i]);
-    if (!open) {
-      out.push(lines[i]);
-      continue;
-    }
-    let close = i + 1;
-    while (close < lines.length && lines[close].trim() !== open[1]) close++;
-    if (close >= lines.length) {
-      // Never closed: it is not a change the gateway applied, so it stays as text.
-      out.push(lines[i]);
-      continue;
-    }
-    edited++;
-    i = close;
-  }
-  return { text: out.join("\n").replace(/\n{3,}/g, "\n\n").trim(), edited };
 }
 
 interface ReplyActionsProps {

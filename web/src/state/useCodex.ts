@@ -45,6 +45,8 @@ export function useCodex() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [agentText, setAgentText] = useState<Record<string, string>>({});
+  // The assistant message being written, as it streams, for each codex turn. Cleared when the message completes.
+  const [streamText, setStreamText] = useState<Record<string, string>>({});
   const [toolUses, setToolUses] = useState<Record<string, ToolUse[]>>({});
   // Live thinking for each codex turn: reasoning text and the steps (searches, commands, ...) so far.
   const [activity, setActivity] = useState<Record<string, Activity>>({});
@@ -115,10 +117,19 @@ export function useCodex() {
               return { ...prev, [turnKey]: { ...current, steps: [...current.steps, step] } };
             });
           }
+          if (method === "item/agentMessage/delta" && typeof params.turnId === "string") {
+            const key = params.turnId;
+            const delta = String(params.delta ?? "");
+            setStreamText((prev) => ({ ...prev, [key]: (prev[key] ?? "") + delta }));
+          }
           if (method === "item/completed" && params.item?.type === "agentMessage") {
             const key = params.turnId as string;
             const text = params.item.text as string;
             setAgentText((prev) => ({ ...prev, [key]: prev[key] ? `${prev[key]}\n\n${text}` : text }));
+            setStreamText((prev) => {
+              const { [key]: _done, ...rest } = prev;
+              return rest;
+            });
           }
           const use = method === "item/completed" ? toolUseFromItem(params.item) : null;
           const threadId = (params.threadId ?? frame.threadId) as string | undefined;
@@ -233,6 +244,7 @@ export function useCodex() {
     setActiveId(null);
     setTurns([]);
     setAgentText({});
+    setStreamText({});
     setApprovals([]);
   }, []);
 
@@ -336,6 +348,7 @@ export function useCodex() {
     activeId,
     turns,
     agentText,
+    streamText,
     toolUses,
     activity,
     work,

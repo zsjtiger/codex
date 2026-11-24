@@ -11,14 +11,16 @@ import { tx } from "../i18n";
 /** What the side panel shows: a code block, a document artifact, or a file sent in a message. */
 export type PreviewItem =
   | { kind: "code"; title: string; lang: string; text: string }
-  | { kind: "document"; title: string; content: string; artifactId?: string; onSaved?: (doc: { title: string; content: string }) => void }
+  | { kind: "document"; title: string; content: string; artifactId?: string; live?: boolean; onSaved?: (doc: { title: string; content: string }) => void }
   | { kind: "file"; title: string; attachmentId: string; contentType: string };
 
 interface PreviewContextValue {
   open: (item: PreviewItem) => void;
+  /** What the panel shows now, or null when it is closed. */
+  current: PreviewItem | null;
 }
 
-const PreviewContext = createContext<PreviewContextValue>({ open: () => {} });
+const PreviewContext = createContext<PreviewContextValue>({ open: () => {}, current: null });
 
 /** Opens an item in the side panel. Outside a provider, opening does nothing. */
 export const usePreview = () => useContext(PreviewContext);
@@ -27,7 +29,7 @@ export const usePreview = () => useContext(PreviewContext);
 export function PreviewProvider({ children }: { children: React.ReactNode }) {
   const [item, setItem] = useState<PreviewItem | null>(null);
   return (
-    <PreviewContext.Provider value={{ open: setItem }}>
+    <PreviewContext.Provider value={{ open: setItem, current: item }}>
       {children}
       {item && <PreviewPanel item={item} onClose={() => setItem(null)} />}
     </PreviewContext.Provider>
@@ -145,6 +147,16 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
   const saveRef = useRef(saveNow);
   saveRef.current = saveNow;
 
+  // While the model changes this document, the panel shows the change as it is written. The panel
+  // keeps its own copy in step with the item, except while someone is editing it.
+  const liveContent = item.kind === "document" ? item.content : null;
+  const live = item.kind === "document" && Boolean(item.live);
+  useEffect(() => {
+    if (liveContent === null || editing) return;
+    setDoc((prev) => (prev && prev.content === liveContent ? prev : { title: prev?.title ?? item.title, content: liveContent }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveContent, editing]);
+
   // Closing the panel saves whatever is still waiting.
   useEffect(
     () => () => {
@@ -233,6 +245,7 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
           <span className="muted small">{label}</span>
         </div>
         {editing && <span className="doc-status">{tx("Editing")}</span>}
+        {live && <span className="doc-status">{tx("Updating…")}</span>}
         {editing && <span className={`doc-savestate ${saveState === "error" ? "doc-savestate-error" : ""}`}>{saveText}</span>}
         {editable && editing && (
           <button type="button" className="primary doc-done" onClick={() => void finishEditing()}>
@@ -244,7 +257,7 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
             {history ? tx("Done") : tx("History")}
           </button>
         )}
-        {editable && !editing && !history && (
+        {editable && !editing && !history && !live && (
           <button type="button" className="link-button" onClick={startEditing}>
             {tx("Edit")}
           </button>
