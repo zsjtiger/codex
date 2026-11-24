@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invites as invitesApi, projects as projectApi } from "./api/resources";
 import type { Artifact, Project, ScheduledTask } from "./api/types";
 import { ArtifactsPage } from "./components/ArtifactsPage";
-import { CustomizePage } from "./components/CustomizePage";
+import { PluginsPage } from "./components/PluginsPage";
 import { CodePage } from "./components/CodePage";
 import { Home } from "./components/Home";
 import { PreviewProvider } from "./components/Preview";
@@ -272,7 +272,7 @@ export function App() {
             onError={onError}
           />
         )}
-        {view === "customize" && <CustomizePage workspaceId={workspaceId} isAdmin={isAdmin} onBack={() => setView("chat")} onError={onError} />}
+        {view === "customize" && <PluginsPage workspaceId={workspaceId} isAdmin={isAdmin} onBack={() => setView("chat")} onError={onError} />}
         {view === "scheduled" && (
           <ScheduledPage
             workspaceId={workspaceId}

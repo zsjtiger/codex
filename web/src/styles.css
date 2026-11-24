@@ -300,6 +300,13 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .customize-inner { max-width: 1000px; margin: 0 auto; }
 .customize-page h1 { font-family: ui-serif, Georgia, serif; font-weight: 400; font-size: 34px; margin: 12px 0 18px; }
 .customize-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 28px; }
+.plugin-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+.plugin-search { flex: 1 1 220px; max-width: 360px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font: inherit; }
+.plugin-toolbar .add-button { margin-left: auto; }
+.plugin-row { align-items: center; gap: 14px; }
+.plugin-row .list-main { flex: 1; min-width: 0; }
+.plugin-mark { flex: none; width: 36px; height: 36px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; background: var(--surface-muted, #f3f4f6); font-weight: 600; }
+.plugin-kind { margin-left: 6px; padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted, #5b6472); font-size: 12px; font-weight: 400; vertical-align: middle; }
 .customize-tools { display: flex; align-items: center; gap: 8px; position: relative; }
 .segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; padding: 2px; }
 .segmented button { border: none; background: none; padding: 5px 12px; border-radius: 999px; cursor: pointer; font-size: 14px; color: var(--text-muted); }

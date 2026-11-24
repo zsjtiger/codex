@@ -577,7 +577,6 @@ addChinese({
   "Chats": "聊天",
   "Messages": "消息",
   "Project files": "项目文件",
-  "All": "全部",
   "Code": "代码",
 });
 
@@ -663,4 +662,14 @@ addChinese({
   "A version that was replaced by a later edit.": "被之后的编辑替换掉的版本。",
   "No earlier versions.": "没有更早的版本。",
   "Could not load the history.": "无法加载历史版本。",
+  "Search plugins": "搜索插件",
+  "Connector": "连接器",
+  "Skill": "技能",
+  "Plugin": "插件",
+  "No plugins match your search.": "没有匹配的插件。",
+  "Could not load plugins.": "无法加载插件。",
+  "Could not add the connector.": "无法添加连接器。",
+  "Could not add the skill.": "无法添加技能。",
+  "On": "开",
+  "Off": "关",
 });
