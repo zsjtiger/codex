@@ -92,8 +92,9 @@ async fn a_summary_turn_saves_its_reply_as_a_document_of_the_chat(pool: PgPool) 
 
     let (_, docs) = call(&state, "GET", &format!("/api/v1/workspaces/{ws_id}/artifacts?kind=document&thread_id={chat_id}"), &token, None).await;
     assert_eq!(docs.as_array().unwrap().len(), 1, "{docs}");
-    let (_, turns) = call(&state, "GET", &format!("/api/v1/threads/{chat_id}/turns"), &token, None).await;
-    assert_eq!(docs[0]["content"], turns[1]["reply"], "the document is the summary turn's reply");
+    // The document is the text the summary turn streamed (the mock streams "ignored"). It is not read
+    // from the stored reply, which the event stream may store a moment later.
+    assert_eq!(docs[0]["content"], "ignored", "the document is the summary turn's streamed reply");
 
     // A reply that is not complete cannot be summarized.
     let (status, _) = call(
@@ -105,4 +106,47 @@ async fn a_summary_turn_saves_its_reply_as_a_document_of_the_chat(pool: PgPool) 
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn the_model_can_change_a_document_of_its_chat_and_only_that(pool: PgPool) {
+    let state = AppState::new(pool.clone(), true, RuntimeConfig::default());
+    let mock = mock_app_server().await;
+    let token = login(&state, "editor@example.com").await;
+    let (ws_id, chat_id) = setup(&state, &token, Some(&mock.url)).await;
+
+    // A document of this chat, and one of no chat, which the model must not change.
+    let (_, doc) = call(
+        &state,
+        "POST",
+        &format!("/api/v1/workspaces/{ws_id}/artifacts"),
+        &token,
+        Some(json!({ "title": "目录", "kind": "document", "content": "旧内容", "thread_id": chat_id })),
+    )
+    .await;
+    let doc_id = doc["id"].as_str().unwrap().to_string();
+    let (_, loose) = call(
+        &state,
+        "POST",
+        &format!("/api/v1/workspaces/{ws_id}/artifacts"),
+        &token,
+        Some(json!({ "title": "另一份", "kind": "document", "content": "保持不变" })),
+    )
+    .await;
+    let loose_id = loose["id"].as_str().unwrap().to_string();
+
+    // The model's reply holds an edit for each; only the one in this chat changes.
+    call(&state, "POST", &format!("/api/v1/threads/{chat_id}/turns"), &token, Some(json!({ "input": format!("EDIT_DOC {doc_id}") }))).await;
+    assert_eq!(wait_for_turn(&state, &token, &chat_id, 0).await["status"], "completed");
+    call(&state, "POST", &format!("/api/v1/threads/{chat_id}/turns"), &token, Some(json!({ "input": format!("EDIT_DOC {loose_id}") }))).await;
+    assert_eq!(wait_for_turn(&state, &token, &chat_id, 1).await["status"], "completed");
+
+    let (_, edited) = call(&state, "GET", &format!("/api/v1/artifacts/{doc_id}"), &token, None).await;
+    assert_eq!(edited["content"], "# 修订\n\n模型改写的内容。");
+    let (_, versions) = call(&state, "GET", &format!("/api/v1/artifacts/{doc_id}/versions"), &token, None).await;
+    assert_eq!(versions.as_array().unwrap().len(), 1, "{versions}");
+    assert_eq!(versions[0]["content"], "旧内容");
+
+    let (_, untouched) = call(&state, "GET", &format!("/api/v1/artifacts/{loose_id}"), &token, None).await;
+    assert_eq!(untouched["content"], "保持不变", "a document of no chat is not the model's to change");
 }

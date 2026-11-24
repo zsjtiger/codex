@@ -178,7 +178,7 @@ pub async fn mock_app_server() -> MockServer {
                                     .unwrap();
                                     wait_for_response(&responses, APPROVAL_ID).await;
                                 }
-                                if input.contains("TOOL") || input.contains("请把下面的回答整理成一份结构清楚的文档") {
+                                if input.contains("TOOL") || input.contains("EDIT_DOC") || input.contains("请把下面的回答整理成一份结构清楚的文档") {
                                     out.send(
                                         json!({
                                             "method": "item/completed",
@@ -197,7 +197,7 @@ pub async fn mock_app_server() -> MockServer {
                                             "params": {
                                                 "threadId": "thr_mock",
                                                 "turnId": turn_id,
-                                                "item": {"type": "agentMessage", "id": "msg_1", "text": "ignored", "delivery": null, "memoryCitation": null, "phase": null, "questions": null}
+                                                "item": {"type": "agentMessage", "id": "msg_1", "text": agent_text(&input), "delivery": null, "memoryCitation": null, "phase": null, "questions": null}
                                             }
                                         })
                                         .to_string(),
@@ -405,4 +405,14 @@ pub async fn call_raw(
         .to_bytes()
         .to_vec();
     (status, content_type, bytes)
+}
+
+/// The mock's assistant text: a document edit when the message asks for one, else a fixed reply.
+/// `EDIT_DOC <id>` asks for the document with that id to be replaced with the text below.
+fn agent_text(input: &str) -> String {
+    if let Some(rest) = input.split("EDIT_DOC ").nth(1) {
+        let id: String = rest.chars().take_while(|c| c.is_ascii_hexdigit() || *c == '-').collect();
+        return format!("Changed it.\n\n````document-edit id={id}\n# 修订\n\n模型改写的内容。\n````");
+    }
+    "ignored".to_string()
 }

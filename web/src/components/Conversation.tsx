@@ -20,6 +20,33 @@ function relativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
+/**
+ * Takes the `document-edit` blocks out of a reply. Each block is a change the gateway has applied to
+ * a document; the reader sees that a document changed, not the text of the change.
+ */
+export function splitDocumentEdits(reply: string): { text: string; edited: number } {
+  const out: string[] = [];
+  let edited = 0;
+  const lines = reply.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const open = /^\s*(`{3,})document-edit\s+id=/.exec(lines[i]);
+    if (!open) {
+      out.push(lines[i]);
+      continue;
+    }
+    let close = i + 1;
+    while (close < lines.length && lines[close].trim() !== open[1]) close++;
+    if (close >= lines.length) {
+      // Never closed: it is not a change the gateway applied, so it stays as text.
+      out.push(lines[i]);
+      continue;
+    }
+    edited++;
+    i = close;
+  }
+  return { text: out.join("\n").replace(/\n{3,}/g, "\n\n").trim(), edited };
+}
+
 interface ReplyActionsProps {
   turn: Turn;
   reply: string;
@@ -491,7 +518,9 @@ export function Conversation({ variant = "chat", turns, agentText, activity, wor
     <div className={code ? "conversation code-conversation" : "conversation"}>
       {turns.map((turn) => {
         // Live text while the turn streams; the saved reply after a reload.
-        const reply = (turn.codex_turn_id ? agentText[turn.codex_turn_id] : undefined) || turn.reply || undefined;
+        const rawReply = (turn.codex_turn_id ? agentText[turn.codex_turn_id] : undefined) || turn.reply || undefined;
+        // Document edits the model made are applied by the gateway; the reader sees a note instead of the block.
+        const { text: reply, edited } = splitDocumentEdits(rawReply ?? "");
         const live = turn.codex_turn_id ? activity[turn.codex_turn_id] : undefined;
         const running = turn.status === "running" || turn.status === "queued";
         if (code) {
@@ -514,10 +543,11 @@ export function Conversation({ variant = "chat", turns, agentText, activity, wor
               )}
               {workLog && (workLog.order.length > 0 || workLog.plan) && <WorkLogView log={workLog} />}
               {otherSteps && otherSteps.steps.length > 0 && <CodeActivity activity={otherSteps} />}
-              {reply && (
+              {(reply || edited > 0) && (
                 <>
                   <div className="code-reply">
-                    <MarkdownView source={reply} />
+                    {reply && <MarkdownView source={reply} />}
+                    {edited > 0 && <p className="muted small doc-edited">{tx("Updated a document in this chat.")}</p>}
                   </div>
                   {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} onSummarize={onSummarize} />}
                 </>
@@ -542,10 +572,11 @@ export function Conversation({ variant = "chat", turns, agentText, activity, wor
               </div>
             )}
             {live && (live.reasoning || live.steps.length > 0) && <ThinkingBlock activity={live} running={running} />}
-            {reply && (
+            {(reply || edited > 0) && (
               <>
                 <div className="bubble agent">
-                  <MarkdownView source={reply} />
+                  {reply && <MarkdownView source={reply} />}
+                  {edited > 0 && <p className="muted small doc-edited">{tx("Updated a document in this chat.")}</p>}
                 </div>
                 {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} onSummarize={onSummarize} />}
               </>

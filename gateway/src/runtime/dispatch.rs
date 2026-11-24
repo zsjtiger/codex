@@ -320,6 +320,9 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
     if let Some(context) = past_chats_context(&state.pool, turn.created_by, turn.workspace_id, turn.thread_id, &turn.input).await {
         text = format!("{context}\n\n{text}");
     }
+    if let Some(context) = super::documents::document_context(&state.pool, turn.thread_id).await? {
+        text = format!("{context}\n\n{text}");
+    }
     if let Some(dir) = &output_dir {
         if let Err(err) = std::fs::create_dir_all(dir) {
             tracing::warn!(%err, "could not create the turn's output folder");
@@ -374,6 +377,14 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
     // The document exists before the turn reads as completed, so anyone who sees the turn finish sees it.
     if outcome.status == "completed" {
         save_summary_document(state, turn_id, outcome.reply.as_deref()).await;
+    }
+    // The model's edits to this chat's documents land with the turn, before it reads as finished.
+    if outcome.status == "completed" {
+        if let Some(reply) = outcome.reply.as_deref() {
+            if let Err(err) = super::documents::apply_document_edits(&state.pool, turn.thread_id, turn.created_by, reply).await {
+                tracing::warn!(%err, "could not apply the document edits of a reply");
+            }
+        }
     }
 
     sqlx::query("UPDATE turns SET status = $2, error = $3, completed_at = now() WHERE id = $1")

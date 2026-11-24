@@ -6,6 +6,7 @@
 //! a connection; idle local processes are stopped once no lease is held.
 
 pub mod dispatch;
+pub mod documents;
 pub mod hub;
 pub mod outputs;
 pub mod rpc;

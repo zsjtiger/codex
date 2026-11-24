@@ -1000,3 +1000,4 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 @media (max-width: 760px) {
   .preview-panel-wide { width: 100%; }
 }
+.doc-edited { margin: 8px 0 0; }
