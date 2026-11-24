@@ -150,3 +150,21 @@ async fn the_model_can_change_a_document_of_its_chat_and_only_that(pool: PgPool)
     let (_, untouched) = call(&state, "GET", &format!("/api/v1/artifacts/{loose_id}"), &token, None).await;
     assert_eq!(untouched["content"], "保持不变", "a document of no chat is not the model's to change");
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_request_to_save_text_as_a_document_makes_one_in_its_chat(pool: PgPool) {
+    let state = AppState::new(pool.clone(), true, RuntimeConfig::default());
+    let mock = mock_app_server().await;
+    let token = login(&state, "saver@example.com").await;
+    let (ws_id, chat_id) = setup(&state, &token, Some(&mock.url)).await;
+
+    // The model reads the request and saves the text it chose as a document of this chat.
+    call(&state, "POST", &format!("/api/v1/threads/{chat_id}/turns"), &token, Some(json!({ "input": "SAVE_DOC 把上面的文字保存为doc" }))).await;
+    assert_eq!(wait_for_turn(&state, &token, &chat_id, 0).await["status"], "completed");
+
+    let (_, docs) = call(&state, "GET", &format!("/api/v1/workspaces/{ws_id}/artifacts?kind=document&thread_id={chat_id}"), &token, None).await;
+    assert_eq!(docs.as_array().unwrap().len(), 1, "{docs}");
+    assert_eq!(docs[0]["title"], "保存的文档");
+    assert_eq!(docs[0]["content"], "# 保存的内容\n\n正文一句。");
+}
+

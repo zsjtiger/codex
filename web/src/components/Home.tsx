@@ -7,7 +7,7 @@ import type { WorkLog } from "../state/work";
 import { Composer } from "./Composer";
 import { usePreview } from "./Preview";
 import { Conversation } from "./Conversation";
-import { liveDocumentEdit, splitDocumentEdits } from "./documentEdits";
+import { liveDocumentEdit } from "./documentEdits";
 import { ChevronIcon, FileIcon, SparkIcon } from "./icons";
 import { useI18n } from "../i18n";
 import { tx } from "../i18n";
@@ -42,19 +42,6 @@ interface HomeProps {
   error: string | null;
   onError: (message: string) => void;
   onDismissError: () => void;
-}
-
-/**
- * A message that asks for the reply to be saved as a document, in Chinese or English. Short requests
- * match on the words alone; a longer one must point at the text above it (e.g. "把上面的文字保存为doc").
- */
-export function isSaveDocumentRequest(text: string): boolean {
-  const trimmed = text.trim();
-  if (!trimmed) return false;
-  const save = /(保存|存为|存成|存到|另存)(为|成)?\s*(文档|doc(?![a-z]))|save\s+(this\s+|it\s+|that\s+|the\s+reply\s+)?as\s+(a\s+)?(document|doc)(?![a-z])/i;
-  if (trimmed.length <= 40) return save.test(trimmed);
-  const above = /(上面|以上|刚才|前面|上述)/;
-  return trimmed.length <= 80 && above.test(trimmed) && save.test(trimmed);
 }
 
 export function Home(props: HomeProps) {
@@ -143,22 +130,6 @@ export function Home(props: HomeProps) {
     } catch (err) {
       onError(err instanceof Error ? err.message : tx("Could not save the document."));
     }
-  };
-
-  // "Save as document" typed in the chat saves the latest reply instead of asking the model anything.
-  const sendOrSave = (text: string, options: SendOptions) => {
-    if (!isSaveDocumentRequest(text)) {
-      onSend(text, options);
-      return;
-    }
-    const latest = [...turns].reverse().find((turn) => turn.status === "completed");
-    const raw = latest ? (latest.codex_turn_id ? agentText[latest.codex_turn_id] : undefined) || latest.reply || "" : "";
-    const reply = splitDocumentEdits(raw).text;
-    if (!reply) {
-      onError(tx("There is no reply in this chat to save yet."));
-      return;
-    }
-    void saveDocument(reply);
   };
 
   // Asks the model to write a reply as a document of this chat; the card appears when that turn finishes.
@@ -268,7 +239,7 @@ export function Home(props: HomeProps) {
           <div className="composer-dock">
             <Composer
               environmentId={environment?.id ?? null}
-              onSend={sendOrSave}
+              onSend={onSend}
               onStop={runningTurn ? () => onStop(runningTurn.id) : undefined}
               running={Boolean(runningTurn)}
               disabled={sending}

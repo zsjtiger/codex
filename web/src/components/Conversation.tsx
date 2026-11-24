@@ -494,7 +494,8 @@ export function Conversation({ variant = "chat", turns, agentText, activity, wor
         // Live text while the turn streams; the saved reply after a reload.
         const rawReply = (turn.codex_turn_id ? agentText[turn.codex_turn_id] : undefined) || turn.reply || undefined;
         // Document edits the model made are applied by the gateway; the reader sees a note instead of the block.
-        const { text: reply, edited } = splitDocumentEdits(rawReply ?? "");
+        const { text: reply, edited, created } = splitDocumentEdits(rawReply ?? "");
+        const changeNote = created > 0 ? tx("Saved a document in this chat.") : edited > 0 ? tx("Updated a document in this chat.") : null;
         const live = turn.codex_turn_id ? activity[turn.codex_turn_id] : undefined;
         const running = turn.status === "running" || turn.status === "queued";
         if (code) {
@@ -517,11 +518,11 @@ export function Conversation({ variant = "chat", turns, agentText, activity, wor
               )}
               {workLog && (workLog.order.length > 0 || workLog.plan) && <WorkLogView log={workLog} />}
               {otherSteps && otherSteps.steps.length > 0 && <CodeActivity activity={otherSteps} />}
-              {(reply || edited > 0) && (
+              {(reply || changeNote) && (
                 <>
                   <div className="code-reply">
                     {reply && <MarkdownView source={reply} />}
-                    {edited > 0 && <p className="muted small doc-edited">{tx("Updated a document in this chat.")}</p>}
+                    {changeNote && <p className="muted small doc-edited">{changeNote}</p>}
                   </div>
                   {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} onSummarize={onSummarize} />}
                 </>
@@ -546,11 +547,11 @@ export function Conversation({ variant = "chat", turns, agentText, activity, wor
               </div>
             )}
             {live && (live.reasoning || live.steps.length > 0) && <ThinkingBlock activity={live} running={running} />}
-            {(reply || edited > 0) && (
+            {(reply || changeNote) && (
               <>
                 <div className="bubble agent">
                   {reply && <MarkdownView source={reply} />}
-                  {edited > 0 && <p className="muted small doc-edited">{tx("Updated a document in this chat.")}</p>}
+                  {changeNote && <p className="muted small doc-edited">{changeNote}</p>}
                 </div>
                 {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} onSummarize={onSummarize} />}
               </>

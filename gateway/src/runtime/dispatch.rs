@@ -384,6 +384,9 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
             if let Err(err) = super::documents::apply_document_edits(&state.pool, turn.thread_id, turn.created_by, reply).await {
                 tracing::warn!(%err, "could not apply the document edits of a reply");
             }
+            if let Err(err) = super::documents::apply_creates(&state.pool, turn.workspace_id, turn.thread_id, turn.created_by, reply).await {
+                tracing::warn!(%err, "could not save the documents of a reply");
+            }
         }
     }
 

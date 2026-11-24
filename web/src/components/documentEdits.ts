@@ -6,12 +6,13 @@
  * Takes the `document-edit` blocks out of a reply. Each block is a change the gateway has applied to
  * a document; the reader sees that a document changed, not the text of the change.
  */
-export function splitDocumentEdits(reply: string): { text: string; edited: number } {
+export function splitDocumentEdits(reply: string): { text: string; edited: number; created: number } {
   const out: string[] = [];
   let edited = 0;
+  let created = 0;
   const lines = reply.split("\n");
   for (let i = 0; i < lines.length; i++) {
-    const open = /^\s*(`{3,})document-edit\s+id=/.exec(lines[i]);
+    const open = /^\s*(`{3,})document-(edit\s+id=|create\b)/.exec(lines[i]);
     if (!open) {
       out.push(lines[i]);
       continue;
@@ -23,10 +24,11 @@ export function splitDocumentEdits(reply: string): { text: string; edited: numbe
       out.push(lines[i]);
       continue;
     }
-    edited++;
+    if (open[2].startsWith("create")) created++;
+    else edited++;
     i = close;
   }
-  return { text: out.join("\n").replace(/\n{3,}/g, "\n\n").trim(), edited };
+  return { text: out.join("\n").replace(/\n{3,}/g, "\n\n").trim(), edited, created };
 }
 
 /** The change a streaming reply is making now: the document, its text so far, and whether the block has closed. */

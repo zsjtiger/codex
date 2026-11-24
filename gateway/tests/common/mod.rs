@@ -178,7 +178,7 @@ pub async fn mock_app_server() -> MockServer {
                                     .unwrap();
                                     wait_for_response(&responses, APPROVAL_ID).await;
                                 }
-                                if input.contains("TOOL") || input.contains("EDIT_DOC") || input.contains("请把下面的回答整理成一份结构清楚的文档") {
+                                if input.contains("TOOL") || input.contains("EDIT_DOC") || input.contains("SAVE_DOC") || input.contains("请把下面的回答整理成一份结构清楚的文档") {
                                     out.send(
                                         json!({
                                             "method": "item/completed",
@@ -413,6 +413,9 @@ fn agent_text(input: &str) -> String {
     if let Some(rest) = input.split("EDIT_DOC ").nth(1) {
         let id: String = rest.chars().take_while(|c| c.is_ascii_hexdigit() || *c == '-').collect();
         return format!("Changed it.\n\n````document-edit id={id}\n# 修订\n\n模型改写的内容。\n````");
+    }
+    if input.contains("SAVE_DOC") {
+        return "Saved it.\n\n````document-create title=\"保存的文档\"\n# 保存的内容\n\n正文一句。\n````".to_string();
     }
     "ignored".to_string()
 }

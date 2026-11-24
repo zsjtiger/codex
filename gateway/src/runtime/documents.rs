@@ -1,10 +1,12 @@
-//! Documents a chat holds, and the edits the model makes to them.
+//! Documents a chat holds, and the documents the model makes or changes.
 //!
 //! Each turn in a chat gets the chat's documents in front of the message, so the model can see
-//! them. To change one, the model replies with the document's complete new text in a block that
-//! starts with four backticks and `document-edit id=<document id>`. When the turn completes, the
-//! gateway applies the block to that document of the same chat, keeping the text it replaces as a
-//! version. Blocks that name a document of another chat, or that do not parse, change nothing.
+//! them, and the way to write documents. To change one, the model replies with the document's
+//! complete new text in a block that starts with four backticks and `document-edit id=<document
+//! id>`. To save text as a new document, it replies with a block that starts with four backticks and
+//! `document-create title="<title>"`, holding the text to save. When the turn completes, the gateway
+//! applies these blocks to the chat. Blocks that name a document of another chat, or that do not
+//! parse, change nothing.
 
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -12,7 +14,8 @@ use uuid::Uuid;
 /// Documents shown to the model for one turn, in characters. Documents past this are left out.
 const CONTEXT_BUDGET: usize = 200_000;
 
-/// The documents of a chat, with the instructions for changing them. `None` when the chat has none.
+/// The instructions for documents, and the chat's documents. Every turn gets the instructions, so the
+/// model can tell when a request is for a document.
 pub(crate) async fn document_context(pool: &PgPool, thread_id: Uuid) -> Result<Option<String>, sqlx::Error> {
     let docs: Vec<(Uuid, String, String)> = sqlx::query_as(
         "SELECT id, title, content FROM artifacts
@@ -21,11 +24,17 @@ pub(crate) async fn document_context(pool: &PgPool, thread_id: Uuid) -> Result<O
     .bind(thread_id)
     .fetch_all(pool)
     .await?;
-    if docs.is_empty() {
-        return Ok(None);
-    }
     let mut text = String::from(
-        "Documents in this chat. You may change one. To do so, reply with its complete new text in a block \
+        "Documents. When the request is to save text as a document (for example \"save the text above as a \
+         doc\"), reply with a block that starts with four backticks followed by `document-create title=\"<title>\"` \
+         and ends with four backticks, holding the text to save, copied exactly. Say briefly that it is saved. \
+         Do not use that block for anything else.\n",
+    );
+    if docs.is_empty() {
+        return Ok(Some(text));
+    }
+    text.push_str(
+        "\nDocuments in this chat. You may change one. To do so, reply with its complete new text in a block \
          that starts with four backticks followed by `document-edit id=<id>` and ends with four backticks. \
          Put nothing else in the block, and say briefly in your reply what you changed. Change only the \
          documents listed here.\n",
@@ -81,6 +90,85 @@ pub(crate) fn parse_edits(reply: &str) -> Vec<Edit> {
         }
     }
     edits
+}
+
+/// A block that saves text as a new document of the chat.
+#[derive(Debug, PartialEq)]
+pub(crate) struct Create {
+    pub title: Option<String>,
+    pub content: String,
+}
+
+/// The `document-create` blocks in a reply, in order. The title is optional.
+pub(crate) fn parse_creates(reply: &str) -> Vec<Create> {
+    let mut creates = Vec::new();
+    let mut lines = reply.lines();
+    while let Some(line) = lines.next() {
+        let Some((fence, info)) = opening_fence(line) else {
+            continue;
+        };
+        let Some(rest) = info.strip_prefix("document-create") else {
+            continue;
+        };
+        let title = rest.trim().strip_prefix("title=").and_then(|raw| {
+            let raw = raw.trim();
+            let value = match raw.strip_prefix('"') {
+                Some(quoted) => quoted.split('"').next()?.to_string(),
+                None => raw.split_whitespace().next()?.to_string(),
+            };
+            let value = value.trim().to_string();
+            (!value.is_empty()).then_some(value)
+        });
+        let mut body = Vec::new();
+        let mut closed = false;
+        for inner in lines.by_ref() {
+            if inner.trim() == fence {
+                closed = true;
+                break;
+            }
+            body.push(inner);
+        }
+        if closed {
+            creates.push(Create { title, content: body.join("\n") });
+        }
+    }
+    creates
+}
+
+/// Saves each `document-create` block of a completed reply as a document of the chat, made by the
+/// person who sent the turn. A block with no text, or too much, is skipped.
+pub(crate) async fn apply_creates(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    thread_id: Uuid,
+    made_by: Option<Uuid>,
+    reply: &str,
+) -> Result<usize, sqlx::Error> {
+    const MAX_CONTENT: usize = 500_000;
+    let mut saved = 0;
+    for create in parse_creates(reply) {
+        let content = create.content.trim_end().to_string();
+        if content.trim().is_empty() || content.len() > MAX_CONTENT {
+            continue;
+        }
+        let title = match create.title {
+            Some(title) => title.chars().take(200).collect(),
+            None => super::dispatch::document_title(&content),
+        };
+        sqlx::query(
+            "INSERT INTO artifacts (workspace_id, thread_id, title, kind, content, created_by)
+             VALUES ($1, $2, $3, 'document', $4, $5)",
+        )
+        .bind(workspace_id)
+        .bind(thread_id)
+        .bind(title)
+        .bind(content)
+        .bind(made_by)
+        .execute(pool)
+        .await?;
+        saved += 1;
+    }
+    Ok(saved)
 }
 
 /// The fence and the info string of a line that opens a fenced block, if it does.
@@ -149,6 +237,19 @@ mod tests {
         assert_eq!(edits.len(), 1);
         assert_eq!(edits[0].id.to_string(), ID);
         assert_eq!(edits[0].content, "# 新标题\n\n```rust\nfn main() {}\n```");
+    }
+
+    #[test]
+    fn a_create_block_gives_its_title_and_text() {
+        let reply = "Saved.\n\n````document-create title=\"结题总结\"\n# 结题\n\n正文\n````\n";
+        assert_eq!(
+            parse_creates(reply),
+            vec![Create { title: Some("结题总结".to_string()), content: "# 结题\n\n正文".to_string() }]
+        );
+        let untitled = parse_creates("````document-create\nonly text\n````");
+        assert_eq!(untitled, vec![Create { title: None, content: "only text".to_string() }]);
+        // An edit block is not a create block.
+        assert!(parse_creates(&format!("````document-edit id={ID}\nx\n````")).is_empty());
     }
 
     #[test]

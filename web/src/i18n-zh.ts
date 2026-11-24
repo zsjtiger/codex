@@ -675,5 +675,5 @@ addChinese({
   "Create a skill": "创建技能",
   "Updated a document in this chat.": "已更新本对话中的文档。",
   "Updating…": "正在更新…",
-  "There is no reply in this chat to save yet.": "这个对话还没有可以保存的回复。",
+  "Saved a document in this chat.": "已在本对话中保存为文档。",
 });
