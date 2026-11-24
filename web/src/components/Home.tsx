@@ -7,7 +7,7 @@ import type { WorkLog } from "../state/work";
 import { Composer } from "./Composer";
 import { usePreview } from "./Preview";
 import { Conversation } from "./Conversation";
-import { liveDocumentEdit } from "./documentEdits";
+import { liveDocumentEdit, splitDocumentEdits } from "./documentEdits";
 import { ChevronIcon, FileIcon, SparkIcon } from "./icons";
 import { useI18n } from "../i18n";
 import { tx } from "../i18n";
@@ -42,6 +42,12 @@ interface HomeProps {
   error: string | null;
   onError: (message: string) => void;
   onDismissError: () => void;
+}
+
+/** A short message that asks for the reply to be saved as a document, in Chinese or English. */
+export function isSaveDocumentRequest(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed.length > 0 && trimmed.length <= 40 && /(保存|存为|存成|存到|另存)(为|成)?文档|save (this |it |that |the reply )?as (a )?document/i.test(trimmed);
 }
 
 export function Home(props: HomeProps) {
@@ -130,6 +136,22 @@ export function Home(props: HomeProps) {
     } catch (err) {
       onError(err instanceof Error ? err.message : tx("Could not save the document."));
     }
+  };
+
+  // "Save as document" typed in the chat saves the latest reply instead of asking the model anything.
+  const sendOrSave = (text: string, options: SendOptions) => {
+    if (!isSaveDocumentRequest(text)) {
+      onSend(text, options);
+      return;
+    }
+    const latest = [...turns].reverse().find((turn) => turn.status === "completed");
+    const raw = latest ? (latest.codex_turn_id ? agentText[latest.codex_turn_id] : undefined) || latest.reply || "" : "";
+    const reply = splitDocumentEdits(raw).text;
+    if (!reply) {
+      onError(tx("There is no reply in this chat to save yet."));
+      return;
+    }
+    void saveDocument(reply);
   };
 
   // Asks the model to write a reply as a document of this chat; the card appears when that turn finishes.
@@ -239,7 +261,7 @@ export function Home(props: HomeProps) {
           <div className="composer-dock">
             <Composer
               environmentId={environment?.id ?? null}
-              onSend={onSend}
+              onSend={sendOrSave}
               onStop={runningTurn ? () => onStop(runningTurn.id) : undefined}
               running={Boolean(runningTurn)}
               disabled={sending}
