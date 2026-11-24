@@ -44,10 +44,17 @@ interface HomeProps {
   onDismissError: () => void;
 }
 
-/** A short message that asks for the reply to be saved as a document, in Chinese or English. */
+/**
+ * A message that asks for the reply to be saved as a document, in Chinese or English. Short requests
+ * match on the words alone; a longer one must point at the text above it (e.g. "把上面的文字保存为doc").
+ */
 export function isSaveDocumentRequest(text: string): boolean {
   const trimmed = text.trim();
-  return trimmed.length > 0 && trimmed.length <= 40 && /(保存|存为|存成|存到|另存)(为|成)?文档|save (this |it |that |the reply )?as (a )?document/i.test(trimmed);
+  if (!trimmed) return false;
+  const save = /(保存|存为|存成|存到|另存)(为|成)?\s*(文档|doc(?![a-z]))|save\s+(this\s+|it\s+|that\s+|the\s+reply\s+)?as\s+(a\s+)?(document|doc)(?![a-z])/i;
+  if (trimmed.length <= 40) return save.test(trimmed);
+  const above = /(上面|以上|刚才|前面|上述)/;
+  return trimmed.length <= 80 && above.test(trimmed) && save.test(trimmed);
 }
 
 export function Home(props: HomeProps) {
