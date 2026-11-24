@@ -38,6 +38,8 @@ pub struct Hub {
     subscribers: Mutex<HashMap<Uuid, Vec<(u64, Outbound)>>>,
     pending: Mutex<HashMap<Uuid, Pending>>,
     codex_threads: Mutex<HashMap<String, Uuid>>,
+    /// Reply text whose turn is not yet linked to its codex turn, by codex turn id. See `record_reply`.
+    unplaced_replies: tokio::sync::Mutex<HashMap<String, (Uuid, Vec<String>)>>,
     next_subscription: AtomicU64,
 }
 
@@ -124,7 +126,7 @@ impl Hub {
         if method == "item/completed" {
             record_tool_use(pool, thread_id, params).await;
             record_work(pool, thread_id, params).await;
-            record_reply(pool, thread_id, params).await;
+            self.record_reply(pool, thread_id, params).await;
         }
         self.send_to(
             thread_id,
@@ -315,20 +317,53 @@ async fn record_connector_status(pool: &PgPool, thread_id: Uuid, params: &Value)
 }
 
 /// Appends the text of a completed assistant message to its turn, so the reply survives a reload.
-async fn record_reply(pool: &PgPool, thread_id: Uuid, params: &Value) {
-    let item = match params.get("item") {
-        Some(item) if item.get("type").and_then(Value::as_str) == Some("agentMessage") => item,
-        _ => return,
-    };
-    let (Some(codex_turn_id), Some(text)) = (
-        params.get("turnId").and_then(Value::as_str),
-        item.get("text")
-            .and_then(Value::as_str)
-            .filter(|t| !t.is_empty()),
-    ) else {
-        return;
-    };
-    let text = truncate(text, 200_000);
+impl Hub {
+    /// Appends a completed message to its turn. The turn learns its codex turn id a moment after the
+    /// first events can arrive; a message that finds no turn waits in `unplaced_replies` until the
+    /// turn is linked, so it is neither lost nor written twice (see `link_replies`).
+    async fn record_reply(&self, pool: &PgPool, thread_id: Uuid, params: &Value) {
+        let item = match params.get("item") {
+            Some(item) if item.get("type").and_then(Value::as_str) == Some("agentMessage") => item,
+            _ => return,
+        };
+        let (Some(codex_turn_id), Some(text)) = (
+            params.get("turnId").and_then(Value::as_str),
+            item.get("text")
+                .and_then(Value::as_str)
+                .filter(|t| !t.is_empty()),
+        ) else {
+            return;
+        };
+        let text = truncate(text, 200_000);
+        let mut unplaced = self.unplaced_replies.lock().await;
+        match append_reply(pool, thread_id, codex_turn_id, &text).await {
+            Ok(0) => unplaced
+                .entry(codex_turn_id.to_string())
+                .or_insert_with(|| (thread_id, Vec::new()))
+                .1
+                .push(text),
+            Ok(_) => {}
+            Err(err) => tracing::warn!(%err, "could not record assistant reply"),
+        }
+    }
+
+    /// Writes the replies that arrived before their turn was linked to `codex_turn_id`. Called once
+    /// the turn's codex turn id is stored.
+    pub async fn link_replies(&self, pool: &PgPool, codex_turn_id: &str) {
+        let mut unplaced = self.unplaced_replies.lock().await;
+        let Some((thread_id, texts)) = unplaced.remove(codex_turn_id) else {
+            return;
+        };
+        for text in texts {
+            if let Err(err) = append_reply(pool, thread_id, codex_turn_id, &text).await {
+                tracing::warn!(%err, "could not record assistant reply");
+            }
+        }
+    }
+}
+
+/// Appends `text` to the reply of the turn with this codex turn id; returns how many turns matched.
+async fn append_reply(pool: &PgPool, thread_id: Uuid, codex_turn_id: &str, text: &str) -> Result<u64, sqlx::Error> {
     let result = sqlx::query(
         "UPDATE turns SET reply = CASE WHEN reply IS NULL THEN $3
                                        ELSE left(reply || E'\n\n' || $3, 200000) END
@@ -338,10 +373,8 @@ async fn record_reply(pool: &PgPool, thread_id: Uuid, params: &Value) {
     .bind(codex_turn_id)
     .bind(text)
     .execute(pool)
-    .await;
-    if let Err(err) = result {
-        tracing::warn!(%err, "could not record assistant reply");
-    }
+    .await?;
+    Ok(result.rows_affected())
 }
 
 /// Stores a completed tool, search, or file action so the conversation can list what Codex used.

@@ -92,9 +92,10 @@ async fn a_summary_turn_saves_its_reply_as_a_document_of_the_chat(pool: PgPool) 
 
     let (_, docs) = call(&state, "GET", &format!("/api/v1/workspaces/{ws_id}/artifacts?kind=document&thread_id={chat_id}"), &token, None).await;
     assert_eq!(docs.as_array().unwrap().len(), 1, "{docs}");
-    // The document is the text the summary turn streamed (the mock streams "ignored"). It is not read
-    // from the stored reply, which the event stream may store a moment later.
     assert_eq!(docs[0]["content"], "ignored", "the document is the summary turn's streamed reply");
+    // The reply is stored with the turn: it is there as soon as the turn reads as finished.
+    let (_, turns) = call(&state, "GET", &format!("/api/v1/threads/{chat_id}/turns"), &token, None).await;
+    assert_eq!(turns[1]["reply"], "ignored", "the stored reply is in place when the turn completes");
 
     // A reply that is not complete cannot be summarized.
     let (status, _) = call(
@@ -166,5 +167,23 @@ async fn a_request_to_save_text_as_a_document_makes_one_in_its_chat(pool: PgPool
     assert_eq!(docs.as_array().unwrap().len(), 1, "{docs}");
     assert_eq!(docs[0]["title"], "保存的文档");
     assert_eq!(docs[0]["content"], "# 保存的内容\n\n正文一句。");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_save_with_no_text_keeps_the_previous_reply_exactly(pool: PgPool) {
+    let state = AppState::new(pool.clone(), true, RuntimeConfig::default());
+    let mock = mock_app_server().await;
+    let token = login(&state, "previous@example.com").await;
+    let (ws_id, chat_id) = setup(&state, &token, Some(&mock.url)).await;
+
+    call(&state, "POST", &format!("/api/v1/threads/{chat_id}/turns"), &token, Some(json!({ "input": "TOOL explain it" }))).await;
+    assert_eq!(wait_for_turn(&state, &token, &chat_id, 0).await["status"], "completed");
+    call(&state, "POST", &format!("/api/v1/threads/{chat_id}/turns"), &token, Some(json!({ "input": "SAVE_EMPTY 把上面的文字保存为doc" }))).await;
+    assert_eq!(wait_for_turn(&state, &token, &chat_id, 1).await["status"], "completed");
+
+    let (_, docs) = call(&state, "GET", &format!("/api/v1/workspaces/{ws_id}/artifacts?kind=document&thread_id={chat_id}"), &token, None).await;
+    assert_eq!(docs.as_array().unwrap().len(), 1, "{docs}");
+    assert_eq!(docs[0]["title"], "上一条");
+    assert_eq!(docs[0]["content"], "ignored", "the previous reply, as it was");
 }
 

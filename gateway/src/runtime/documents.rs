@@ -27,8 +27,8 @@ pub(crate) async fn document_context(pool: &PgPool, thread_id: Uuid) -> Result<O
     let mut text = String::from(
         "Documents. When the request is to save text as a document (for example \"save the text above as a \
          doc\"), reply with a block that starts with four backticks followed by `document-create title=\"<title>\"` \
-         and ends with four backticks, holding the text to save, copied exactly. Say briefly that it is saved. \
-         Do not use that block for anything else.\n",
+         and ends with four backticks, holding the text to save, copied exactly. To save the previous reply as \
+         it is, leave the block empty. Say briefly that it is saved. Do not use that block for anything else.\n",
     );
     if docs.is_empty() {
         return Ok(Some(text));
@@ -135,10 +135,26 @@ pub(crate) fn parse_creates(reply: &str) -> Vec<Create> {
     creates
 }
 
+/// The reply of the chat's last completed turn before this one, as stored.
+async fn previous_reply(pool: &PgPool, turn_id: Uuid) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT prev.reply FROM turns cur
+         JOIN turns prev ON prev.thread_id = cur.thread_id AND prev.seq < cur.seq
+         WHERE cur.id = $1 AND prev.status = 'completed' AND prev.reply IS NOT NULL
+         ORDER BY prev.seq DESC LIMIT 1",
+    )
+    .bind(turn_id)
+    .fetch_optional(pool)
+    .await
+    .map(Option::flatten)
+}
+
 /// Saves each `document-create` block of a completed reply as a document of the chat, made by the
-/// person who sent the turn. A block with no text, or too much, is skipped.
+/// person who sent the turn. A block with no text takes the chat's previous reply. A block with too
+/// much text is skipped.
 pub(crate) async fn apply_creates(
     pool: &PgPool,
+    turn_id: Uuid,
     workspace_id: Uuid,
     thread_id: Uuid,
     made_by: Option<Uuid>,
@@ -147,7 +163,13 @@ pub(crate) async fn apply_creates(
     const MAX_CONTENT: usize = 500_000;
     let mut saved = 0;
     for create in parse_creates(reply) {
-        let content = create.content.trim_end().to_string();
+        let mut content = create.content.trim_end().to_string();
+        if content.trim().is_empty() {
+            content = match previous_reply(pool, turn_id).await? {
+                Some(previous) => previous.trim_end().to_string(),
+                None => continue,
+            };
+        }
         if content.trim().is_empty() || content.len() > MAX_CONTENT {
             continue;
         }

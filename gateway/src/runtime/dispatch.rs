@@ -355,6 +355,8 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
         .bind(&codex_turn_id)
         .execute(&state.pool)
         .await?;
+    // Replies that arrived before this link are written now; later ones find the turn themselves.
+    state.runtime.hub().link_replies(&state.pool, &codex_turn_id).await;
     sqlx::query("UPDATE threads SET state = 'running', updated_at = now() WHERE id = $1")
         .bind(turn.thread_id)
         .execute(&state.pool)
@@ -384,7 +386,7 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
             if let Err(err) = super::documents::apply_document_edits(&state.pool, turn.thread_id, turn.created_by, reply).await {
                 tracing::warn!(%err, "could not apply the document edits of a reply");
             }
-            if let Err(err) = super::documents::apply_creates(&state.pool, turn.workspace_id, turn.thread_id, turn.created_by, reply).await {
+            if let Err(err) = super::documents::apply_creates(&state.pool, turn_id, turn.workspace_id, turn.thread_id, turn.created_by, reply).await {
                 tracing::warn!(%err, "could not save the documents of a reply");
             }
         }
