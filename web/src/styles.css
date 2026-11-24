@@ -303,6 +303,10 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .plugin-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
 .plugin-search { flex: 1 1 220px; max-width: 360px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font: inherit; }
 .plugin-add { margin-left: auto; position: relative; }
+.plugin-toolbar .tabs { margin-bottom: 0; }
+.plugin-toolbar .plugin-search, .plugin-toolbar .tab, .plugin-toolbar .add-button { height: 36px; box-sizing: border-box; }
+.plugin-toolbar .tab { display: inline-flex; align-items: center; padding: 0 14px; }
+.plugin-toolbar .add-button { display: inline-flex; align-items: center; }
 .plugin-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 230px; padding: 6px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); }
 .plugin-menu button { display: block; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: none; font: inherit; text-align: left; cursor: pointer; }
 .plugin-menu button:hover { background: var(--surface-muted, #f3f4f6); }
