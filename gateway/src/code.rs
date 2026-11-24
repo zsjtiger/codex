@@ -138,6 +138,24 @@ pub async fn user_auth(config: &CodeConfig, pool: &PgPool, user_id: Uuid) -> Res
     }
 }
 
+/// The sandbox a code turn runs in: Codex's own OS sandbox, writable only in the session's checkout and
+/// in the clone it belongs to (a worktree keeps its git data there). Network stays off.
+pub fn sandbox_policy(config: &CodeConfig, repo_id: Uuid, thread_id: Uuid) -> serde_json::Value {
+    let absolute = |path: PathBuf| -> String {
+        std::fs::canonicalize(&path).unwrap_or(path).to_string_lossy().to_string()
+    };
+    serde_json::json!({
+        "type": "workspace-write",
+        "writable_roots": [
+            absolute(worktree_dir(config, thread_id)),
+            absolute(clone_dir(config, repo_id)),
+        ],
+        "network_access": false,
+        "exclude_tmpdir_env_var": false,
+        "exclude_slash_tmp": false,
+    })
+}
+
 fn clone_dir(config: &CodeConfig, repo_id: Uuid) -> PathBuf {
     config.root.join("repos").join(repo_id.to_string())
 }

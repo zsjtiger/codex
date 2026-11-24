@@ -291,6 +291,9 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
     if let Some(cwd) = &cwd {
         params["cwd"] = json!(cwd);
     }
+    if let Some(repo_id) = turn.repo_id {
+        params["sandboxPolicy"] = crate::code::sandbox_policy(&state.code, repo_id, turn.thread_id);
+    }
     let response = lease.request("turn/start", params).await?;
     let codex_turn_id = response
         .pointer("/turn/id")
@@ -619,6 +622,8 @@ async fn start_codex_thread(
     }
     if let Some(cwd) = cwd {
         params["cwd"] = json!(cwd);
+        // A code session runs inside Codex's own OS sandbox, not with full access.
+        params["sandbox"] = json!("workspace-write");
     }
     if let Some(config) = codex_mcp_config(pool, workspace_id).await? {
         params["config"] = config;
