@@ -113,15 +113,77 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
   const [editing, setEditing] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [draft, setDraft] = useState({ title: "", content: "" });
-  const [saving, setSaving] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   // The earlier versions of a document, and the one being read, when the history is open.
   const [history, setHistory] = useState<{ versions: ArtifactVersion[] | null; selected: ArtifactVersion | null } | null>(null);
 
-  const text = item.kind === "code" ? item.text : doc ? doc.content : null;
+  // Edits save on their own: a moment after typing stops, and again when editing finishes or the panel closes.
+  const draftRef = useRef(draft);
+  const dirtyRef = useRef(false);
+  const timerRef = useRef<number | undefined>(undefined);
+  const itemRef = useRef(item);
+  itemRef.current = item;
+
+  const saveNow = async () => {
+    const current = itemRef.current;
+    if (current.kind !== "document" || !current.artifactId || !dirtyRef.current) return;
+    window.clearTimeout(timerRef.current);
+    dirtyRef.current = false;
+    const snapshot = draftRef.current;
+    const saved = { title: snapshot.title.trim() || tx("Document"), content: snapshot.content };
+    setSaveState("saving");
+    try {
+      await artifactApi.update(current.artifactId, saved);
+      setDoc(saved);
+      setSaveState("saved");
+      current.onSaved?.(saved);
+    } catch {
+      dirtyRef.current = true;
+      setSaveState("error");
+    }
+  };
+  const saveRef = useRef(saveNow);
+  saveRef.current = saveNow;
+
+  // Closing the panel saves whatever is still waiting.
+  useEffect(
+    () => () => {
+      window.clearTimeout(timerRef.current);
+      void saveRef.current();
+    },
+    [],
+  );
+
+  const edit = (next: { title: string; content: string }) => {
+    draftRef.current = next;
+    dirtyRef.current = true;
+    setDraft(next);
+    window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(() => void saveRef.current(), 800);
+  };
+
+  const startEditing = () => {
+    if (!doc) return;
+    const next = { title: doc.title, content: doc.content };
+    draftRef.current = next;
+    dirtyRef.current = false;
+    setDraft(next);
+    setSaveState("idle");
+    setEditing(true);
+  };
+
+  // Finishing saves first; if the save fails, the page stays open with the text still there.
+  const finishEditing = async () => {
+    await saveRef.current();
+    if (!dirtyRef.current) setEditing(false);
+  };
+
+  const editable = item.kind === "document" && Boolean(item.artifactId);
+  const text = item.kind === "code" ? item.text : editing ? draft.content : doc ? doc.content : null;
   const label = item.kind === "code" ? item.lang || "code" : item.kind === "document" ? tx("Document") : contentLabel(item.contentType, item.title);
   const highlighted = item.kind === "code" ? highlightCode(item.text, item.lang) : null;
-  const title = doc ? doc.title : item.title;
-  const editable = item.kind === "document" && Boolean(item.artifactId);
+  const title = editing ? draft.title : doc ? doc.title : item.title;
+  const saveText = saveState === "saving" ? tx("Saving…") : saveState === "saved" ? tx("Saved") : saveState === "error" ? tx("Could not save the document.") : "";
 
   const copy = async () => {
     if (text === null) return;
@@ -131,28 +193,6 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
       window.setTimeout(() => setCopied(false), 1500);
     } catch {
       // Clipboard access can be refused; the text stays selectable.
-    }
-  };
-
-  const startEditing = () => {
-    if (!doc) return;
-    setDraft(doc);
-    setEditing(true);
-  };
-
-  const save = async () => {
-    if (item.kind !== "document" || !item.artifactId) return;
-    setSaving(true);
-    try {
-      const saved = { title: draft.title.trim() || doc?.title || tx("Document"), content: draft.content };
-      await artifactApi.update(item.artifactId, saved);
-      setDoc(saved);
-      setEditing(false);
-      item.onSaved?.(saved);
-    } catch (err) {
-      window.alert(err instanceof Error ? err.message : tx("Could not save the document."));
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -171,17 +211,17 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
   // Restoring saves the old text as a new edit, so the version being replaced is kept too.
   const restore = async (version: ArtifactVersion) => {
     if (item.kind !== "document" || !item.artifactId) return;
-    setSaving(true);
+    setSaveState("saving");
     try {
       const saved = { title: version.title, content: version.content };
       await artifactApi.update(item.artifactId, saved);
       setDoc(saved);
       setHistory(null);
+      setSaveState("saved");
       item.onSaved?.(saved);
     } catch (err) {
+      setSaveState("error");
       window.alert(err instanceof Error ? err.message : tx("Could not save the document."));
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -193,6 +233,12 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
           <span className="muted small">{label}</span>
         </div>
         {editing && <span className="doc-status">{tx("Editing")}</span>}
+        {editing && <span className={`doc-savestate ${saveState === "error" ? "doc-savestate-error" : ""}`}>{saveText}</span>}
+        {editable && editing && (
+          <button type="button" className="primary doc-done" onClick={() => void finishEditing()}>
+            {tx("Done")}
+          </button>
+        )}
         {editable && !editing && (
           <button type="button" className="link-button" onClick={history ? () => setHistory(null) : openHistory}>
             {history ? tx("Done") : tx("History")}
@@ -221,33 +267,31 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
         {item.kind === "file" ? (
           <FilePreview attachmentId={item.attachmentId} title={item.title} contentType={item.contentType} />
         ) : history ? (
-          <DocumentHistory history={history} onSelect={(selected) => setHistory({ ...history, selected })} onBack={() => setHistory({ ...history, selected: null })} onRestore={restore} busy={saving} />
+          <DocumentHistory history={history} onSelect={(selected) => setHistory({ ...history, selected })} onBack={() => setHistory({ ...history, selected: null })} onRestore={restore} busy={saveState === "saving"} />
         ) : item.kind === "document" && editing ? (
-          <form
-            className="doc-editor"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void save();
-            }}
-          >
-            <input
-              className="doc-title-input"
-              value={draft.title}
-              onChange={(event) => setDraft({ ...draft, title: event.target.value })}
-              aria-label={tx("Title")}
-            />
-            <RichEditor initial={draft.content} onChange={(content) => setDraft((current) => ({ ...current, content }))} />
-            <div className="doc-editor-actions">
-              <button type="button" className="link-button" onClick={() => setEditing(false)} disabled={saving}>
-                {tx("Cancel")}
-              </button>
-              <button className="primary" disabled={saving}>
-                {saving ? tx("Saving…") : tx("Save")}
-              </button>
+          <div className="doc-editor">
+            <div className="doc-page">
+              <textarea
+                className="doc-title-input"
+                rows={1}
+                value={draft.title}
+                placeholder={tx("Title")}
+                onChange={(event) => edit({ title: event.target.value, content: draftRef.current.content })}
+                // A title is one line; Enter moves to the text below it.
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.preventDefault();
+                }}
+                aria-label={tx("Title")}
+              />
+              <RichEditor initial={draft.content} onChange={(content) => edit({ title: draftRef.current.title, content })} />
             </div>
-          </form>
+          </div>
         ) : item.kind === "document" ? (
-          <MarkdownView source={doc?.content ?? ""} />
+          <div className="doc-editor">
+            <div className="doc-page">
+              <MarkdownView source={doc?.content ?? ""} />
+            </div>
+          </div>
         ) : highlighted?.known ? (
           <pre className="code-block">
             <code dangerouslySetInnerHTML={{ __html: highlighted.html }} />
@@ -283,15 +327,48 @@ const RICH_TOOLS: { label: string; text: string; run: (command: (name: string, v
 ];
 
 /**
- * A rich-text editor for a document. The text is edited as formatted text; it is reported back as
- * Markdown, the form the document is stored in. The page is set once, so typing keeps the caret.
+ * A rich-text page for a document. The formatting bar floats above selected text only. The text is
+ * reported back as Markdown, the form the document is stored in. The page is set once, so typing
+ * keeps the caret where it is.
  */
 function RichEditor({ initial, onChange }: { initial: string; onChange: (markdown: string) => void }) {
   const area = useRef<HTMLDivElement>(null);
+  const [bubble, setBubble] = useState<{ x: number; y: number } | null>(null);
+
   useEffect(() => {
     if (area.current) area.current.innerHTML = markdownToHtml(initial);
     // Only the first Markdown seeds the page; after that the page is the source of the text.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Shows the formatting bar above a selection inside this page, and hides it otherwise.
+  useEffect(() => {
+    const update = () => {
+      const page = area.current;
+      const selection = window.getSelection();
+      if (!page || !selection || selection.rangeCount === 0 || selection.isCollapsed) {
+        setBubble(null);
+        return;
+      }
+      if (!page.contains(selection.anchorNode) || !page.contains(selection.focusNode)) {
+        setBubble(null);
+        return;
+      }
+      const rect = selection.getRangeAt(0).getBoundingClientRect();
+      if (!rect.width && !rect.height) {
+        setBubble(null);
+        return;
+      }
+      setBubble({ x: rect.left + rect.width / 2, y: rect.top });
+    };
+    document.addEventListener("selectionchange", update);
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      document.removeEventListener("selectionchange", update);
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
   }, []);
 
   const report = () => onChange(htmlToMarkdown(area.current?.innerHTML ?? ""));
@@ -300,25 +377,29 @@ function RichEditor({ initial, onChange }: { initial: string; onChange: (markdow
     document.execCommand(name, false, value);
     report();
   };
+  // Keeps the bar inside the window: it is about 380px wide, centred on the selection.
+  const left = bubble ? Math.min(Math.max(bubble.x, 200), window.innerWidth - 200) : 0;
 
   return (
     <div className="rich-editor">
-      <div className="rich-toolbar" role="toolbar" aria-label={tx("Formatting")}>
-        {RICH_TOOLS.map((tool) => (
-          <button
-            key={tool.label}
-            type="button"
-            className="rich-tool"
-            // Keeps the selection in the text while a tool is pressed.
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => tool.run(command)}
-            aria-label={tx(tool.label)}
-            title={tx(tool.label)}
-          >
-            {tool.text}
-          </button>
-        ))}
-      </div>
+      {bubble && (
+        <div className="rich-bubble" role="toolbar" aria-label={tx("Formatting")} style={{ left, top: bubble.y }}>
+          {RICH_TOOLS.map((tool) => (
+            <button
+              key={tool.label}
+              type="button"
+              className="rich-tool"
+              // Keeps the selection in the text while a tool is pressed.
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => tool.run(command)}
+              aria-label={tx(tool.label)}
+              title={tx(tool.label)}
+            >
+              {tool.text}
+            </button>
+          ))}
+        </div>
+      )}
       <div
         ref={area}
         className="rich-content"
