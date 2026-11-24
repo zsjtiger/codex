@@ -49,6 +49,7 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
   const [connectorItems, setConnectorItems] = useState<Connector[]>([]);
   // Skills and plugins are both instruction bundles; the list shows which kind each one is.
   const [formKind, setFormKind] = useState<FormKind | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [instructions, setInstructions] = useState("");
@@ -141,8 +142,6 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
   const visibleSkills = showSkills ? skillItems.filter((s) => matches(s.name, s.description)) : [];
   const nothingShown = visibleConnectors.length === 0 && visibleSkills.length === 0;
 
-  const addKind: FormKind = filter === "Connectors" ? "connector" : "skill";
-  const addLabel = tx(addKind === "connector" ? "Add connector" : "Add skill");
   const formValid = formKind === "connector" ? name.trim() && url.trim() : name.trim() && instructions.trim();
 
   return (
@@ -179,9 +178,24 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
             ))}
           </div>
           {isAdmin && !formKind && (
-            <button className="add-button" onClick={() => openForm(addKind)}>
-              {addLabel}
-            </button>
+            <div className="plugin-add">
+              <button className="add-button" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
+                {tx("Add")} ▾
+              </button>
+              {menuOpen && (
+                <>
+                  <div className="plugin-menu-backdrop" onClick={() => setMenuOpen(false)} />
+                  <div className="plugin-menu" role="menu">
+                    <button role="menuitem" onClick={() => { setMenuOpen(false); openForm("connector"); }}>
+                      {tx("Add custom connector")}
+                    </button>
+                    <button role="menuitem" onClick={() => { setMenuOpen(false); openForm("skill"); }}>
+                      {tx("Create a skill")}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           )}
         </div>
 

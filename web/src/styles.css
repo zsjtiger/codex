@@ -302,7 +302,11 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .customize-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 28px; }
 .plugin-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
 .plugin-search { flex: 1 1 220px; max-width: 360px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font: inherit; }
-.plugin-toolbar .add-button { margin-left: auto; }
+.plugin-add { margin-left: auto; position: relative; }
+.plugin-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 230px; padding: 6px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); }
+.plugin-menu button { display: block; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: none; font: inherit; text-align: left; cursor: pointer; }
+.plugin-menu button:hover { background: var(--surface-muted, #f3f4f6); }
+.plugin-menu-backdrop { position: fixed; inset: 0; z-index: 10; }
 .plugin-row { align-items: center; gap: 14px; }
 .plugin-row .list-main { flex: 1; min-width: 0; }
 .plugin-mark { flex: none; width: 36px; height: 36px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; background: var(--surface-muted, #f3f4f6); font-weight: 600; }

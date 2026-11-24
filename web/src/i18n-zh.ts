@@ -608,7 +608,6 @@ addChinese({
 
 // Code page: repository popover.
 addChinese({
-  "Add": "添加",
   "Choose a repository": "选择仓库",
   "Load more repositories": "加载更多仓库",
 });
@@ -672,4 +671,6 @@ addChinese({
   "Could not add the skill.": "无法添加技能。",
   "On": "开",
   "Off": "关",
+  "Add custom connector": "添加自定义连接器",
+  "Create a skill": "创建技能",
 });
