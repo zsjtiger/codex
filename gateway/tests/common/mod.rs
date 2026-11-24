@@ -178,7 +178,7 @@ pub async fn mock_app_server() -> MockServer {
                                     .unwrap();
                                     wait_for_response(&responses, APPROVAL_ID).await;
                                 }
-                                if input.contains("TOOL") {
+                                if input.contains("TOOL") || input.contains("请把下面的回答整理成一份结构清楚的文档") {
                                     out.send(
                                         json!({
                                             "method": "item/completed",

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { MarkdownView } from "./Markdown";
-import { CopyIcon, FileIcon, RetryIcon, SpeakIcon, ThumbDownIcon, ThumbUpIcon } from "./icons";
+import { CopyIcon, FileIcon, RetryIcon, SpeakIcon, SparkIcon, ThumbDownIcon, ThumbUpIcon } from "./icons";
 import type { Activity, Approval } from "../state/useCodex";
 import { ChevronIcon } from "./icons";
 import type { ToolUse } from "../state/toolUses";
@@ -26,6 +26,7 @@ interface ReplyActionsProps {
   onFeedback: (turnId: string, rating: "up" | "down" | null) => void;
   onRegenerate: (input: string) => void;
   onSaveDocument?: (reply: string) => void;
+  onSummarize?: (turnId: string) => void;
 }
 
 /**
@@ -54,7 +55,7 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 /** Copy, read aloud, rate, and regenerate for an assistant reply. */
-function ReplyActions({ turn, reply, onFeedback, onRegenerate, onSaveDocument }: ReplyActionsProps) {
+function ReplyActions({ turn, reply, onFeedback, onRegenerate, onSaveDocument, onSummarize }: ReplyActionsProps) {
   const [copied, setCopied] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const timer = useRef<number | undefined>(undefined);
@@ -107,6 +108,11 @@ function ReplyActions({ turn, reply, onFeedback, onRegenerate, onSaveDocument }:
       {onSaveDocument && (
         <button type="button" className="reply-action" onClick={() => onSaveDocument(reply)} aria-label={tx("Save as document")} title={tx("Save as document")}>
           <FileIcon />
+        </button>
+      )}
+      {onSummarize && (
+        <button type="button" className="reply-action" onClick={() => onSummarize(turn.id)} aria-label={tx("Summarize as document")} title={tx("Summarize as document")}>
+          <SparkIcon />
         </button>
       )}
       <button type="button" className="reply-action" onClick={() => onRegenerate(turn.input)} aria-label={tx("Retry")} title={tx("Retry")}>
@@ -476,9 +482,10 @@ interface ConversationProps {
   onRegenerate: (input: string) => void;
   /** Saves a reply as a document of this chat. */
   onSaveDocument?: (reply: string) => void;
+  onSummarize?: (turnId: string) => void;
 }
 
-export function Conversation({ variant = "chat", turns, agentText, activity, work = {}, approvals, onAnswer, onFeedback, onRegenerate, onSaveDocument }: ConversationProps) {
+export function Conversation({ variant = "chat", turns, agentText, activity, work = {}, approvals, onAnswer, onFeedback, onRegenerate, onSaveDocument, onSummarize }: ConversationProps) {
   const code = variant === "code";
   return (
     <div className={code ? "conversation code-conversation" : "conversation"}>
@@ -512,7 +519,7 @@ export function Conversation({ variant = "chat", turns, agentText, activity, wor
                   <div className="code-reply">
                     <MarkdownView source={reply} />
                   </div>
-                  {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} />}
+                  {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} onSummarize={onSummarize} />}
                 </>
               )}
               {(turn.status !== "completed" && turn.status !== "running" && turn.status !== "queued") || turn.error ? (
@@ -540,7 +547,7 @@ export function Conversation({ variant = "chat", turns, agentText, activity, wor
                 <div className="bubble agent">
                   <MarkdownView source={reply} />
                 </div>
-                {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} />}
+                {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} onSummarize={onSummarize} />}
               </>
             )}
             <div className={`turn-status status-${turn.status}`}>

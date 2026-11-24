@@ -129,6 +129,15 @@ export interface Artifact {
   updated_at: string;
 }
 
+/** An earlier version of a document, kept when its title or content was replaced. */
+export interface ArtifactVersion {
+  id: number;
+  title: string;
+  content: string;
+  replaced_by: string | null;
+  replaced_at: string;
+}
+
 export type Frequency = "hourly" | "daily" | "weekdays" | "weekly";
 
 /** One run of a scheduled task: the chat it started, when it started. */

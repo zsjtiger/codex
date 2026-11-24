@@ -66,6 +66,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/workspaces/{id}/artifacts", get(list).post(create))
         .route("/artifacts/{id}", get(get_one).patch(update).delete(delete))
+        .route("/artifacts/{id}/versions", get(list_versions))
 }
 
 const COLUMNS: &str = "id, workspace_id, project_id, thread_id, title, kind, content, created_by, created_at, updated_at";
@@ -227,6 +228,18 @@ async fn update(
             (true, Some(project))
         }
     };
+    // The title and content being replaced are kept as a version, when this change alters them.
+    let changes_text = req.title.as_deref().is_some_and(|t| t != artifact.title)
+        || req.content.as_deref().is_some_and(|c| c != artifact.content);
+    if changes_text {
+        sqlx::query("INSERT INTO artifact_versions (artifact_id, title, content, replaced_by) VALUES ($1, $2, $3, $4)")
+            .bind(id)
+            .bind(&artifact.title)
+            .bind(&artifact.content)
+            .bind(user.id)
+            .execute(&state.pool)
+            .await?;
+    }
     sqlx::query(
         "UPDATE artifacts SET title = COALESCE($2, title), content = COALESCE($3, content),
              project_id = CASE WHEN $4 THEN $5 ELSE project_id END, updated_at = now()
@@ -240,6 +253,33 @@ async fn update(
     .execute(&state.pool)
     .await?;
     Ok(Json(load(&state.pool, id).await?))
+}
+
+#[derive(Serialize, FromRow)]
+pub struct VersionView {
+    pub id: i64,
+    pub title: String,
+    pub content: String,
+    pub replaced_by: Option<Uuid>,
+    pub replaced_at: DateTime<Utc>,
+}
+
+/// The earlier versions of an artifact, newest first. Anyone in the workspace can read them.
+async fn list_versions(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<VersionView>>, ApiError> {
+    let artifact = load(&state.pool, id).await?;
+    require_role(&state.pool, artifact.workspace_id, user.id, Role::Member).await?;
+    let rows = sqlx::query_as::<_, VersionView>(
+        "SELECT id, title, content, replaced_by, replaced_at FROM artifact_versions
+         WHERE artifact_id = $1 ORDER BY id DESC LIMIT 100",
+    )
+    .bind(id)
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(rows))
 }
 
 async fn delete(

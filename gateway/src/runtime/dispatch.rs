@@ -163,6 +163,55 @@ async fn with_skills(
     Ok(text)
 }
 
+/// The title of a document made from a reply: its first heading, else its first line, cut short.
+pub(crate) fn document_title(reply: &str) -> String {
+    let lines: Vec<&str> = reply.lines().map(str::trim).filter(|line| !line.is_empty()).collect();
+    let heading = lines.iter().find(|line| line.starts_with('#'));
+    let first = heading.or(lines.first()).copied().unwrap_or("");
+    let text: String = first.trim_start_matches('#').trim().chars().filter(|c| !matches!(c, '*' | '_' | '`')).collect();
+    let text = text.trim();
+    if text.is_empty() {
+        return "Document".to_string();
+    }
+    if text.chars().count() > 60 {
+        format!("{}…", text.chars().take(57).collect::<String>())
+    } else {
+        text.to_string()
+    }
+}
+
+/// A summary turn's reply becomes a document of its chat. The reply is the text the turn streamed,
+/// taken from its events, because the hub stores the same text in the turn only a moment later.
+async fn save_summary_document(state: &AppState, turn_id: Uuid, reply: Option<&str>) {
+    let saves: Option<bool> = match sqlx::query_scalar("SELECT save_as_document FROM turns WHERE id = $1")
+        .bind(turn_id)
+        .fetch_optional(&state.pool)
+        .await
+    {
+        Ok(flag) => flag,
+        Err(err) => {
+            tracing::warn!(%err, "could not read a summary turn");
+            return;
+        }
+    };
+    let Some(reply) = reply.filter(|_| saves == Some(true)) else {
+        return;
+    };
+    let saved = sqlx::query(
+        "INSERT INTO artifacts (workspace_id, thread_id, title, kind, content, created_by)
+         SELECT th.workspace_id, t.thread_id, $2, 'document', $3, t.created_by
+         FROM turns t JOIN threads th ON th.id = t.thread_id WHERE t.id = $1",
+    )
+    .bind(turn_id)
+    .bind(document_title(&reply))
+    .bind(&reply)
+    .execute(&state.pool)
+    .await;
+    if let Err(err) = saved {
+        tracing::warn!(%err, "could not save the summary as a document");
+    }
+}
+
 /// Commits and pushes what a finished code turn changed, to the session's own branch. A failure is
 /// logged; it does not fail the turn, and the person can still commit from the chat.
 async fn auto_commit_turn(state: &AppState, turn: &TurnRow, repo_id: Uuid) {
@@ -320,6 +369,11 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
         if let Some(repo_id) = turn.repo_id {
             auto_commit_turn(state, &turn, repo_id).await;
         }
+    }
+
+    // The document exists before the turn reads as completed, so anyone who sees the turn finish sees it.
+    if outcome.status == "completed" {
+        save_summary_document(state, turn_id, outcome.reply.as_deref()).await;
     }
 
     sqlx::query("UPDATE turns SET status = $2, error = $3, completed_at = now() WHERE id = $1")
@@ -650,15 +704,19 @@ struct Outcome {
     status: String,
     error: Option<String>,
     usage: (i64, i64),
+    /// The assistant messages this turn streamed, joined the way the turn's stored reply is.
+    reply: Option<String>,
 }
 
-/// Waits for `turn/completed` for this turn, summing per-call token usage on the way.
+/// Waits for `turn/completed` for this turn, summing per-call token usage and collecting the
+/// assistant text on the way.
 async fn wait_for_completion(
     events: &mut broadcast::Receiver<Notification>,
     codex_thread_id: &str,
     codex_turn_id: &str,
 ) -> Result<Outcome, DispatchError> {
     let mut usage = (0_i64, 0_i64);
+    let mut reply: Option<String> = None;
     loop {
         let event = match events.recv().await {
             Ok(event) => event,
@@ -682,6 +740,22 @@ async fn wait_for_completion(
                     .and_then(Value::as_i64)
                     .unwrap_or(0);
             }
+            "item/completed"
+                if params.get("turnId").and_then(Value::as_str) == Some(codex_turn_id) =>
+            {
+                let text = params
+                    .pointer("/item/type")
+                    .and_then(Value::as_str)
+                    .filter(|kind| *kind == "agentMessage")
+                    .and_then(|_| params.pointer("/item/text").and_then(Value::as_str))
+                    .filter(|text| !text.is_empty());
+                if let Some(text) = text {
+                    reply = Some(match reply.take() {
+                        Some(so_far) => format!("{so_far}\n\n{text}"),
+                        None => text.to_string(),
+                    });
+                }
+            }
             "turn/completed"
                 if params.pointer("/turn/id").and_then(Value::as_str) == Some(codex_turn_id) =>
             {
@@ -698,6 +772,7 @@ async fn wait_for_completion(
                     status: status.to_string(),
                     error,
                     usage,
+                    reply,
                 });
             }
             _ => {}

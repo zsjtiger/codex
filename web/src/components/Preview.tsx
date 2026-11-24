@@ -1,9 +1,11 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import * as mammoth from "mammoth";
 import { artifacts as artifactApi, attachments as attachmentApi } from "../api/resources";
+import type { ArtifactVersion } from "../api/types";
 import { MarkdownView, highlightCode } from "./Markdown";
 import { CopyIcon } from "./icons";
 import { PdfView } from "./PdfView";
+import { htmlToMarkdown, markdownToHtml } from "./richtext";
 import { tx } from "../i18n";
 
 /** What the side panel shows: a code block, a document artifact, or a file sent in a message. */
@@ -112,6 +114,8 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
   const [expanded, setExpanded] = useState(false);
   const [draft, setDraft] = useState({ title: "", content: "" });
   const [saving, setSaving] = useState(false);
+  // The earlier versions of a document, and the one being read, when the history is open.
+  const [history, setHistory] = useState<{ versions: ArtifactVersion[] | null; selected: ArtifactVersion | null } | null>(null);
 
   const text = item.kind === "code" ? item.text : doc ? doc.content : null;
   const label = item.kind === "code" ? item.lang || "code" : item.kind === "document" ? tx("Document") : contentLabel(item.contentType, item.title);
@@ -152,6 +156,35 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
     }
   };
 
+  const openHistory = async () => {
+    if (item.kind !== "document" || !item.artifactId) return;
+    setHistory({ versions: null, selected: null });
+    try {
+      const versions = await artifactApi.versions(item.artifactId);
+      setHistory({ versions, selected: null });
+    } catch (err) {
+      setHistory(null);
+      window.alert(err instanceof Error ? err.message : tx("Could not load the history."));
+    }
+  };
+
+  // Restoring saves the old text as a new edit, so the version being replaced is kept too.
+  const restore = async (version: ArtifactVersion) => {
+    if (item.kind !== "document" || !item.artifactId) return;
+    setSaving(true);
+    try {
+      const saved = { title: version.title, content: version.content };
+      await artifactApi.update(item.artifactId, saved);
+      setDoc(saved);
+      setHistory(null);
+      item.onSaved?.(saved);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : tx("Could not save the document."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <aside className={`preview-panel ${expanded ? "preview-panel-wide" : ""}`} role="dialog" aria-label={title}>
       <header className="preview-header">
@@ -159,7 +192,13 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
           <span className="preview-name">{title}</span>
           <span className="muted small">{label}</span>
         </div>
+        {editing && <span className="doc-status">{tx("Editing")}</span>}
         {editable && !editing && (
+          <button type="button" className="link-button" onClick={history ? () => setHistory(null) : openHistory}>
+            {history ? tx("Done") : tx("History")}
+          </button>
+        )}
+        {editable && !editing && !history && (
           <button type="button" className="link-button" onClick={startEditing}>
             {tx("Edit")}
           </button>
@@ -181,6 +220,8 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
       <div className="preview-body">
         {item.kind === "file" ? (
           <FilePreview attachmentId={item.attachmentId} title={item.title} contentType={item.contentType} />
+        ) : history ? (
+          <DocumentHistory history={history} onSelect={(selected) => setHistory({ ...history, selected })} onBack={() => setHistory({ ...history, selected: null })} onRestore={restore} busy={saving} />
         ) : item.kind === "document" && editing ? (
           <form
             className="doc-editor"
@@ -195,12 +236,7 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
               onChange={(event) => setDraft({ ...draft, title: event.target.value })}
               aria-label={tx("Title")}
             />
-            <textarea
-              className="doc-content-input"
-              value={draft.content}
-              onChange={(event) => setDraft({ ...draft, content: event.target.value })}
-              aria-label={tx("Content")}
-            />
+            <RichEditor initial={draft.content} onChange={(content) => setDraft((current) => ({ ...current, content }))} />
             <div className="doc-editor-actions">
               <button type="button" className="link-button" onClick={() => setEditing(false)} disabled={saving}>
                 {tx("Cancel")}
@@ -223,6 +259,125 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
         )}
       </div>
     </aside>
+  );
+}
+
+/** Toolbar buttons for the editor: each runs a formatting command on the selection. */
+const RICH_TOOLS: { label: string; text: string; run: (command: (name: string, value?: string) => void) => void }[] = [
+  { label: "Bold", text: "B", run: (command) => command("bold") },
+  { label: "Italic", text: "I", run: (command) => command("italic") },
+  { label: "Heading 2", text: "H2", run: (command) => command("formatBlock", "h2") },
+  { label: "Heading 3", text: "H3", run: (command) => command("formatBlock", "h3") },
+  { label: "Bullet list", text: "•", run: (command) => command("insertUnorderedList") },
+  { label: "Numbered list", text: "1.", run: (command) => command("insertOrderedList") },
+  { label: "Quote", text: "“”", run: (command) => command("formatBlock", "blockquote") },
+  { label: "Code block", text: "</>", run: (command) => command("formatBlock", "pre") },
+  {
+    label: "Link",
+    text: "🔗",
+    run: (command) => {
+      const url = window.prompt(tx("Link address"));
+      if (url && /^https?:\/\//.test(url)) command("createLink", url);
+    },
+  },
+];
+
+/**
+ * A rich-text editor for a document. The text is edited as formatted text; it is reported back as
+ * Markdown, the form the document is stored in. The page is set once, so typing keeps the caret.
+ */
+function RichEditor({ initial, onChange }: { initial: string; onChange: (markdown: string) => void }) {
+  const area = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (area.current) area.current.innerHTML = markdownToHtml(initial);
+    // Only the first Markdown seeds the page; after that the page is the source of the text.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const report = () => onChange(htmlToMarkdown(area.current?.innerHTML ?? ""));
+  const command = (name: string, value?: string) => {
+    area.current?.focus();
+    document.execCommand(name, false, value);
+    report();
+  };
+
+  return (
+    <div className="rich-editor">
+      <div className="rich-toolbar" role="toolbar" aria-label={tx("Formatting")}>
+        {RICH_TOOLS.map((tool) => (
+          <button
+            key={tool.label}
+            type="button"
+            className="rich-tool"
+            // Keeps the selection in the text while a tool is pressed.
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => tool.run(command)}
+            aria-label={tx(tool.label)}
+            title={tx(tool.label)}
+          >
+            {tool.text}
+          </button>
+        ))}
+      </div>
+      <div
+        ref={area}
+        className="rich-content"
+        contentEditable
+        suppressContentEditableWarning
+        role="textbox"
+        aria-multiline="true"
+        aria-label={tx("Content")}
+        onInput={report}
+      />
+    </div>
+  );
+}
+
+/** The earlier versions of a document, newest first; one can be read and restored. */
+function DocumentHistory({
+  history,
+  onSelect,
+  onBack,
+  onRestore,
+  busy,
+}: {
+  history: { versions: ArtifactVersion[] | null; selected: ArtifactVersion | null };
+  onSelect: (version: ArtifactVersion) => void;
+  onBack: () => void;
+  onRestore: (version: ArtifactVersion) => void;
+  busy: boolean;
+}) {
+  if (history.versions === null) return <p className="muted">{tx("Loading…")}</p>;
+  const { selected } = history;
+  if (selected) {
+    return (
+      <div className="doc-history">
+        <div className="doc-history-bar">
+          <button type="button" className="link-button" onClick={onBack}>
+            {tx("Back")}
+          </button>
+          <span className="muted small">{new Date(selected.replaced_at).toLocaleString()}</span>
+          <button type="button" className="primary" onClick={() => onRestore(selected)} disabled={busy}>
+            {tx("Restore")}
+          </button>
+        </div>
+        <p className="muted small">{tx("A version that was replaced by a later edit.")}</p>
+        <MarkdownView source={selected.content} />
+      </div>
+    );
+  }
+  if (history.versions.length === 0) return <p className="muted">{tx("No earlier versions.")}</p>;
+  return (
+    <ul className="doc-history">
+      {history.versions.map((version) => (
+        <li key={version.id}>
+          <button type="button" className="doc-history-item" onClick={() => onSelect(version)}>
+            <strong>{version.title}</strong>
+            <span className="muted small">{new Date(version.replaced_at).toLocaleString()}</span>
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 

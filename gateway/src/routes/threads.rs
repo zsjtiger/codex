@@ -227,6 +227,7 @@ pub fn routes() -> Router<AppState> {
         .route("/threads/{id}/turns", get(list_turns).post(create_turn))
         .route("/threads/{id}/tool-uses", get(list_tool_uses))
         .route("/threads/{id}/work", get(list_work))
+        .route("/threads/{id}/summaries", post(summarize))
         .route("/turns/{id}/interrupt", post(interrupt_turn))
         .route("/turns/{id}/feedback", put(set_feedback))
 }
@@ -288,6 +289,73 @@ async fn list_threads(
         .fetch_all(&state.pool)
         .await?;
     Ok(Json(rows))
+}
+
+#[derive(Deserialize)]
+pub struct SummarizeRequest {
+    /// The completed reply to summarize.
+    turn_id: Uuid,
+}
+
+/// Asks the model for a document summarizing a completed reply. The new turn's reply is saved as a
+/// document of the chat when it completes.
+async fn summarize(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<SummarizeRequest>,
+) -> Result<(StatusCode, Json<TurnView>), ApiError> {
+    let access = thread_access(&state.pool, id).await?;
+    require_role(&state.pool, access.workspace_id, user.id, Role::Member).await?;
+    let reply: Option<String> = sqlx::query_scalar(
+        "SELECT reply FROM turns WHERE id = $1 AND thread_id = $2 AND status = 'completed'",
+    )
+    .bind(req.turn_id)
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+    let reply = reply.ok_or_else(|| ApiError::Conflict("that reply has no text to summarize".to_string()))?;
+    // The source is cut so the request stays within the input limit.
+    let source: String = reply.chars().take(40_000).collect();
+    let input = format!(
+        "请把下面的回答整理成一份结构清楚的文档：Markdown 格式，第一行是一级标题，只输出文档本身。\n\n---\n\n{source}"
+    );
+
+    if !state.turn_limiter.allow(user.id) {
+        return Err(ApiError::TooManyRequests);
+    }
+    let mut tx = state.pool.begin().await?;
+    let archived_at: Option<DateTime<Utc>> =
+        sqlx::query_scalar("SELECT archived_at FROM threads WHERE id = $1 FOR UPDATE")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
+    if archived_at.is_some() {
+        return Err(ApiError::Conflict("thread is archived".to_string()));
+    }
+    let seq: i32 = sqlx::query_scalar("SELECT COALESCE(MAX(seq), 0) + 1 FROM turns WHERE thread_id = $1")
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+    let turn = sqlx::query_as::<_, TurnView>(
+        "INSERT INTO turns (thread_id, seq, input, created_by, save_as_document)
+         VALUES ($1, $2, $3, $4, true)
+         RETURNING id, thread_id, seq, status, input, error, codex_turn_id, model, effort, reply, feedback, attachment_ids, created_by, created_at, completed_at",
+    )
+    .bind(id)
+    .bind(seq)
+    .bind(&input)
+    .bind(user.id)
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query("UPDATE threads SET last_activity_at = now(), updated_at = now() WHERE id = $1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    crate::runtime::dispatch::spawn_drain(state.clone(), turn.thread_id);
+    Ok((StatusCode::CREATED, Json(turn)))
 }
 
 #[derive(Serialize)]

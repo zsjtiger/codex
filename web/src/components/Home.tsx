@@ -62,6 +62,8 @@ export function Home(props: HomeProps) {
   const used = thread ? (toolUses[thread.id] ?? []) : [];
   const showUsedPanel = showUsed && used.length > 0;
 
+  // A summary is a turn of its own, so the cards are read again as turns finish.
+  const finishedTurns = turns.filter((turn) => turn.status === "completed").length;
   useEffect(() => {
     if (!thread) {
       setDocs([]);
@@ -71,7 +73,7 @@ export function Home(props: HomeProps) {
       .list(workspaceId, `?kind=document&thread_id=${thread.id}`)
       .then(setDocs)
       .catch(() => setDocs([]));
-  }, [workspaceId, thread?.id]);
+  }, [workspaceId, thread?.id, finishedTurns]);
 
   useEffect(() => {
     if (thread) return;
@@ -104,6 +106,16 @@ export function Home(props: HomeProps) {
       openDoc(doc);
     } catch (err) {
       onError(err instanceof Error ? err.message : tx("Could not save the document."));
+    }
+  };
+
+  // Asks the model to write a reply as a document of this chat; the card appears when that turn finishes.
+  const summarize = async (turnId: string) => {
+    if (!thread) return;
+    try {
+      await threadApi.summarize(thread.id, turnId);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : tx("Could not summarize the reply."));
     }
   };
 
@@ -187,6 +199,7 @@ export function Home(props: HomeProps) {
               onFeedback={onFeedback}
               onRegenerate={(input) => onSend(input, {})}
               onSaveDocument={(reply) => void saveDocument(reply)}
+              onSummarize={(turnId) => void summarize(turnId)}
             />
             {docs.map((doc) => (
               <button key={doc.id} className="doc-card" onClick={() => openDoc(doc)}>

@@ -5,6 +5,7 @@ import { apiUrl } from "./config";
 import { api, ApiError, getToken } from "./client";
 import type {
   Artifact,
+  ArtifactVersion,
   ArtifactKind,
   Attachment,
   CodeRepo,
@@ -56,6 +57,8 @@ export const artifacts = {
     api<Artifact>("POST", `/workspaces/${ws}/artifacts`, body),
   update: (id: string, body: { title?: string; content?: string; project_id?: string | null }) =>
     api<Artifact>("PATCH", `/artifacts/${id}`, body),
+  /** Earlier versions of a document, newest first. */
+  versions: (id: string) => api<ArtifactVersion[]>("GET", `/artifacts/${id}/versions`),
   remove: (id: string) => api<void>("DELETE", `/artifacts/${id}`),
 };
 
@@ -199,6 +202,8 @@ export const threads = {
   toolUses: (id: string) => api<ToolUseRecord[]>("GET", `/threads/${id}/tool-uses?limit=100`),
   /** Screenshots an HTML file of the session's checkout. The gateway draws it in headless Chromium. */
   preview: (id: string, path: string) => postForImage(`/threads/${id}/preview`, { path }),
+  /** Asks the model to write a turn's reply as a document of the chat. The summary is a turn of its own. */
+  summarize: (id: string, turnId: string) => api<Turn>("POST", `/threads/${id}/summaries`, { turn_id: turnId }),
   /** The finished commands and file changes of a thread, grouped by Codex turn. */
   work: (id: string) => api<{ codex_turn_id: string; items: unknown[] }[]>("GET", `/threads/${id}/work`),
   send: (id: string, body: { input: string; model?: string; effort?: string; attachment_ids?: string[]; skill_ids?: string[] }) =>
