@@ -43,6 +43,9 @@ function attachmentLimit(file: File): number {
 }
 
 interface ComposerProps {
+  /** Text to start the message with, from outside the composer. Used once, then `onPrefillUsed` is called. */
+  prefill?: string | null;
+  onPrefillUsed?: () => void;
   /** The environment whose codex runtime offers the models. */
   environmentId?: string | null;
   onSend: (text: string, options: SendOptions) => void;
@@ -81,8 +84,14 @@ interface Pending {
  */
 export function Composer(props: ComposerProps) {
   const { t } = useI18n();
-  const { environmentId, onSend, onStop, running, disabled, placeholder = t("home.placeholder"), projects, projectId, onProjectChange, onCreateProject, skills, upload, onError } = props;
+  const { prefill, onPrefillUsed, environmentId, onSend, onStop, running, disabled, placeholder = t("home.placeholder"), projects, projectId, onProjectChange, onCreateProject, skills, upload, onError } = props;
   const [draft, setDraft] = useState("");
+  useEffect(() => {
+    if (!prefill) return;
+    setDraft(prefill);
+    onPrefillUsed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill]);
   const [listening, setListening] = useState(false);
   const recognizerRef = useRef<SpeechRecognitionLike | null>(null);
   const SpeechInput = speechRecognitionConstructor();

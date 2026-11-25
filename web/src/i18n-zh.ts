@@ -712,4 +712,5 @@ addChinese({
   "installs": "次安装",
   "Show all": "显示全部",
   "Show less": "收起",
+  "Add as plugin": "添加为插件",
 });

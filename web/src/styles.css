@@ -1012,4 +1012,4 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 .market-meta { font-size: 11px; }
 .market-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; min-height: 26px; }
 .market-actions button { height: 26px; padding: 0 10px; font-size: 12px; }
-
+.reply-add-plugin { width: auto; padding: 0 10px; font-size: 13px; }

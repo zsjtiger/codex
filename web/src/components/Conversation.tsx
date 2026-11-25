@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { MarkdownView } from "./Markdown";
 import { splitDocumentEdits } from "./documentEdits";
+import { type PluginDraft, parsePluginDraft } from "../state/pluginDraft";
 import { CopyIcon, FileIcon, RetryIcon, SpeakIcon, SparkIcon, ThumbDownIcon, ThumbUpIcon } from "./icons";
 import type { Activity, Approval } from "../state/useCodex";
 import { ChevronIcon } from "./icons";
@@ -22,6 +23,8 @@ function relativeTime(iso: string): string {
 }
 
 interface ReplyActionsProps {
+  /** Adds the plugin this reply designed. */
+  onAddPlugin?: () => void;
   turn: Turn;
   reply: string;
   onFeedback: (turnId: string, rating: "up" | "down" | null) => void;
@@ -56,7 +59,7 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 /** Copy, read aloud, rate, and regenerate for an assistant reply. */
-function ReplyActions({ turn, reply, onFeedback, onRegenerate, onSaveDocument, onSummarize }: ReplyActionsProps) {
+function ReplyActions({ turn, reply, onFeedback, onRegenerate, onSaveDocument, onSummarize, onAddPlugin }: ReplyActionsProps) {
   const [copied, setCopied] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const timer = useRef<number | undefined>(undefined);
@@ -109,6 +112,11 @@ function ReplyActions({ turn, reply, onFeedback, onRegenerate, onSaveDocument, o
       {onSaveDocument && (
         <button type="button" className="reply-action" onClick={() => onSaveDocument(reply)} aria-label={tx("Save as document")} title={tx("Save as document")}>
           <FileIcon />
+        </button>
+      )}
+      {onAddPlugin && (
+        <button type="button" className="reply-action reply-add-plugin" onClick={onAddPlugin}>
+          {tx("Add as plugin")}
         </button>
       )}
       {onSummarize && (
@@ -470,6 +478,8 @@ function CodeActivity({ activity }: { activity: Activity }) {
 }
 
 interface ConversationProps {
+  /** Adds the plugin a reply designed. */
+  onAddPlugin?: (draft: PluginDraft) => void;
   /** "code" shows replies as plain text with grouped activity, as in a code session. */
   variant?: "chat" | "code";
   turns: Turn[];
@@ -486,7 +496,7 @@ interface ConversationProps {
   onSummarize?: (turnId: string) => void;
 }
 
-export function Conversation({ variant = "chat", turns, agentText, activity, work = {}, approvals, onAnswer, onFeedback, onRegenerate, onSaveDocument, onSummarize }: ConversationProps) {
+export function Conversation({ variant = "chat", turns, agentText, activity, work = {}, approvals, onAnswer, onFeedback, onRegenerate, onSaveDocument, onSummarize, onAddPlugin }: ConversationProps) {
   const code = variant === "code";
   return (
     <div className={code ? "conversation code-conversation" : "conversation"}>
@@ -495,6 +505,7 @@ export function Conversation({ variant = "chat", turns, agentText, activity, wor
         const rawReply = (turn.codex_turn_id ? agentText[turn.codex_turn_id] : undefined) || turn.reply || undefined;
         // Document edits the model made are applied by the gateway; the reader sees a note instead of the block.
         const { text: reply, edited, created } = splitDocumentEdits(rawReply ?? "");
+        const pluginDraft = turn.status === "completed" ? parsePluginDraft(rawReply ?? "") : null;
         const changeNote = created > 0 ? tx("Saved a document in this chat.") : edited > 0 ? tx("Updated a document in this chat.") : null;
         const live = turn.codex_turn_id ? activity[turn.codex_turn_id] : undefined;
         const running = turn.status === "running" || turn.status === "queued";
@@ -524,7 +535,7 @@ export function Conversation({ variant = "chat", turns, agentText, activity, wor
                     {reply && <MarkdownView source={reply} />}
                     {changeNote && <p className="muted small doc-edited">{changeNote}</p>}
                   </div>
-                  {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} onSummarize={onSummarize} />}
+                  {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} onSummarize={onSummarize} onAddPlugin={onAddPlugin && pluginDraft ? () => onAddPlugin(pluginDraft) : undefined} />}
                 </>
               )}
               {(turn.status !== "completed" && turn.status !== "running" && turn.status !== "queued") || turn.error ? (
@@ -553,7 +564,7 @@ export function Conversation({ variant = "chat", turns, agentText, activity, wor
                   {reply && <MarkdownView source={reply} />}
                   {changeNote && <p className="muted small doc-edited">{changeNote}</p>}
                 </div>
-                {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} onSummarize={onSummarize} />}
+                {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} onSummarize={onSummarize} onAddPlugin={onAddPlugin && pluginDraft ? () => onAddPlugin(pluginDraft) : undefined} />}
               </>
             )}
             <div className={`turn-status status-${turn.status}`}>

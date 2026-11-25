@@ -17,6 +17,7 @@ import { gatewayBase } from "./api/config";
 import { type NavLabel, Sidebar, type View } from "./components/Sidebar";
 import { SidebarIcon } from "./components/icons";
 import { useCodex } from "./state/useCodex";
+import { type PluginDraft, draftPrompt } from "./state/pluginDraft";
 import { tx } from "./i18n";
 
 const NAV_KEY = "codex.sidebar.hidden";
@@ -37,6 +38,10 @@ export function App() {
   const returnedFromGitHub = new URLSearchParams(window.location.search).has("github");
   const [view, setView] = useState<View>(returnedFromGitHub ? "code" : "chat");
   const [mode, setMode] = useState<"chat" | "code">(returnedFromGitHub ? "code" : "chat");
+  // A plugin a chat designed, waiting for the plugins page to read it into its form.
+  const [pluginDraft, setPluginDraft] = useState<PluginDraft | null>(null);
+  // Text the chat composer starts with (the Baize request), used once.
+  const [prefill, setPrefill] = useState<string | null>(null);
   // The project the Projects page opens on, set when a search result points into a project.
   const [projectFocus, setProjectFocus] = useState<string | null>(null);
   // Where the Scheduled page opens: a new task for a project, or an existing task.
@@ -175,6 +180,25 @@ export function App() {
     codex.newChat();
     closeOnPhone();
   };
+  // "Create with Baize" opens a new chat and asks for the plugin there; the chat's reply is read back.
+  // The composer starts with the request; the person describes the plugin and sends it.
+  const createPluginWithBaize = () => {
+    if (!codex.environment) {
+      onError(tx("Set up an environment before creating a plugin with Baize."));
+      return;
+    }
+    setMode("chat");
+    setView("chat");
+    codex.newChat();
+    setPrefill(draftPrompt(tx("（在这里描述你想要的插件）")));
+    closeOnPhone();
+  };
+  // A plugin a chat designed goes to the plugins page, to be reviewed before it is added.
+  const addPluginFromChat = (draft: PluginDraft) => {
+    setPluginDraft(draft);
+    setView("customize");
+    closeOnPhone();
+  };
   const activeThread = codex.threads.find((t) => t.id === codex.activeId) ?? null;
 
   return (
@@ -211,6 +235,7 @@ export function App() {
           threads={codex.threads}
           onOpenThread={openThread}
           onOpenArtifacts={() => setView("artifacts")}
+
           onOpenProjects={() => setView("projects")}
           onOpenProject={openProject}
           onOpenScheduled={(taskId) => {
@@ -272,7 +297,17 @@ export function App() {
             onError={onError}
           />
         )}
-        {view === "customize" && <PluginsPage workspaceId={workspaceId} isAdmin={isAdmin} onBack={() => setView("chat")} onError={onError} />}
+        {view === "customize" && (
+          <PluginsPage
+            workspaceId={workspaceId}
+            isAdmin={isAdmin}
+            onBack={() => setView("chat")}
+            onError={onError}
+            onCreateWithBaize={createPluginWithBaize}
+            initialDraft={pluginDraft}
+            onDraftUsed={() => setPluginDraft(null)}
+          />
+        )}
         {view === "scheduled" && (
           <ScheduledPage
             workspaceId={workspaceId}
@@ -286,6 +321,9 @@ export function App() {
         )}
         {view === "chat" && (
           <Home
+            onAddPlugin={addPluginFromChat}
+            prefill={prefill}
+            onPrefillUsed={() => setPrefill(null)}
             user={codex.user}
             threads={codex.threads}
             onOpenThread={openThread}

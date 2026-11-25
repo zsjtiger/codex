@@ -8,11 +8,17 @@ import { Composer } from "./Composer";
 import { usePreview } from "./Preview";
 import { Conversation } from "./Conversation";
 import { liveDocumentEdit } from "./documentEdits";
+import type { PluginDraft } from "../state/pluginDraft";
 import { ChevronIcon, FileIcon, SparkIcon } from "./icons";
 import { useI18n } from "../i18n";
 import { tx } from "../i18n";
 
 interface HomeProps {
+  /** Text the composer starts with, from the plugins page. */
+  prefill?: string | null;
+  onPrefillUsed?: () => void;
+  /** Adds a plugin a reply designed, as a draft for the plugins page to review. */
+  onAddPlugin?: (draft: PluginDraft) => void;
   user: User;
   workspaceId: string;
   thread: Thread | null;
@@ -46,7 +52,7 @@ interface HomeProps {
 
 export function Home(props: HomeProps) {
   const { t } = useI18n();
-  const { user, workspaceId, thread, threads, onOpenThread, turns, agentText, streamText, toolUses, activity, work, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
+  const { prefill, onPrefillUsed, onAddPlugin, user, workspaceId, thread, threads, onOpenThread, turns, agentText, streamText, toolUses, activity, work, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
   const pending = approvals.filter((a) => a.threadId === thread?.id);
   const runningTurn = [...turns].reverse().find((t) => (t.status === "running" || t.status === "queued") && t.codex_turn_id);
   const [recent, setRecent] = useState<Artifact[]>([]);
@@ -223,6 +229,7 @@ export function Home(props: HomeProps) {
               onRegenerate={(input) => onSend(input, {})}
               onSaveDocument={(reply) => void saveDocument(reply)}
               onSummarize={(turnId) => void summarize(turnId)}
+              onAddPlugin={onAddPlugin}
             />
             {docs.map((doc) => (
               <button key={doc.id} className="doc-card" onClick={() => openDoc(doc)}>
@@ -238,6 +245,8 @@ export function Home(props: HomeProps) {
           </div>
           <div className="composer-dock">
             <Composer
+              prefill={prefill}
+              onPrefillUsed={onPrefillUsed}
               environmentId={environment?.id ?? null}
               onSend={onSend}
               onStop={runningTurn ? () => onStop(runningTurn.id) : undefined}
@@ -261,6 +270,8 @@ export function Home(props: HomeProps) {
             <span>{tx("You’re here!")}</span>
           </h1>
           <Composer
+            prefill={prefill}
+            onPrefillUsed={onPrefillUsed}
             environmentId={environment?.id ?? null}
             onSend={onSend}
             disabled={sending}

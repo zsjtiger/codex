@@ -1,20 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  connectors as connectorApi,
-  environments as environmentApi,
-  marketplace as marketplaceApi,
-  plugins as pluginApi,
-  skills as skillApi,
-  threads as threadApi,
-} from "../api/resources";
+import { connectors as connectorApi, marketplace as marketplaceApi, plugins as pluginApi, skills as skillApi } from "../api/resources";
 import type { CatalogPlugin, Connector, Plugin, PluginManifest, Skill } from "../api/types";
+import { type PluginDraft, parseManifest } from "../state/pluginDraft";
 import { tx } from "../i18n";
 
 const filters = ["All", "Connectors", "Skills"] as const;
 type Filter = (typeof filters)[number];
 
 /** What the add form creates: a connector (an MCP server), a skill (an instruction bundle), or a plugin. */
-type FormKind = "connector" | "skill" | "plugin" | "baize";
+type FormKind = "connector" | "skill" | "plugin";
 
 const PLUGIN_EXAMPLE = `{
   "skills": [{ "name": "论文写作", "description": "写章节", "instructions": "使用学术语气。" }],
@@ -26,6 +20,11 @@ interface PluginsPageProps {
   isAdmin: boolean;
   onBack: () => void;
   onError: (message: string) => void;
+  /** Opens a new chat that designs a plugin with Baize. */
+  onCreateWithBaize: () => void;
+  /** A design made in a chat, to read into the form for review. */
+  initialDraft: PluginDraft | null;
+  onDraftUsed: () => void;
 }
 
 function connectorStatusLabel(c: Connector): string {
@@ -50,56 +49,11 @@ function markOf(name: string): string {
 }
 
 /**
- * Reads a plugin's contents from JSON. The contents may sit under `manifest`, or at the top level
- * beside `name` and `description`. Throws when the text is not a JSON object.
- */
-function parseManifest(text: string): PluginManifest {
-  const value = JSON.parse(text) as Partial<PluginManifest> & { manifest?: PluginManifest };
-  if (!value || typeof value !== "object") throw new Error("not an object");
-  const source = value.manifest ?? value;
-  return {
-    skills: Array.isArray(source.skills) ? source.skills : [],
-    connectors: Array.isArray(source.connectors) ? source.connectors : [],
-  };
-}
-
-/** The message that asks the model to design a plugin, in the one form the page can read back. */
-function draftPrompt(description: string): string {
-  return [
-    "请根据下面的需求，为 Baize 设计一个插件。插件包含若干技能（指令），以及需要时的连接器（MCP 服务器地址）。",
-    "只输出一个代码块，语言标记为 plugin-manifest，内容是 JSON，格式如下，不要添加其他文字：",
-    '{"name": "插件名", "description": "一句话说明", "skills": [{"name": "技能名", "description": "说明", "instructions": "给模型的指令"}], "connectors": [{"name": "连接器名", "url": "https://..."}]}',
-    "只有需求明确需要外部服务时才添加连接器。",
-    "",
-    "需求：",
-    description,
-  ].join("\n");
-}
-
-/** The plugin a reply describes, from its plugin-manifest block. */
-function parsePluginDraft(reply: string): { name: string; description: string; manifest: PluginManifest } | null {
-  const block = /```plugin-manifest\s*\n([\s\S]*?)```/.exec(reply);
-  if (!block) return null;
-  try {
-    const value = JSON.parse(block[1]) as { name?: unknown; description?: unknown };
-    const manifest = parseManifest(block[1]);
-    if (typeof value.name !== "string" || !value.name.trim()) return null;
-    return {
-      name: value.name.trim(),
-      description: typeof value.description === "string" ? value.description : "",
-      manifest,
-    };
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Plugins are bundles of connectors and skills. Installing a plugin adds its skills and connectors to
  * the workspace; uninstalling takes them out again. Connectors are MCP servers codex can call from new
  * chats; skills are instruction bundles added to new chats. Only admins change any of them.
  */
-export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPageProps) {
+export function PluginsPage({ workspaceId, isAdmin, onBack, onError, onCreateWithBaize, initialDraft, onDraftUsed }: PluginsPageProps) {
   const [filter, setFilter] = useState<Filter>("All");
   const [query, setQuery] = useState("");
   const [pluginItems, setPluginItems] = useState<Plugin[]>([]);
@@ -114,10 +68,6 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
   const [manifestText, setManifestText] = useState("");
   const [catalog, setCatalog] = useState<CatalogPlugin[]>([]);
   const [showAllMarket, setShowAllMarket] = useState(false);
-  const [baizeText, setBaizeText] = useState("");
-  const [generating, setGenerating] = useState(false);
-  // Each "create with Baize" gets a number; a reply that arrives after the form was closed is dropped.
-  const generation = useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Errors show on this page: the app's notice is only drawn on the chat page.
@@ -157,10 +107,18 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
     setInstructions("");
     setUrl("");
     setManifestText("");
-    setBaizeText("");
-    setGenerating(false);
-    generation.current += 1;
   };
+
+  // A plugin designed in a chat is read into the form, where it is reviewed before it is added.
+  useEffect(() => {
+    if (!initialDraft) return;
+    setFormKind("plugin");
+    setName(initialDraft.name);
+    setDescription(initialDraft.description);
+    setManifestText(JSON.stringify(initialDraft.manifest, null, 2));
+    onDraftUsed();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialDraft]);
 
   const openForm = (kind: FormKind) => {
     resetForm();
@@ -184,42 +142,6 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
     }
   };
 
-  // Asks the model to design a plugin in a new chat, then reads the plugin back into the form for review.
-  const generate = async () => {
-    const id = ++generation.current;
-    setGenerating(true);
-    try {
-      const environments = await environmentApi.list(workspaceId);
-      const environment = environments.find((e) => e.status === "ready") ?? environments[0];
-      if (!environment) throw new Error(tx("Set up an environment before creating a plugin with Baize."));
-      const thread = await threadApi.create(workspaceId, { title: tx("Create a plugin"), environment_id: environment.id });
-      const turn = await threadApi.send(thread.id, { input: draftPrompt(baizeText.trim()) });
-      for (let attempt = 0; attempt < 150; attempt++) {
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        if (generation.current !== id) return;
-        const current = (await threadApi.turns(thread.id)).find((t) => t.id === turn.id);
-        if (!current) continue;
-        if (current.status === "failed" || current.status === "interrupted") {
-          throw new Error(current.error ?? tx("Baize could not write the plugin."));
-        }
-        if (current.status === "completed" && current.reply) {
-          const draft = parsePluginDraft(current.reply);
-          if (!draft) throw new Error(tx("Baize did not return a plugin. Try describing it again."));
-          setFormKind("plugin");
-          setName(draft.name);
-          setDescription(draft.description);
-          setManifestText(JSON.stringify(draft.manifest, null, 2));
-          return;
-        }
-      }
-      throw new Error(tx("Baize is taking too long. Try again."));
-    } catch (err) {
-      if (generation.current === id) fail(err, tx("Could not create the plugin."));
-    } finally {
-      if (generation.current === id) setGenerating(false);
-    }
-  };
-
   // Adds a marketplace entry to the workspace (unless it is there already) and installs it.
   const installFromCatalog = async (entry: CatalogPlugin) => {
     try {
@@ -234,10 +156,6 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
 
   const create = async () => {
     try {
-      if (formKind === "baize") {
-        await generate();
-        return;
-      }
       if (formKind === "connector") {
         await connectorApi.create(workspaceId, { name: name.trim(), url: url.trim() });
       } else if (formKind === "plugin") {
@@ -313,13 +231,11 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
   const nothingShown = visiblePlugins.length === 0 && visibleConnectors.length === 0 && visibleSkills.length === 0;
 
   const formValid =
-    formKind === "baize"
-      ? baizeText.trim() && !generating
-      : formKind === "connector"
-        ? name.trim() && url.trim()
-        : formKind === "plugin"
-          ? name.trim() && manifestText.trim()
-          : name.trim() && instructions.trim();
+    formKind === "connector"
+      ? name.trim() && url.trim()
+      : formKind === "plugin"
+        ? name.trim() && manifestText.trim()
+        : name.trim() && instructions.trim();
   const showSections = filter === "All" && !needle;
 
   const pluginRows = visiblePlugins.map((plugin) => (
@@ -461,7 +377,7 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
                     <button role="menuitem" onClick={() => { setMenuOpen(false); openForm("plugin"); }}>
                       {tx("Create a plugin")}
                     </button>
-                    <button role="menuitem" onClick={() => { setMenuOpen(false); openForm("baize"); }}>
+                    <button role="menuitem" onClick={() => { setMenuOpen(false); onCreateWithBaize(); }}>
                       {tx("Create with Baize")}
                     </button>
                     <button role="menuitem" onClick={() => { setMenuOpen(false); setShowAllMarket(true); }}>
@@ -501,31 +417,10 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
               void create();
             }}
           >
-            {formKind !== "baize" && (
-              <label className="field">
-                <span>{tx("Name")}</span>
-                <input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} required />
-              </label>
-            )}
-            {formKind === "baize" && (
-              <>
-                <label className="field">
-                  <span>{tx("Describe the plugin you want")}</span>
-                  <textarea
-                    value={baizeText}
-                    onChange={(e) => setBaizeText(e.target.value)}
-                    rows={5}
-                    placeholder={tx("For example: help me review pull requests for security problems")}
-                    required
-                  />
-                </label>
-                <p className="muted small">
-                  {generating
-                    ? tx("Baize is writing the plugin…")
-                    : tx("Baize writes the skills and connectors. You review them in the form before the plugin is added.")}
-                </p>
-              </>
-            )}
+            <label className="field">
+              <span>{tx("Name")}</span>
+              <input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} required />
+            </label>
             {formKind === "connector" && (
               <label className="field">
                 <span>{tx("Server URL (http or https)")}</span>
@@ -571,15 +466,7 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
                 {tx("Cancel")}
               </button>
               <button className="primary" type="submit" disabled={!formValid}>
-                {formKind === "baize"
-                  ? generating
-                    ? tx("Writing…")
-                    : tx("Create with Baize")
-                  : formKind === "connector"
-                    ? tx("Add connector")
-                    : formKind === "plugin"
-                      ? tx("Add plugin")
-                      : tx("Add skill")}
+                {formKind === "connector" ? tx("Add connector") : formKind === "plugin" ? tx("Add plugin") : tx("Add skill")}
               </button>
             </div>
           </form>
