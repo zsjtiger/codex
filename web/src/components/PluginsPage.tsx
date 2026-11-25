@@ -605,8 +605,8 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
                       <span className="plugin-mark">{markOf(entry.name)}</span>
                       <span className="market-name">{entry.name}</span>
                     </div>
-                    <div className="muted small">{entry.description}</div>
-                    <div className="muted small">
+                    <div className="muted market-desc">{entry.description}</div>
+                    <div className="muted market-meta">
                       {entry.publisher} · {entry.installs} {tx("installs")}
                     </div>
                     <div className="market-actions">
