@@ -113,6 +113,12 @@ export interface McpServer {
   tools_error: string | null;
 }
 
+/** Codex's own memory in an environment: past threads it has learned from, and whether it is ready. */
+export interface CodexMemory {
+  consolidated_threads: number;
+  ready: boolean;
+}
+
 export interface Turn {
   id: string;
   /** The assistant's reply, kept on the turn once its messages complete. */

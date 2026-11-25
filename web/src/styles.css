@@ -1182,3 +1182,5 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 
 /* "Check now" on the plugins page: asks codex what is running for the connectors. */
 .live-check { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+
+.settings-subheading { margin-top: 18px; }

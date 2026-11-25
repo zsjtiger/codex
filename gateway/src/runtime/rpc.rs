@@ -117,7 +117,11 @@ impl RpcConnection {
         connection
             .request(
                 "initialize",
-                json!({ "clientInfo": { "name": "codex-gateway", "version": env!("CARGO_PKG_VERSION") } }),
+                // Experimental methods (such as memory/status) are refused unless the client opts in.
+                json!({
+                    "clientInfo": { "name": "codex-gateway", "version": env!("CARGO_PKG_VERSION") },
+                    "capabilities": { "experimentalApi": true },
+                }),
             )
             .await?;
         connection

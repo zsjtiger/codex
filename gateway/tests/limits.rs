@@ -73,3 +73,22 @@ async fn every_mcp_server_codex_has_is_listed_with_its_state_and_tools(pool: PgP
     assert_eq!(pages.len(), 2, "both pages were read");
     assert_eq!(pages[0].1["detail"], "toolsAndAuthOnly");
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn codex_memory_is_read_and_the_connection_opts_into_experimental_methods(pool: PgPool) {
+    let state = AppState::new(pool.clone(), true, RuntimeConfig::default());
+    let mock = mock_app_server().await;
+    let token = login(&state, "memory-status@example.com").await;
+    let (ws_id, _) = setup(&state, &token, Some(&mock.url)).await;
+    let (_, envs) = call(&state, "GET", &format!("/api/v1/workspaces/{ws_id}/environments"), &token, None).await;
+    let env_id = envs[0]["id"].as_str().unwrap().to_string();
+
+    let (status, memory) = call(&state, "GET", &format!("/api/v1/environments/{env_id}/memory"), &token, None).await;
+    assert_eq!(status, StatusCode::OK, "{memory}");
+    assert_eq!(memory, json!({ "consolidated_threads": 12, "ready": true }));
+
+    // memory/status is experimental: codex refuses it unless the connection declared that it wants them.
+    let requests = mock.requests.lock().unwrap().clone();
+    let (_, init) = requests.iter().find(|(m, _)| m == "initialize").expect("the connection was initialized");
+    assert_eq!(init["capabilities"]["experimentalApi"], true);
+}

@@ -262,6 +262,9 @@ pub async fn mock_app_server() -> MockServer {
                             };
                             out_tx.send(reply(json!({ "data": data, "nextCursor": next }))).unwrap();
                         }
+                        "memory/status" => {
+                            out_tx.send(reply(json!({ "v2ConsolidatedThreads": 12, "v2Ready": true }))).unwrap();
+                        }
                         "turn/steer" => {
                             out_tx
                                 .send(reply(json!({ "turnId": msg["params"]["expectedTurnId"] })))

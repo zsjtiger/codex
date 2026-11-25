@@ -4,6 +4,7 @@ import { apiUrl } from "./config";
 
 import { api, ApiError, getToken } from "./client";
 import type {
+  CodexMemory,
   McpServer,
   RateLimits,
   CheckoutEntry,
@@ -163,6 +164,8 @@ export interface ModelOption {
 export const environments = {
   list: (ws: string) => api<Environment[]>("GET", `/workspaces/${ws}/environments`),
   models: (id: string) => api<ModelOption[]>("GET", `/environments/${id}/models`),
+  /** Codex's own memory in this environment: how many past threads it has learned from, and whether it is ready. */
+  codexMemory: (id: string) => api<CodexMemory>("GET", `/environments/${id}/memory`),
   /** Every MCP server codex has in this environment, with its state and tools, as it is now. */
   mcpServers: (id: string) => api<McpServer[]>("GET", `/environments/${id}/mcp-servers`),
   /** The codex account's rate limits in this environment. */

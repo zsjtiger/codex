@@ -55,6 +55,7 @@ pub fn routes() -> Router<AppState> {
         .route("/environments/{id}/models", get(models))
         .route("/environments/{id}/rate-limits", get(rate_limits))
         .route("/environments/{id}/mcp-servers", get(mcp_servers))
+        .route("/environments/{id}/memory", get(codex_memory))
 }
 
 #[derive(Serialize)]
@@ -410,4 +411,34 @@ async fn mcp_servers(
         }
     }
     Ok(Json(servers))
+}
+
+/// Codex's own memory in an environment: how many past threads it has consolidated, and whether it is ready
+/// to use. This is codex's memory, separate from the notes a person keeps in Baize.
+#[derive(Serialize)]
+pub struct CodexMemory {
+    consolidated_threads: u32,
+    ready: bool,
+}
+
+async fn codex_memory(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<CodexMemory>, ApiError> {
+    let env = load(&state.pool, id).await?;
+    require_role(&state.pool, env.workspace_id, user.id, Role::Member).await?;
+    let lease = state
+        .runtime
+        .lease(id, env.endpoint.as_deref())
+        .await
+        .map_err(|err| ApiError::BadRequest(err.to_string()))?;
+    let status = lease
+        .request("memory/status", json!({}))
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("could not read codex's memory: {err}")))?;
+    Ok(Json(CodexMemory {
+        consolidated_threads: status["v2ConsolidatedThreads"].as_u64().unwrap_or(0) as u32,
+        ready: status["v2Ready"].as_bool().unwrap_or(false),
+    }))
 }

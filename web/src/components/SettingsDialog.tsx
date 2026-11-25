@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { memory as memoryApi } from "../api/resources";
+import { CodexMemoryList } from "./CodexMemory";
 import type { MemoryImportResult, MemoryNote, Thread, User, Workspace } from "../api/types";
 import { AuditSection, MembersSection, WorkspaceSection } from "./WorkspaceSections";
 import { useI18n } from "../i18n";
@@ -293,6 +294,8 @@ export function SettingsDialog({ user, workspace, threads, onClose, onError }: S
                   </div>
                   <input type="checkbox" className="switch" checked={enabled} onChange={(e) => void toggle(e.target.checked)} aria-label={tx("Use saved memory in chats")} />
                 </div>
+
+                <CodexMemoryList workspaceId={workspace?.id ?? null} />
 
                 <div className="settings-row">
                   <div>
