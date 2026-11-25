@@ -80,6 +80,13 @@ export interface CheckoutFile {
   bytes: number;
 }
 
+/** What a command printed when it finished in a code chat's checkout. */
+export interface CommandResult {
+  exit_code: number;
+  stdout: string;
+  stderr: string;
+}
+
 export interface Turn {
   id: string;
   /** The assistant's reply, kept on the turn once its messages complete. */

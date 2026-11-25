@@ -126,3 +126,65 @@ async fn a_chat_without_a_checkout_has_no_files(pool: PgPool) {
     let (status, _) = call(&state, "GET", &format!("/api/v1/threads/{chat_id}/files/read?path=README.md"), &token, None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_command_runs_in_the_checkout_under_a_sandbox_and_is_audited(pool: PgPool) {
+    let root = std::env::temp_dir().join(format!("checkout-{}", Uuid::new_v4()));
+    let state = state_with_checkouts(&pool, &root);
+    let mock = mock_app_server().await;
+    let token = login(&state, "run@example.com").await;
+    let (chat_id, worktree) = code_chat(&pool, &state, &token, &mock.url, &root).await;
+    let real = worktree.canonicalize().unwrap();
+
+    let (status, run) = call(&state, "POST", &format!("/api/v1/threads/{chat_id}/run"), &token, Some(json!({ "command": "echo hi" }))).await;
+    assert_eq!(status, StatusCode::OK, "{run}");
+    assert_eq!(run, json!({ "exit_code": 0, "stdout": "ran: echo hi\n", "stderr": "" }));
+
+    let requests = mock.requests.lock().unwrap().clone();
+    let (_, params) = requests.iter().rev().find(|(m, _)| m == "command/exec").expect("the command was sent");
+    assert_eq!(params["command"], json!(["/bin/sh", "-c", "echo hi"]));
+    assert_eq!(params["cwd"], json!(real.to_string_lossy()));
+    assert_eq!(params["timeoutMs"], 120_000);
+    assert_eq!(params["outputBytesCap"], 256 * 1024);
+    assert_eq!(params["sandboxPolicy"]["type"], "workspaceWrite");
+    assert_eq!(params["sandboxPolicy"]["writableRoots"], json!([real.to_string_lossy()]));
+    assert_eq!(params["sandboxPolicy"]["networkAccess"], false);
+
+    // A failing command reports its exit code and its stderr.
+    let (_, run) = call(&state, "POST", &format!("/api/v1/threads/{chat_id}/run"), &token, Some(json!({ "command": "make fail", "timeout_ms": 99_999_999 }))).await;
+    assert_eq!(run["exit_code"], 3);
+    assert_eq!(run["stderr"], "nope\n");
+    let requests = mock.requests.lock().unwrap().clone();
+    let (_, params) = requests.iter().rev().find(|(m, _)| m == "command/exec").unwrap();
+    assert_eq!(params["timeoutMs"], 600_000, "a requested timeout is capped");
+
+    // The run is in the audit log, with the command and its exit code.
+    let audited: i64 = sqlx::query_scalar("SELECT count(*) FROM audit_logs WHERE action = 'checkout.command_run' AND metadata->>'command' = 'make fail' AND (metadata->>'exit_code')::bigint = 3")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(audited, 1);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn an_empty_or_long_command_is_refused_and_only_members_run_commands(pool: PgPool) {
+    let root = std::env::temp_dir().join(format!("checkout-{}", Uuid::new_v4()));
+    let state = state_with_checkouts(&pool, &root);
+    let mock = mock_app_server().await;
+    let token = login(&state, "refuse@example.com").await;
+    let (chat_id, _) = code_chat(&pool, &state, &token, &mock.url, &root).await;
+
+    let (status, _) = call(&state, "POST", &format!("/api/v1/threads/{chat_id}/run"), &token, Some(json!({ "command": "   " }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let long = "x".repeat(2_001);
+    let (status, _) = call(&state, "POST", &format!("/api/v1/threads/{chat_id}/run"), &token, Some(json!({ "command": long }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let outsider = login(&state, "outsider@example.com").await;
+    let (status, _) = call(&state, "POST", &format!("/api/v1/threads/{chat_id}/run"), &outsider, Some(json!({ "command": "echo hi" }))).await;
+    assert_ne!(status, StatusCode::OK);
+    let requests = mock.requests.lock().unwrap().clone();
+    assert!(!requests.iter().any(|(m, _)| m == "command/exec"), "nothing ran");
+    let _ = std::fs::remove_dir_all(&root);
+}

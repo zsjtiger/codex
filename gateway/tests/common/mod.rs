@@ -220,6 +220,16 @@ pub async fn mock_app_server() -> MockServer {
                             };
                             out_tx.send(reply(json!({ "dataBase64": STANDARD.encode(bytes) }))).unwrap();
                         }
+                        "command/exec" => {
+                            // Echoes the command; a command that mentions "fail" exits with 3 and writes to stderr.
+                            let command = msg["params"]["command"][2].as_str().unwrap_or_default().to_string();
+                            let reply_value = if command.contains("fail") {
+                                json!({ "exitCode": 3, "stdout": "", "stderr": "nope\n" })
+                            } else {
+                                json!({ "exitCode": 0, "stdout": format!("ran: {command}\n"), "stderr": "" })
+                            };
+                            out_tx.send(reply(reply_value)).unwrap();
+                        }
                         "turn/steer" => {
                             out_tx
                                 .send(reply(json!({ "turnId": msg["params"]["expectedTurnId"] })))

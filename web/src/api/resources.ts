@@ -5,6 +5,7 @@ import { apiUrl } from "./config";
 import { api, ApiError, getToken } from "./client";
 import type {
   CheckoutEntry,
+  CommandResult,
   CheckoutFile,
   FileMatch,
   TurnDiff,
@@ -229,6 +230,8 @@ export const threads = {
     api<CheckoutEntry[]>("GET", `/threads/${id}/files/list?path=${encodeURIComponent(path)}`),
   /** One file of a code chat's checkout, as text. */
   readFile: (id: string, path: string) => api<CheckoutFile>("GET", `/threads/${id}/files/read?path=${encodeURIComponent(path)}`),
+  /** Runs one command in a code chat's checkout, under the sandbox, and waits for it to finish. */
+  run: (id: string, command: string) => api<CommandResult>("POST", `/threads/${id}/run`, { command }),
   /** The diff of everything each code turn changed, in turn order. */
   diffs: (id: string) => api<TurnDiff[]>("GET", `/threads/${id}/diffs`),
   /** The finished commands and file changes of a thread, grouped by Codex turn. */

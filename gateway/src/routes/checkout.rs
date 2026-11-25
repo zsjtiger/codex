@@ -7,7 +7,7 @@ use std::path::{Component, Path, PathBuf};
 use axum::{
     Json, Router,
     extract::{Path as PathParam, Query, State},
-    routing::get,
+    routing::{get, post},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
@@ -15,8 +15,9 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::{
-    authz::{Role, require_role},
+    audit,
     auth::CurrentUser,
+    authz::{Role, require_role},
     error::ApiError,
     runtime::Lease,
     state::AppState,
@@ -32,6 +33,7 @@ pub fn routes() -> Router<AppState> {
         .route("/threads/{id}/files", get(search_files))
         .route("/threads/{id}/files/list", get(list_directory))
         .route("/threads/{id}/files/read", get(read_file))
+        .route("/threads/{id}/run", post(run_command))
 }
 
 /// The chat's checkout on disk, and the environment its turns run in.
@@ -93,14 +95,15 @@ async fn codex_for(state: &AppState, checkout: &Checkout) -> Result<Lease, ApiEr
         })
 }
 
-async fn member_of(state: &AppState, thread_id: Uuid, user: &CurrentUser) -> Result<(), ApiError> {
+/// Checks the person is a member of the chat's workspace, and returns that workspace's id.
+async fn member_of(state: &AppState, thread_id: Uuid, user: &CurrentUser) -> Result<Uuid, ApiError> {
     let workspace_id: Uuid = sqlx::query_scalar("SELECT workspace_id FROM threads WHERE id = $1")
         .bind(thread_id)
         .fetch_optional(&state.pool)
         .await?
         .ok_or(ApiError::NotFound)?;
     require_role(&state.pool, workspace_id, user.id, Role::Member).await?;
-    Ok(())
+    Ok(workspace_id)
 }
 
 #[derive(Deserialize)]
@@ -262,4 +265,82 @@ async fn read_file(
         }
     };
     Ok(Json(view))
+}
+
+/// Most time one command may run, unless the request asks for less.
+const RUN_MAX_TIMEOUT_MS: i64 = 600_000;
+const RUN_DEFAULT_TIMEOUT_MS: i64 = 120_000;
+/// Most output kept for each of stdout and stderr.
+const RUN_OUTPUT_CAP: usize = 256 * 1024;
+const RUN_MAX_COMMAND: usize = 2_000;
+
+#[derive(Deserialize)]
+pub struct RunRequest {
+    /// A shell command line, run in the checkout's root with `sh -c`.
+    command: String,
+    timeout_ms: Option<i64>,
+}
+
+#[derive(Serialize)]
+pub struct RunResult {
+    exit_code: i64,
+    stdout: String,
+    stderr: String,
+}
+
+/// Runs one command in a code chat's checkout and returns what it printed. The command runs under Codex's
+/// sandbox with writes limited to the checkout and no network access. Each run is recorded in the audit log.
+async fn run_command(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    PathParam(id): PathParam<Uuid>,
+    Json(req): Json<RunRequest>,
+) -> Result<Json<RunResult>, ApiError> {
+    let workspace_id = member_of(&state, id, &user).await?;
+    let command = req.command.trim();
+    if command.is_empty() {
+        return Err(ApiError::BadRequest("the command is empty".to_string()));
+    }
+    if command.chars().count() > RUN_MAX_COMMAND || command.contains('\0') {
+        return Err(ApiError::BadRequest(format!("a command is at most {RUN_MAX_COMMAND} characters")));
+    }
+    let timeout = req.timeout_ms.unwrap_or(RUN_DEFAULT_TIMEOUT_MS).clamp(1_000, RUN_MAX_TIMEOUT_MS);
+    let checkout = checkout_of(&state, id).await?.ok_or(ApiError::NotFound)?;
+    let root = checkout.root.canonicalize().map_err(|_| ApiError::NotFound)?;
+    let lease = codex_for(&state, &checkout).await?;
+    let response = lease
+        .request(
+            "command/exec",
+            json!({
+                "command": ["/bin/sh", "-c", command],
+                "cwd": root,
+                "timeoutMs": timeout,
+                "outputBytesCap": RUN_OUTPUT_CAP,
+                "sandboxPolicy": {
+                    "type": "workspaceWrite",
+                    "writableRoots": [root],
+                    "networkAccess": false,
+                    "excludeTmpdirEnvVar": false,
+                    "excludeSlashTmp": false,
+                },
+            }),
+        )
+        .await
+        .map_err(|err| ApiError::BadRequest(err.to_string()))?;
+    let result = RunResult {
+        exit_code: response.get("exitCode").and_then(|code| code.as_i64()).unwrap_or(-1),
+        stdout: response.get("stdout").and_then(|out| out.as_str()).unwrap_or_default().to_string(),
+        stderr: response.get("stderr").and_then(|err| err.as_str()).unwrap_or_default().to_string(),
+    };
+    audit::record(
+        &state.pool,
+        workspace_id,
+        user.id,
+        "checkout.command_run",
+        "thread",
+        id,
+        json!({ "command": command, "exit_code": result.exit_code }),
+    )
+    .await?;
+    Ok(Json(result))
 }

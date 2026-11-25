@@ -5,6 +5,7 @@ import type { Activity, Approval, SendOptions } from "../state/useCodex";
 import type { ToolUse } from "../state/toolUses";
 import type { WorkLog } from "../state/work";
 import { CheckoutFiles } from "./CheckoutFiles";
+import { RunCommand } from "./RunCommand";
 import { Composer } from "./Composer";
 import { usePreview } from "./Preview";
 import { Conversation } from "./Conversation";
@@ -226,6 +227,7 @@ export function Home(props: HomeProps) {
           {thread.repo_id && <CommitBar threadId={thread.id} branch={thread.work_branch} onError={onError} />}
           {thread.repo_id && <PreviewBar threadId={thread.id} onError={onError} />}
           {thread.repo_id && <CheckoutFiles threadId={thread.id} onError={onError} />}
+          {thread.repo_id && <RunCommand threadId={thread.id} onError={onError} />}
           <div className="thread-scroll">
             <Conversation
               variant={thread.repo_id ? "code" : "chat"}
