@@ -184,6 +184,16 @@ pub async fn mock_app_server() -> MockServer {
                                 .send(reply(json!({ "thread": { "id": forked } })))
                                 .unwrap();
                         }
+                        "fuzzyFileSearch" => {
+                            // Matches a fixed file list; the query is recorded with the request.
+                            let query = msg["params"]["query"].as_str().unwrap_or_default().to_string();
+                            let files = if query.is_empty() {
+                                vec![]
+                            } else {
+                                vec![json!({ "root": "", "path": "src/cache.rs", "matchType": "file", "fileName": "cache.rs", "score": 90, "indices": null })]
+                            };
+                            out_tx.send(reply(json!({ "files": files }))).unwrap();
+                        }
                         "turn/steer" => {
                             out_tx
                                 .send(reply(json!({ "turnId": msg["params"]["expectedTurnId"] })))

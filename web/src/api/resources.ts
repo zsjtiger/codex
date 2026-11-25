@@ -4,6 +4,7 @@ import { apiUrl } from "./config";
 
 import { api, ApiError, getToken } from "./client";
 import type {
+  FileMatch,
   TurnDiff,
   Artifact,
   ArtifactVersion,
@@ -219,6 +220,8 @@ export const threads = {
   steer: (id: string, input: string) => api<Turn>("POST", `/threads/${id}/steer`, { input }),
   /** Asks the model to write a turn's reply as a document of the chat. The summary is a turn of its own. */
   summarize: (id: string, turnId: string) => api<Turn>("POST", `/threads/${id}/summaries`, { turn_id: turnId }),
+  /** Files in a code chat's checkout whose paths match the query. */
+  files: (id: string, query: string) => api<FileMatch[]>("GET", `/threads/${id}/files?q=${encodeURIComponent(query)}`),
   /** The diff of everything each code turn changed, in turn order. */
   diffs: (id: string) => api<TurnDiff[]>("GET", `/threads/${id}/diffs`),
   /** The finished commands and file changes of a thread, grouped by Codex turn. */

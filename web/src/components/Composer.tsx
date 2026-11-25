@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { type ModelOption, environments as environmentApi } from "../api/resources";
-import type { Project, Skill } from "../api/types";
+import type { FileMatch, Project, Skill } from "../api/types";
 import { useI18n } from "../i18n";
 
 /** The browser's speech recognition, when it has one (Chromium and Safari do; some webviews do not). */
@@ -51,6 +51,8 @@ interface ComposerProps {
   onSend: (text: string, options: SendOptions) => void;
   /** A review or a compaction of the open chat, from the "/" menu. */
   onAction?: (action: "review" | "compact") => void;
+  /** Finds files in the chat's checkout for "@" mentions. Only code chats offer it. */
+  onSearchFiles?: (query: string) => Promise<FileMatch[]>;
   onStop?: () => void;
   running?: boolean;
   disabled: boolean;
@@ -86,7 +88,7 @@ interface Pending {
  */
 export function Composer(props: ComposerProps) {
   const { t } = useI18n();
-  const { prefill, onPrefillUsed, environmentId, onSend, onAction, onStop, running, disabled, placeholder = t("home.placeholder"), projects, projectId, onProjectChange, onCreateProject, skills, upload, onError } = props;
+  const { prefill, onPrefillUsed, environmentId, onSend, onAction, onSearchFiles, onStop, running, disabled, placeholder = t("home.placeholder"), projects, projectId, onProjectChange, onCreateProject, skills, upload, onError } = props;
   const [draft, setDraft] = useState("");
   useEffect(() => {
     if (!prefill) return;
@@ -161,6 +163,7 @@ export function Composer(props: ComposerProps) {
   const [projectQuery, setProjectQuery] = useState("");
   const [newProjectName, setNewProjectName] = useState<string | null>(null);
   const [attachOpen, setAttachOpen] = useState(false);
+  const [fileMatches, setFileMatches] = useState<FileMatch[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const submit = () => {
@@ -204,6 +207,42 @@ export function Composer(props: ComposerProps) {
       })),
   ];
   const highlighted = Math.min(menuIndex, Math.max(menuItems.length - 1, 0));
+
+  // "@" at the start or after a space opens the file menu, filtered by what follows it.
+  const mention = onSearchFiles ? /(^|\s)@(\S*)$/.exec(draft) : null;
+  const mentionQuery = mention ? mention[2] : null;
+  useEffect(() => {
+    // A bare "@" has nothing to search for yet.
+    if (mentionQuery === null || mentionQuery === "" || !onSearchFiles) {
+      setFileMatches([]);
+      return;
+    }
+    let cancelled = false;
+    // Typing is debounced so each keystroke does not start a search.
+    const timer = window.setTimeout(() => {
+      onSearchFiles(mentionQuery)
+        .then((found) => {
+          if (!cancelled) setFileMatches(found);
+        })
+        .catch(() => {
+          if (!cancelled) setFileMatches([]);
+        });
+    }, 150);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [mentionQuery, onSearchFiles]);
+  const fileMenuOpen = mention !== null && !menuDismissed && fileMatches.length > 0;
+  const fileHighlight = Math.min(menuIndex, Math.max(fileMatches.length - 1, 0));
+  // Replaces the "@" word being typed with the chosen path.
+  const insertFile = (path: string) => {
+    if (!mention) return;
+    const start = draft.length - mention[0].length + mention[1].length;
+    setDraft(`${draft.slice(0, start)}@${path} `);
+    setFileMatches([]);
+    setMenuIndex(0);
+  };
 
   const attach = async (file: File) => {
     const limit = attachmentLimit(file);
@@ -257,6 +296,23 @@ export function Composer(props: ComposerProps) {
             setMenuIndex(0);
           }}
           onKeyDown={(event) => {
+            if (fileMenuOpen) {
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault();
+                const step = event.key === "ArrowDown" ? 1 : -1;
+                setMenuIndex((fileHighlight + step + fileMatches.length) % fileMatches.length);
+                return;
+              }
+              if ((event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) || event.key === "Tab") {
+                event.preventDefault();
+                insertFile(fileMatches[fileHighlight].path);
+                return;
+              }
+              if (event.key === "Escape") {
+                setMenuDismissed(true);
+                return;
+              }
+            }
             if (menuOpen && menuItems.length > 0) {
               if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                 event.preventDefault();
@@ -280,6 +336,25 @@ export function Composer(props: ComposerProps) {
             }
           }}
         />
+        {fileMenuOpen && (
+          <ul className="slash-menu" role="listbox" aria-label={tx("Files")}>
+            {fileMatches.map((match, index) => (
+              <li
+                key={match.path}
+                role="option"
+                aria-selected={index === fileHighlight}
+                className={index === fileHighlight ? "slash-item slash-item-active" : "slash-item"}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  insertFile(match.path);
+                }}
+                onMouseEnter={() => setMenuIndex(index)}
+              >
+                {match.file_name} <span className="muted small">{match.path}</span>
+              </li>
+            ))}
+          </ul>
+        )}
         {menuOpen && (
           <ul className="slash-menu" role="listbox" aria-label={tx("Skills and actions")}>
             {menuItems.map((item, index) => (

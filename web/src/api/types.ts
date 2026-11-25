@@ -58,6 +58,12 @@ export interface TurnDiff {
   diff: string;
 }
 
+/** A file in a code chat's checkout that matches an "@" mention. */
+export interface FileMatch {
+  path: string;
+  file_name: string;
+}
+
 export interface Turn {
   id: string;
   /** The assistant's reply, kept on the turn once its messages complete. */

@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { artifacts as artifactApi, skills as skillApi, threads as threadApi } from "../api/resources";
-import type { Artifact, Environment, Project, Skill, Thread, Turn, User } from "../api/types";
+import type { Artifact, Environment, FileMatch, Project, Skill, Thread, Turn, User } from "../api/types";
 import type { Activity, Approval, SendOptions } from "../state/useCodex";
 import type { ToolUse } from "../state/toolUses";
 import type { WorkLog } from "../state/work";
@@ -59,6 +59,9 @@ export function Home(props: HomeProps) {
   const { t } = useI18n();
   const { prefill, onPrefillUsed, onAddPlugin, onAction, onFork, user, workspaceId, thread, threads, onOpenThread, turns, agentText, streamText, toolUses, activity, work, diffs, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
   const pending = approvals.filter((a) => a.threadId === thread?.id);
+  const threadId = thread?.id ?? "";
+  const hasRepo = Boolean(thread?.repo_id);
+  const searchFiles = useCallback((query: string): Promise<FileMatch[]> => threadApi.files(threadId, query), [threadId]);
   const runningTurn = [...turns].reverse().find((t) => (t.status === "running" || t.status === "queued") && t.codex_turn_id);
   const [recent, setRecent] = useState<Artifact[]>([]);
   // Documents saved from this chat, shown as cards under the conversation.
@@ -257,6 +260,7 @@ export function Home(props: HomeProps) {
               environmentId={environment?.id ?? null}
               onSend={onSend}
               onAction={onAction}
+              onSearchFiles={hasRepo ? searchFiles : undefined}
               onStop={runningTurn ? () => onStop(runningTurn.id) : undefined}
               running={Boolean(runningTurn)}
               disabled={sending}

@@ -228,6 +228,7 @@ pub fn routes() -> Router<AppState> {
         .route("/threads/{id}/tool-uses", get(list_tool_uses))
         .route("/threads/{id}/work", get(list_work))
         .route("/threads/{id}/diffs", get(list_diffs))
+        .route("/threads/{id}/files", get(search_files))
         .route("/threads/{id}/summaries", post(summarize))
         .route("/turns/{id}/interrupt", post(interrupt_turn))
         .route("/threads/{id}/review", post(start_review))
@@ -423,6 +424,83 @@ async fn list_diffs(
     .fetch_all(&state.pool)
     .await?;
     Ok(Json(rows))
+}
+
+#[derive(Deserialize)]
+pub struct FileSearch {
+    #[serde(default)]
+    q: String,
+}
+
+#[derive(Serialize)]
+pub struct FileMatch {
+    /// Path relative to the checkout, as codex reports it.
+    path: String,
+    file_name: String,
+}
+
+/// Files in a code chat's checkout whose paths match the query, for "@" mentions in the composer.
+/// The search runs on the chat's environment, in the same checkout its turns run in.
+async fn search_files(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+    Query(query): Query<FileSearch>,
+) -> Result<Json<Vec<FileMatch>>, ApiError> {
+    let access = thread_access(&state.pool, id).await?;
+    require_role(&state.pool, access.workspace_id, user.id, Role::Member).await?;
+    let q = query.q.trim();
+    if q.is_empty() || q.chars().count() > 200 {
+        return Ok(Json(Vec::new()));
+    }
+    let row: Option<(Option<Uuid>, Option<Uuid>, Option<String>)> = sqlx::query_as(
+        "SELECT th.repo_id, th.environment_id, e.endpoint
+           FROM threads th LEFT JOIN environments e ON e.id = th.environment_id
+          WHERE th.id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?;
+    let Some((Some(_repo_id), Some(environment_id), endpoint)) = row else {
+        return Ok(Json(Vec::new()));
+    };
+    let root = crate::code::worktree_path(&state.code, id);
+    if !root.join(".git").exists() {
+        return Ok(Json(Vec::new()));
+    }
+    let lease = match state.runtime.lease(environment_id, endpoint.as_deref()).await {
+        Ok(lease) => lease,
+        Err(err) => {
+            tracing::warn!(%err, "file search could not reach codex");
+            return Ok(Json(Vec::new()));
+        }
+    };
+    let result = lease
+        .request(
+            "fuzzyFileSearch",
+            json!({ "query": q, "roots": [root.to_string_lossy()] }),
+        )
+        .await;
+    let files = match result {
+        Ok(response) => response
+            .get("files")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|file| {
+                Some(FileMatch {
+                    path: file.get("path")?.as_str()?.to_string(),
+                    file_name: file.get("fileName")?.as_str()?.to_string(),
+                })
+            })
+            .take(20)
+            .collect(),
+        Err(err) => {
+            tracing::warn!(%err, "file search failed");
+            Vec::new()
+        }
+    };
+    Ok(Json(files))
 }
 
 async fn create_thread(

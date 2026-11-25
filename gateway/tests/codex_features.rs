@@ -115,3 +115,42 @@ async fn the_diff_of_a_turn_is_kept_as_codex_last_reported_it(pool: PgPool) {
     let (_, diffs) = call(&state, "GET", &format!("/api/v1/threads/{chat_id}/diffs"), &token, None).await;
     assert_eq!(diffs.as_array().unwrap().len(), 1);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn an_at_mention_searches_the_checkout_the_code_chat_runs_in(pool: PgPool) {
+    let root = std::env::temp_dir().join(format!("file-search-{}", uuid::Uuid::new_v4()));
+    let config = codex_gateway::code::CodeConfig { root: root.join("data"), ..Default::default() };
+    let state = AppState::new(pool.clone(), true, RuntimeConfig::default()).with_code(config);
+    let mock = mock_app_server().await;
+    let token = login(&state, "files@example.com").await;
+    let (ws_id, chat_id) = setup(&state, &token, Some(&mock.url)).await;
+
+    // A plain chat has no checkout to search.
+    let (status, found) = call(&state, "GET", &format!("/api/v1/threads/{chat_id}/files?q=cache"), &token, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(found, json!([]));
+
+    // Make it a code chat with a checkout on disk.
+    let repo_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO code_repos (id, workspace_id, full_name) VALUES ($1, $2::uuid, 'acme/demo')")
+        .bind(repo_id)
+        .bind(&ws_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE threads SET repo_id = $2 WHERE id = $1::uuid").bind(&chat_id).bind(repo_id).execute(&pool).await.unwrap();
+    let worktree = root.join("data").join("worktrees").join(&chat_id);
+    std::fs::create_dir_all(worktree.join(".git")).unwrap();
+
+    let (status, found) = call(&state, "GET", &format!("/api/v1/threads/{chat_id}/files?q=cache"), &token, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(found, json!([{ "path": "src/cache.rs", "file_name": "cache.rs" }]));
+    let requests = mock.requests.lock().unwrap().clone();
+    let (_, params) = requests.iter().rev().find(|(m, _)| m == "fuzzyFileSearch").expect("the search was sent");
+    assert_eq!(params["roots"], json!([worktree.to_string_lossy()]));
+
+    // An empty query searches nothing.
+    let (_, found) = call(&state, "GET", &format!("/api/v1/threads/{chat_id}/files?q=%20"), &token, None).await;
+    assert_eq!(found, json!([]));
+    let _ = std::fs::remove_dir_all(&root);
+}
