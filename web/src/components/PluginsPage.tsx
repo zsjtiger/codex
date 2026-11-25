@@ -120,7 +120,13 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
   const generation = useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const fail = (err: unknown, fallback: string) => onError(err instanceof Error ? err.message : fallback);
+  // Errors show on this page: the app's notice is only drawn on the chat page.
+  const [failure, setFailure] = useState<string | null>(null);
+  const report = (message: string) => {
+    setFailure(message);
+    onError(message);
+  };
+  const fail = (err: unknown, fallback: string) => report(err instanceof Error ? err.message : fallback);
 
   const reload = async () => {
     try {
@@ -174,7 +180,7 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
       setDescription(typeof value.description === "string" ? value.description : "");
       setManifestText(JSON.stringify(manifest, null, 2));
     } catch {
-      onError(tx("The plugin file is not valid JSON."));
+      report(tx("The plugin file is not valid JSON."));
     }
   };
 
@@ -239,7 +245,7 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
         try {
           manifest = parseManifest(manifestText);
         } catch {
-          onError(tx("The plugin is not valid JSON."));
+          report(tx("The plugin is not valid JSON."));
           return;
         }
         await pluginApi.create(workspaceId, { name: name.trim(), description: description.trim(), manifest });
@@ -405,6 +411,15 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
           {tx("← Back to chat")}
         </button>
         <h1>{tx("Plugins")}</h1>
+
+        {failure && (
+          <p className="banner error" role="alert">
+            {failure}
+            <button className="banner-close" onClick={() => setFailure(null)} aria-label={tx("Dismiss")}>
+              ×
+            </button>
+          </p>
+        )}
 
         <div className="plugin-toolbar">
           <input
