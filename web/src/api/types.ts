@@ -129,6 +129,24 @@ export interface Artifact {
   updated_at: string;
 }
 
+/** The skills and connectors a plugin installs. */
+export interface PluginManifest {
+  skills: { name: string; description: string; instructions: string }[];
+  connectors: { name: string; url: string }[];
+}
+
+/** A bundle of skills and connectors that installs into a workspace in one step. */
+export interface Plugin {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description: string;
+  manifest: PluginManifest;
+  /** Whether its skills and connectors are in the workspace now. */
+  installed: boolean;
+  created_at: string;
+}
+
 /** An earlier version of a document, kept when its title or content was replaced. */
 export interface ArtifactVersion {
   id: number;

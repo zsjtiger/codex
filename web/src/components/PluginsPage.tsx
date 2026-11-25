@@ -1,13 +1,18 @@
-import { useEffect, useState } from "react";
-import { connectors as connectorApi, skills as skillApi } from "../api/resources";
-import type { Connector, Skill } from "../api/types";
+import { useEffect, useRef, useState } from "react";
+import { connectors as connectorApi, plugins as pluginApi, skills as skillApi } from "../api/resources";
+import type { Connector, Plugin, PluginManifest, Skill } from "../api/types";
 import { tx } from "../i18n";
 
 const filters = ["All", "Connectors", "Skills"] as const;
 type Filter = (typeof filters)[number];
 
-/** What the add form creates: a connector (an MCP server) or a skill (an instruction bundle). */
-type FormKind = "connector" | "skill";
+/** What the add form creates: a connector (an MCP server), a skill (an instruction bundle), or a plugin. */
+type FormKind = "connector" | "skill" | "plugin";
+
+const PLUGIN_EXAMPLE = `{
+  "skills": [{ "name": "论文写作", "description": "写章节", "instructions": "使用学术语气。" }],
+  "connectors": [{ "name": "alphaXiv", "url": "https://api.alphaxiv.org/mcp" }]
+}`;
 
 interface PluginsPageProps {
   workspaceId: string;
@@ -38,33 +43,50 @@ function markOf(name: string): string {
 }
 
 /**
- * Plugins are the connectors and skills a workspace adds to its chats. Connectors are MCP servers
- * codex can call from new chats; skills are instruction bundles added to new chats. Only admins
- * change any of them.
+ * Reads a plugin's contents from JSON. The contents may sit under `manifest`, or at the top level
+ * beside `name` and `description`. Throws when the text is not a JSON object.
+ */
+function parseManifest(text: string): PluginManifest {
+  const value = JSON.parse(text) as Partial<PluginManifest> & { manifest?: PluginManifest };
+  if (!value || typeof value !== "object") throw new Error("not an object");
+  const source = value.manifest ?? value;
+  return {
+    skills: Array.isArray(source.skills) ? source.skills : [],
+    connectors: Array.isArray(source.connectors) ? source.connectors : [],
+  };
+}
+
+/**
+ * Plugins are bundles of connectors and skills. Installing a plugin adds its skills and connectors to
+ * the workspace; uninstalling takes them out again. Connectors are MCP servers codex can call from new
+ * chats; skills are instruction bundles added to new chats. Only admins change any of them.
  */
 export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPageProps) {
   const [filter, setFilter] = useState<Filter>("All");
   const [query, setQuery] = useState("");
+  const [pluginItems, setPluginItems] = useState<Plugin[]>([]);
   const [skillItems, setSkillItems] = useState<Skill[]>([]);
   const [connectorItems, setConnectorItems] = useState<Connector[]>([]);
-  // Skills and plugins are both instruction bundles; the list shows which kind each one is.
   const [formKind, setFormKind] = useState<FormKind | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [instructions, setInstructions] = useState("");
   const [url, setUrl] = useState("");
+  const [manifestText, setManifestText] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const fail = (err: unknown, fallback: string) => onError(err instanceof Error ? err.message : fallback);
 
   const reload = async () => {
     try {
-      const [skills, plugins, connectors] = await Promise.all([
+      const [plugins, skills, connectors] = await Promise.all([
+        pluginApi.list(workspaceId),
         skillApi.list(workspaceId, "skill"),
-        skillApi.list(workspaceId, "plugin"),
         connectorApi.list(workspaceId),
       ]);
-      setSkillItems([...skills, ...plugins]);
+      setPluginItems(plugins);
+      setSkillItems(skills);
       setConnectorItems(connectors);
     } catch (err) {
       fail(err, tx("Could not load plugins."));
@@ -82,17 +104,44 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
     setDescription("");
     setInstructions("");
     setUrl("");
+    setManifestText("");
   };
 
   const openForm = (kind: FormKind) => {
     resetForm();
     setFormKind(kind);
+    if (kind === "plugin") setManifestText(PLUGIN_EXAMPLE);
+  };
+
+  // An uploaded plugin file fills the form, so its contents can be read before it is added.
+  const readUpload = async (file: File) => {
+    try {
+      const text = await file.text();
+      const manifest = parseManifest(text);
+      const value = JSON.parse(text) as { name?: unknown; description?: unknown };
+      resetForm();
+      setFormKind("plugin");
+      setName(typeof value.name === "string" ? value.name : file.name.replace(/\.json$/i, ""));
+      setDescription(typeof value.description === "string" ? value.description : "");
+      setManifestText(JSON.stringify(manifest, null, 2));
+    } catch {
+      onError(tx("The plugin file is not valid JSON."));
+    }
   };
 
   const create = async () => {
     try {
       if (formKind === "connector") {
         await connectorApi.create(workspaceId, { name: name.trim(), url: url.trim() });
+      } else if (formKind === "plugin") {
+        let manifest: PluginManifest;
+        try {
+          manifest = parseManifest(manifestText);
+        } catch {
+          onError(tx("The plugin is not valid JSON."));
+          return;
+        }
+        await pluginApi.create(workspaceId, { name: name.trim(), description: description.trim(), manifest });
       } else {
         await skillApi.create(workspaceId, {
           kind: "skill",
@@ -104,7 +153,14 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
       resetForm();
       await reload();
     } catch (err) {
-      fail(err, formKind === "connector" ? tx("Could not add the connector.") : tx("Could not add the skill."));
+      fail(
+        err,
+        formKind === "connector"
+          ? tx("Could not add the connector.")
+          : formKind === "plugin"
+            ? tx("Could not add the plugin.")
+            : tx("Could not add the skill."),
+      );
     }
   };
 
@@ -134,15 +190,27 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
     }
   };
 
+  const removePlugin = (plugin: Plugin) => {
+    if (plugin.installed && !window.confirm(tx("Delete this plugin? Its installed skills and connectors are removed too."))) return;
+    void act(() => pluginApi.remove(plugin.id), tx("Could not delete the plugin."));
+  };
+
   const needle = query.trim().toLowerCase();
   const matches = (...fields: string[]) => !needle || fields.some((field) => field.toLowerCase().includes(needle));
+  const showPlugins = filter === "All";
   const showConnectors = filter !== "Skills";
   const showSkills = filter !== "Connectors";
+  const visiblePlugins = showPlugins ? pluginItems.filter((p) => matches(p.name, p.description)) : [];
   const visibleConnectors = showConnectors ? connectorItems.filter((c) => matches(c.name, c.url, c.key)) : [];
   const visibleSkills = showSkills ? skillItems.filter((s) => matches(s.name, s.description)) : [];
-  const nothingShown = visibleConnectors.length === 0 && visibleSkills.length === 0;
+  const nothingShown = visiblePlugins.length === 0 && visibleConnectors.length === 0 && visibleSkills.length === 0;
 
-  const formValid = formKind === "connector" ? name.trim() && url.trim() : name.trim() && instructions.trim();
+  const formValid =
+    formKind === "connector"
+      ? name.trim() && url.trim()
+      : formKind === "plugin"
+        ? name.trim() && manifestText.trim()
+        : name.trim() && instructions.trim();
 
   return (
     <main className="customize-page">
@@ -186,6 +254,12 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
                 <>
                   <div className="plugin-menu-backdrop" onClick={() => setMenuOpen(false)} />
                   <div className="plugin-menu" role="menu">
+                    <button role="menuitem" onClick={() => { setMenuOpen(false); fileRef.current?.click(); }}>
+                      {tx("Upload plugin")}
+                    </button>
+                    <button role="menuitem" onClick={() => { setMenuOpen(false); openForm("plugin"); }}>
+                      {tx("Create a plugin")}
+                    </button>
                     <button role="menuitem" onClick={() => { setMenuOpen(false); openForm("connector"); }}>
                       {tx("Add custom connector")}
                     </button>
@@ -195,6 +269,17 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
                   </div>
                 </>
               )}
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".json,application/json"
+                hidden
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (file) void readUpload(file);
+                }}
+              />
             </div>
           )}
         </div>
@@ -213,12 +298,13 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
               <span>{tx("Name")}</span>
               <input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} required />
             </label>
-            {formKind === "connector" ? (
+            {formKind === "connector" && (
               <label className="field">
                 <span>{tx("Server URL (http or https)")}</span>
                 <input value={url} onChange={(e) => setUrl(e.target.value)} maxLength={2000} placeholder={tx("https://example.com/mcp")} required />
               </label>
-            ) : (
+            )}
+            {formKind === "skill" && (
               <>
                 <label className="field">
                   <span>{tx("Description")}</span>
@@ -230,12 +316,34 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
                 </label>
               </>
             )}
+            {formKind === "plugin" && (
+              <>
+                <label className="field">
+                  <span>{tx("Description")}</span>
+                  <input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} />
+                </label>
+                <label className="field">
+                  <span>{tx("Skills and connectors (JSON)")}</span>
+                  <textarea
+                    className="plugin-manifest"
+                    value={manifestText}
+                    onChange={(e) => setManifestText(e.target.value)}
+                    rows={10}
+                    spellCheck={false}
+                    required
+                  />
+                </label>
+                <p className="muted small">
+                  {tx("Installing the plugin adds its skills and connectors to the workspace. Uninstalling takes them out again.")}
+                </p>
+              </>
+            )}
             <div className="form-actions">
               <button type="button" onClick={resetForm}>
                 {tx("Cancel")}
               </button>
               <button className="primary" type="submit" disabled={!formValid}>
-                {formKind === "connector" ? tx("Add connector") : tx("Add skill")}
+                {formKind === "connector" ? tx("Add connector") : formKind === "plugin" ? tx("Add plugin") : tx("Add skill")}
               </button>
             </div>
           </form>
@@ -246,6 +354,33 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError }: PluginsPa
         )}
 
         <div className="list plugin-list">
+          {visiblePlugins.map((plugin) => (
+            <div key={plugin.id} className="list-row plugin-row">
+              <span className="plugin-mark">{markOf(plugin.name)}</span>
+              <div className="list-main">
+                <div className="list-title">
+                  {plugin.name} <span className="plugin-kind">{tx("Plugin")}</span>
+                </div>
+                <div className="list-sub">
+                  {plugin.description || `${plugin.manifest.skills.length} ${tx("skills")} · ${plugin.manifest.connectors.length} ${tx("connectors")}`}
+                </div>
+              </div>
+              <div className="list-actions">
+                <span className={`status ${plugin.installed ? "status-on" : ""}`}>
+                  {tx(plugin.installed ? "Installed" : "Not installed")}
+                </span>
+                {isAdmin &&
+                  (plugin.installed ? (
+                    <button onClick={() => void act(() => pluginApi.uninstall(plugin.id), tx("Could not uninstall the plugin."))}>{tx("Uninstall")}</button>
+                  ) : (
+                    <button className="primary" onClick={() => void act(() => pluginApi.install(plugin.id), tx("Could not install the plugin."))}>
+                      {tx("Install")}
+                    </button>
+                  ))}
+                {isAdmin && <button onClick={() => removePlugin(plugin)}>{tx("Delete")}</button>}
+              </div>
+            </div>
+          ))}
           {visibleConnectors.map((c) => (
             <div key={c.id} className="list-row plugin-row">
               <span className="plugin-mark">{markOf(c.name)}</span>

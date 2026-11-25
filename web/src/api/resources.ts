@@ -6,6 +6,8 @@ import { api, ApiError, getToken } from "./client";
 import type {
   Artifact,
   ArtifactVersion,
+  Plugin,
+  PluginManifest,
   ArtifactKind,
   Attachment,
   CodeRepo,
@@ -277,6 +279,15 @@ export const attachments = {
       throw new ApiError(response.status, data?.error?.code ?? "error", data?.error?.message ?? response.statusText);
     }
   },
+};
+
+export const plugins = {
+  list: (ws: string) => api<Plugin[]>("GET", `/workspaces/${ws}/plugins`),
+  create: (ws: string, body: { name: string; description?: string; manifest: PluginManifest }) =>
+    api<Plugin>("POST", `/workspaces/${ws}/plugins`, body),
+  install: (id: string) => api<Plugin>("POST", `/plugins/${id}/install`),
+  uninstall: (id: string) => api<Plugin>("POST", `/plugins/${id}/uninstall`),
+  remove: (id: string) => api<void>("DELETE", `/plugins/${id}`),
 };
 
 export const connectors = {

@@ -112,7 +112,7 @@ const SIGN_IN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10 *
 const COLUMNS: &str = "id, workspace_id, name, key, url, enabled, status, status_error, status_at, oauth_state, oauth_error, oauth_updated_at, created_at, updated_at";
 
 /// Turns a display name into a key codex accepts: lowercase letters, digits, `_` and `-`.
-pub fn key_for(name: &str) -> Result<String, ApiError> {
+pub(crate) fn key_for(name: &str) -> Result<String, ApiError> {
     let key: String = name
         .to_lowercase()
         .chars()
@@ -127,7 +127,7 @@ pub fn key_for(name: &str) -> Result<String, ApiError> {
     Ok(key)
 }
 
-fn check_url(url: &str) -> Result<(), ApiError> {
+pub(crate) fn check_url(url: &str) -> Result<(), ApiError> {
     if (url.starts_with("http://") || url.starts_with("https://")) && url.len() <= 2000 {
         Ok(())
     } else {

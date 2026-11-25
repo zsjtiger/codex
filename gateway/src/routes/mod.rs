@@ -11,6 +11,7 @@ mod environments;
 mod github;
 mod memory;
 mod members;
+mod plugins;
 mod projects;
 mod scheduled;
 mod search;
@@ -37,6 +38,7 @@ pub fn router() -> Router<AppState> {
         .merge(search::routes())
         .merge(scheduled::routes())
         .merge(connectors::routes())
+        .merge(plugins::routes())
         .merge(memory::routes())
         .merge(crate::audit::routes());
     Router::new().nest("/api/v1", api)

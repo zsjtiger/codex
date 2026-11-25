@@ -1001,3 +1001,4 @@ html.desktop .app { height: 100vh; margin-top: 0; }
   .preview-panel-wide { width: 100%; }
 }
 .doc-edited { margin: 8px 0 0; }
+.plugin-manifest { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.5; }
