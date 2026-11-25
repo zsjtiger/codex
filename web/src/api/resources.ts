@@ -6,6 +6,8 @@ import { api, ApiError, getToken } from "./client";
 import type {
   Artifact,
   ArtifactVersion,
+  CatalogPlugin,
+  Environment,
   Plugin,
   PluginManifest,
   ArtifactKind,
@@ -152,6 +154,7 @@ export interface ModelOption {
 }
 
 export const environments = {
+  list: (ws: string) => api<Environment[]>("GET", `/workspaces/${ws}/environments`),
   models: (id: string) => api<ModelOption[]>("GET", `/environments/${id}/models`),
 };
 
@@ -279,6 +282,12 @@ export const attachments = {
       throw new ApiError(response.status, data?.error?.code ?? "error", data?.error?.message ?? response.statusText);
     }
   },
+};
+
+export const marketplace = {
+  list: () => api<CatalogPlugin[]>("GET", "/marketplace"),
+  /** Adds a marketplace entry to the workspace as a plugin, ready to install. */
+  add: (ws: string, key: string) => api<Plugin>("POST", `/workspaces/${ws}/plugins/from-catalog`, { key }),
 };
 
 export const plugins = {

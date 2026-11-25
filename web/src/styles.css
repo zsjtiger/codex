@@ -1002,3 +1002,10 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 }
 .doc-edited { margin: 8px 0 0; }
 .plugin-manifest { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.5; }
+.plugin-section { font-family: ui-serif, Georgia, serif; font-weight: 400; font-size: 22px; margin: 28px 0 12px; }
+.market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-bottom: 8px; }
+.market-card { display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.market-head { display: flex; align-items: center; gap: 10px; }
+.market-name { font-weight: 600; }
+.market-actions { margin-top: auto; padding-top: 6px; }
+

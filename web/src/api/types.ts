@@ -145,6 +145,19 @@ export interface Plugin {
   /** Whether its skills and connectors are in the workspace now. */
   installed: boolean;
   created_at: string;
+  /** The marketplace entry it was added from, if any. */
+  catalog_key: string | null;
+}
+
+/** A plugin in the built-in marketplace. */
+export interface CatalogPlugin {
+  key: string;
+  name: string;
+  description: string;
+  publisher: string;
+  manifest: PluginManifest;
+  /** Installed plugins that came from this entry, across all workspaces. */
+  installs: number;
 }
 
 /** An earlier version of a document, kept when its title or content was replaced. */

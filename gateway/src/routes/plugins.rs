@@ -58,6 +58,7 @@ struct PluginRow {
     manifest: SqlJson<Manifest>,
     installed: bool,
     created_at: DateTime<Utc>,
+    catalog_key: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -70,6 +71,8 @@ pub struct PluginView {
     /// Whether its skills and connectors are in the workspace now.
     pub installed: bool,
     pub created_at: DateTime<Utc>,
+    /// The marketplace entry it was added from, if any.
+    pub catalog_key: Option<String>,
 }
 
 impl From<PluginRow> for PluginView {
@@ -82,6 +85,7 @@ impl From<PluginRow> for PluginView {
             manifest: row.manifest.0,
             installed: row.installed,
             created_at: row.created_at,
+            catalog_key: row.catalog_key,
         }
     }
 }
@@ -95,7 +99,7 @@ pub struct CreatePlugin {
 
 const COLUMNS: &str = "p.id, p.workspace_id, p.name, p.description, p.manifest, p.created_at,
     EXISTS (SELECT 1 FROM skills s WHERE s.plugin_id = p.id)
-        OR EXISTS (SELECT 1 FROM connectors c WHERE c.plugin_id = p.id) AS installed";
+        OR EXISTS (SELECT 1 FROM connectors c WHERE c.plugin_id = p.id) AS installed, p.catalog_key";
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -106,7 +110,7 @@ pub fn routes() -> Router<AppState> {
 }
 
 /// Checks a manifest before it is stored or installed: sizes, names, addresses, and no repeats.
-fn validate_manifest(manifest: &Manifest) -> Result<(), ApiError> {
+pub(crate) fn validate_manifest(manifest: &Manifest) -> Result<(), ApiError> {
     if manifest.skills.is_empty() && manifest.connectors.is_empty() {
         return Err(ApiError::BadRequest("a plugin needs at least one skill or connector".to_string()));
     }
@@ -136,7 +140,7 @@ fn validate_manifest(manifest: &Manifest) -> Result<(), ApiError> {
     Ok(())
 }
 
-async fn load(pool: &PgPool, id: Uuid) -> Result<PluginView, ApiError> {
+pub(crate) async fn load(pool: &PgPool, id: Uuid) -> Result<PluginView, ApiError> {
     let sql = format!("SELECT {COLUMNS} FROM plugins p WHERE p.id = $1");
     let row = sqlx::query_as::<_, PluginRow>(&sql)
         .bind(id)

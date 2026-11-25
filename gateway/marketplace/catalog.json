@@ -1,0 +1,57 @@
+[
+  {
+    "key": "academic-suite",
+    "name": "学术套件",
+    "description": "论文写作与文献检索",
+    "publisher": "Baize",
+    "manifest": {
+      "skills": [{ "name": "论文写作", "description": "按期刊格式撰写论文章节", "instructions": "使用学术语气，结构清楚，引用要标明来源，不编造文献。" }],
+      "connectors": [{ "name": "alphaXiv", "url": "https://api.alphaxiv.org/mcp" }]
+    }
+  },
+  {
+    "key": "literature-review",
+    "name": "文献综述",
+    "description": "整理一个主题的已有工作，给出脉络与空白",
+    "publisher": "Baize",
+    "manifest": {
+      "skills": [{ "name": "文献综述", "description": "按主题归纳已有工作", "instructions": "按主题分组，说明各组的主要方法与结论，最后指出研究空白。只使用用户提供或可核实的来源。" }]
+    }
+  },
+  {
+    "key": "code-review",
+    "name": "代码审查",
+    "description": "检查正确性、边界情况和可维护性",
+    "publisher": "Baize",
+    "manifest": {
+      "skills": [{ "name": "代码审查", "description": "审查代码改动", "instructions": "优先指出会导致错误的问题，其次是可读性。每条意见给出位置、原因和修改建议。" }]
+    }
+  },
+  {
+    "key": "weekly-report",
+    "name": "周报生成",
+    "description": "把本周的工作记录整理成周报",
+    "publisher": "Baize",
+    "manifest": {
+      "skills": [{ "name": "周报生成", "description": "整理成周报", "instructions": "按已完成、进行中、风险与下周计划四部分整理，每条一句话，不加入记录中没有的内容。" }]
+    }
+  },
+  {
+    "key": "meeting-notes",
+    "name": "会议纪要",
+    "description": "从会议记录中提取结论、待办与负责人",
+    "publisher": "Baize",
+    "manifest": {
+      "skills": [{ "name": "会议纪要", "description": "整理会议结论与待办", "instructions": "列出决定事项、待办（含负责人与截止时间）和未决问题。负责人不明确时写明“待确认”。" }]
+    }
+  },
+  {
+    "key": "data-viz",
+    "name": "数据可视化",
+    "description": "根据数据选择合适的图表并说明读图要点",
+    "publisher": "Baize",
+    "manifest": {
+      "skills": [{ "name": "数据可视化", "description": "选择图表并写读图说明", "instructions": "先说明数据的类型与要回答的问题，再选择图表类型。图表标题写结论，坐标轴标注单位。" }]
+    }
+  }
+]
