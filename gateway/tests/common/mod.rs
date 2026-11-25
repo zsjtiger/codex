@@ -194,6 +194,32 @@ pub async fn mock_app_server() -> MockServer {
                             };
                             out_tx.send(reply(json!({ "files": files }))).unwrap();
                         }
+                        "fs/readDirectory" => {
+                            // Lists a fixed tree: the root has a folder, a file and git data; src has one file.
+                            let path = msg["params"]["path"].as_str().unwrap_or_default();
+                            let entries = if path.ends_with("/src") {
+                                json!([{ "fileName": "cache.rs", "isDirectory": false, "isFile": true }])
+                            } else {
+                                json!([
+                                    { "fileName": "README.md", "isDirectory": false, "isFile": true },
+                                    { "fileName": "src", "isDirectory": true, "isFile": false },
+                                    { "fileName": ".git", "isDirectory": true, "isFile": false }
+                                ])
+                            };
+                            out_tx.send(reply(json!({ "entries": entries }))).unwrap();
+                        }
+                        "fs/readFile" => {
+                            use base64::{Engine as _, engine::general_purpose::STANDARD};
+                            let path = msg["params"]["path"].as_str().unwrap_or_default();
+                            let bytes: Vec<u8> = if path.ends_with("logo.bin") {
+                                vec![0xff, 0xfe, 0x00]
+                            } else if path.ends_with("big.txt") {
+                                vec![b'a'; 300_000]
+                            } else {
+                                b"hello\n".to_vec()
+                            };
+                            out_tx.send(reply(json!({ "dataBase64": STANDARD.encode(bytes) }))).unwrap();
+                        }
                         "turn/steer" => {
                             out_tx
                                 .send(reply(json!({ "turnId": msg["params"]["expectedTurnId"] })))

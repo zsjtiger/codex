@@ -64,6 +64,22 @@ export interface FileMatch {
   file_name: string;
 }
 
+/** One entry of a folder in a code chat's checkout. */
+export interface CheckoutEntry {
+  name: string;
+  is_directory: boolean;
+}
+
+/** One file of a code chat's checkout, as text. */
+export interface CheckoutFile {
+  path: string;
+  /** The text, cut when the file is long. None for a binary file. */
+  content: string | null;
+  binary: boolean;
+  truncated: boolean;
+  bytes: number;
+}
+
 export interface Turn {
   id: string;
   /** The assistant's reply, kept on the turn once its messages complete. */
