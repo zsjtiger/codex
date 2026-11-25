@@ -286,8 +286,14 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
     let codex_thread_id = match &turn.codex_thread_id {
         Some(id) => id.clone(),
         None => {
-            let instructions =
-                developer_instructions(&state.pool, turn.thread_id, turn.workspace_id).await?;
+            // Local environments find the workspace's skills themselves; remote ones get them inline.
+            let instructions = developer_instructions(
+                &state.pool,
+                turn.thread_id,
+                turn.workspace_id,
+                turn.endpoint.is_some(),
+            )
+            .await?;
             start_codex_thread(
                 &state.pool,
                 &lease,
@@ -314,7 +320,34 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
     }
     // Local turns are told where to save files for the user; those files are kept with the reply.
     let output_dir = (turn.endpoint.is_none()).then(|| outputs::output_dir(turn_id));
-    let mut text = with_skills(&state.pool, &turn.skill_ids, &turn.input).await?;
+    // Local environments: the workspace's skills are files Codex reads, and the selected ones are named in
+    // the input. Remote environments get the selected skills' instructions in the message.
+    let native = turn.endpoint.is_none();
+    let mut skill_items: Vec<Value> = Vec::new();
+    let mut text = if native {
+        turn.input.clone()
+    } else {
+        with_skills(&state.pool, &turn.skill_ids, &turn.input).await?
+    };
+    if native {
+        let rows = skill_rows(&state.pool, turn.workspace_id).await?;
+        if let Some(home) = state.runtime.local_home(environment_id) {
+            let root = super::native_skills::sync(&home, &rows)
+                .map_err(|err| DispatchError::Protocol(format!("could not write the skills: {err}")))?;
+            lease
+                .request("skills/extraRoots/set", json!({ "extraRoots": [root] }))
+                .await?;
+            for id in &turn.skill_ids {
+                if let Some(row) = rows.iter().find(|row| row.id == *id && super::native_skills::safe_name(&row.name)) {
+                    skill_items.push(json!({
+                        "type": "skill",
+                        "name": row.name,
+                        "path": super::native_skills::skill_path(&root, &row.name),
+                    }));
+                }
+            }
+        }
+    }
     if let Some(context) = project_files_context(state, turn.thread_id).await {
         text = format!("{context}\n\n{text}");
     }
@@ -336,10 +369,12 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
         }
         text = format!("{}\n\n{text}", outputs::prompt_note(dir));
     }
+    let mut input_items = skill_items;
+    input_items.push(json!({ "type": "text", "text": text }));
     let mut params = json!({
         "threadId": codex_thread_id,
         "approvalPolicy": APPROVAL_POLICY,
-        "input": [{ "type": "text", "text": text }],
+        "input": input_items,
     });
     if let Some(model) = &turn.model {
         params["model"] = json!(model);
@@ -630,11 +665,26 @@ async fn project_files_context(state: &AppState, thread_id: Uuid) -> Option<Stri
     Some(context)
 }
 
+/// The enabled skills of a workspace, for the skill files a local environment reads.
+async fn skill_rows(pool: &PgPool, workspace_id: Uuid) -> Result<Vec<super::native_skills::SkillRow>, DispatchError> {
+    let rows: Vec<(Uuid, String, String, String)> = sqlx::query_as(
+        "SELECT id, name, description, instructions FROM skills WHERE workspace_id = $1 AND enabled ORDER BY name",
+    )
+    .bind(workspace_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, name, description, instructions)| super::native_skills::SkillRow { id, name, description, instructions })
+        .collect())
+}
+
 /// Project instructions followed by each enabled skill. `None` when there is nothing to add.
 async fn developer_instructions(
     pool: &PgPool,
     thread_id: Uuid,
     workspace_id: Uuid,
+    include_skills: bool,
 ) -> Result<Option<String>, DispatchError> {
     let project: Option<String> = sqlx::query_scalar(
         "SELECT p.instructions FROM threads th JOIN projects p ON p.id = th.project_id WHERE th.id = $1",
@@ -643,12 +693,14 @@ async fn developer_instructions(
     .fetch_optional(pool)
     .await?
     .flatten();
-    let skills: Vec<(String, String)> = sqlx::query_as(
-        "SELECT name, instructions FROM skills WHERE workspace_id = $1 AND enabled ORDER BY name",
-    )
-    .bind(workspace_id)
-    .fetch_all(pool)
-    .await?;
+    let skills: Vec<(String, String)> = if include_skills {
+        sqlx::query_as("SELECT name, instructions FROM skills WHERE workspace_id = $1 AND enabled ORDER BY name")
+            .bind(workspace_id)
+            .fetch_all(pool)
+            .await?
+    } else {
+        Vec::new()
+    };
 
     let mut sections: Vec<String> = Vec::new();
     if let Some(instructions) = project.filter(|text| !text.trim().is_empty()) {

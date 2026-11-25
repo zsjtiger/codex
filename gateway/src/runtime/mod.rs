@@ -8,6 +8,7 @@
 pub mod dispatch;
 pub mod documents;
 pub mod hub;
+pub mod native_skills;
 pub mod outputs;
 pub mod rpc;
 pub mod schedule;
@@ -139,6 +140,14 @@ impl Runtime {
             entries: Mutex::new(HashMap::new()),
             thread_locks: StdMutex::new(HashMap::new()),
         })
+    }
+
+    /// The `CODEX_HOME` a local environment's app-server runs with. `None` for environments with an endpoint.
+    pub fn local_home(&self, environment_id: Uuid) -> Option<PathBuf> {
+        self.config
+            .local
+            .as_ref()
+            .map(|local| local.home_root.join(environment_id.to_string()))
     }
 
     pub fn hub(&self) -> &Arc<Hub> {
