@@ -323,6 +323,7 @@ export function App() {
           <Home
             onAddPlugin={savePluginFromChat}
             onAction={codex.runAction}
+            onFork={codex.forkFromTurn}
             prefill={prefill}
             onPrefillUsed={() => setPrefill(null)}
             user={codex.user}

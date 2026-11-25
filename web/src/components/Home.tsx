@@ -17,6 +17,8 @@ interface HomeProps {
   /** Text the composer starts with, from the plugins page. */
   prefill?: string | null;
   onPrefillUsed?: () => void;
+  /** Starts a new chat from a reply of this one. */
+  onFork?: (turnId: string) => void;
   /** A review or a compaction of the open chat. */
   onAction?: (action: "review" | "compact") => void;
   /** Saves a plugin a reply designed into the workspace. */
@@ -54,7 +56,7 @@ interface HomeProps {
 
 export function Home(props: HomeProps) {
   const { t } = useI18n();
-  const { prefill, onPrefillUsed, onAddPlugin, onAction, user, workspaceId, thread, threads, onOpenThread, turns, agentText, streamText, toolUses, activity, work, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
+  const { prefill, onPrefillUsed, onAddPlugin, onAction, onFork, user, workspaceId, thread, threads, onOpenThread, turns, agentText, streamText, toolUses, activity, work, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
   const pending = approvals.filter((a) => a.threadId === thread?.id);
   const runningTurn = [...turns].reverse().find((t) => (t.status === "running" || t.status === "queued") && t.codex_turn_id);
   const [recent, setRecent] = useState<Artifact[]>([]);
@@ -231,6 +233,7 @@ export function Home(props: HomeProps) {
               onRegenerate={(input) => onSend(input, {})}
               onSaveDocument={(reply) => void saveDocument(reply)}
               onSummarize={(turnId) => void summarize(turnId)}
+              onFork={onFork}
               onAddPlugin={onAddPlugin}
             />
             {docs.map((doc) => (

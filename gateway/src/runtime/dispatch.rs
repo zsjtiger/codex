@@ -885,6 +885,46 @@ async fn run_compact(
     Ok(())
 }
 
+/// Forks a codex thread through its turn `last_turn_id` (included). Returns the id of the new thread.
+pub async fn fork_codex_thread(
+    state: &AppState,
+    environment_id: Uuid,
+    endpoint: Option<&str>,
+    codex_thread_id: &str,
+    last_turn_id: &str,
+) -> Result<String, String> {
+    let lease = state
+        .runtime
+        .lease(environment_id, endpoint)
+        .await
+        .map_err(|err| err.to_string())?;
+    if !lease.is_thread_loaded(codex_thread_id) {
+        lease
+            .request("thread/resume", json!({ "threadId": codex_thread_id }))
+            .await
+            .map_err(|err| err.to_string())?;
+        lease.mark_thread_loaded(codex_thread_id);
+    }
+    // The history is copied by the gateway, so app-server does not send the turns back.
+    let response = lease
+        .request(
+            "thread/fork",
+            json!({
+                "threadId": codex_thread_id,
+                "lastTurnId": last_turn_id,
+                "ephemeral": false,
+                "excludeTurns": true,
+            }),
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+    response
+        .pointer("/thread/id")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| "thread/fork returned no thread id".to_string())
+}
+
 /// Adds text to the turn that is running in a thread, as app-server's steer. Returns the turn it went to.
 pub async fn steer(state: &AppState, thread_id: Uuid, text: &str) -> Result<String, String> {
     let row: Option<(Option<String>, Option<String>, Option<Uuid>, Option<String>, String)> = sqlx::query_as(

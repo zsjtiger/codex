@@ -305,6 +305,24 @@ export function useCodex() {
     [draftProjectId, environment, fail, loadTurns, refreshThreads, selectThread, sending, turns],
   );
 
+  // Starts a new chat from a finished reply, and opens it.
+  const forkFromTurn = useCallback(
+    async (turnId: string) => {
+      const threadId = activeRef.current;
+      const ws = workspaceRef.current;
+      if (!threadId || !ws) return;
+      setError(null);
+      try {
+        const forked = await threadApi.fork(threadId, turnId);
+        await refreshThreads(ws);
+        await selectThread(forked.id);
+      } catch (err) {
+        fail(err);
+      }
+    },
+    [fail, refreshThreads, selectThread],
+  );
+
   // A review or a compaction of the open chat, from the message box.
   const runAction = useCallback(
     async (action: "review" | "compact") => {
@@ -417,6 +435,7 @@ export function useCodex() {
     },
     sendMessage,
     runAction,
+    forkFromTurn,
     answerApproval,
     setFeedback,
   };

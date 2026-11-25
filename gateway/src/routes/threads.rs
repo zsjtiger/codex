@@ -232,6 +232,7 @@ pub fn routes() -> Router<AppState> {
         .route("/threads/{id}/review", post(start_review))
         .route("/threads/{id}/compact", post(start_compact))
         .route("/threads/{id}/steer", post(steer_turn))
+        .route("/threads/{id}/fork", post(fork_thread))
         .route("/turns/{id}/feedback", put(set_feedback))
 }
 
@@ -903,6 +904,94 @@ async fn steer_turn(
         .await
         .map_err(ApiError::Conflict)?;
     enqueue_special(&state, id, user.id, text, "steer", None, "completed").await
+}
+
+#[derive(Deserialize)]
+pub struct ForkRequest {
+    turn_id: Uuid,
+}
+
+/// Starts a new chat from a finished reply of this one. The history up to and including that reply is
+/// copied, and app-server forks its own thread at the same turn so the new chat carries on from there.
+async fn fork_thread(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<ForkRequest>,
+) -> Result<(StatusCode, Json<ThreadView>), ApiError> {
+    let access = thread_access(&state.pool, id).await?;
+    require_role(&state.pool, access.workspace_id, user.id, Role::Member).await?;
+    let (title, environment_id, codex_thread_id, project_id, repo_id): (
+        String,
+        Option<Uuid>,
+        Option<String>,
+        Option<Uuid>,
+        Option<Uuid>,
+    ) = sqlx::query_as(
+        "SELECT title, environment_id, codex_thread_id, project_id, repo_id FROM threads WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?;
+    if repo_id.is_some() {
+        return Err(ApiError::BadRequest("a code session cannot be forked yet".to_string()));
+    }
+    let (seq, status, codex_turn_id): (i32, String, Option<String>) =
+        sqlx::query_as("SELECT seq, status, codex_turn_id FROM turns WHERE id = $1 AND thread_id = $2")
+            .bind(req.turn_id)
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+    if status != "completed" {
+        return Err(ApiError::Conflict("only a finished reply can be forked from".to_string()));
+    }
+    let (Some(codex_turn_id), Some(codex_thread_id), Some(environment_id)) =
+        (codex_turn_id, codex_thread_id, environment_id)
+    else {
+        return Err(ApiError::Conflict("this chat has nothing to fork from yet".to_string()));
+    };
+    let endpoint: Option<String> = sqlx::query_scalar("SELECT endpoint FROM environments WHERE id = $1")
+        .bind(environment_id)
+        .fetch_one(&state.pool)
+        .await?;
+    let forked = crate::runtime::dispatch::fork_codex_thread(
+        &state,
+        environment_id,
+        endpoint.as_deref(),
+        &codex_thread_id,
+        &codex_turn_id,
+    )
+    .await
+    .map_err(ApiError::Conflict)?;
+
+    let mut tx = state.pool.begin().await?;
+    let new_title: String = format!("{} (fork)", title.chars().take(190).collect::<String>());
+    let new_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO threads (workspace_id, environment_id, created_by, title, project_id, codex_thread_id)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+    )
+    .bind(access.workspace_id)
+    .bind(environment_id)
+    .bind(user.id)
+    .bind(&new_title)
+    .bind(project_id)
+    .bind(&forked)
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO turns (thread_id, seq, input, reply, status, kind, target, created_by, completed_at, model, effort, attachment_ids)
+         SELECT $1, ROW_NUMBER() OVER (ORDER BY seq), input, reply, status, kind, target, created_by, completed_at, model, effort, attachment_ids
+         FROM turns
+         WHERE thread_id = $2 AND seq <= $3 AND status IN ('completed', 'failed', 'interrupted')",
+    )
+    .bind(new_id)
+    .bind(id)
+    .bind(seq)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok((StatusCode::CREATED, Json(load_thread(&state.pool, new_id).await?)))
 }
 
 /// Asks app-server to stop a running turn. The turn finishes as `interrupted` once

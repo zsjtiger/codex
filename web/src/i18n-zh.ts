@@ -746,4 +746,5 @@ addChinese({
   "more": "更多",
   "Review uncommitted changes": "审查未提交的改动",
   "Compact the conversation": "压缩对话",
+  "Fork": "分支",
 });

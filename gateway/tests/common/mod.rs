@@ -177,6 +177,13 @@ pub async fn mock_app_server() -> MockServer {
                                 .send(json!({ "method": "thread/compacted", "params": { "threadId": "thr_mock" } }).to_string())
                                 .unwrap();
                         }
+                        "thread/fork" => {
+                            // A fork is a thread of its own, with a new id.
+                            let forked = format!("thr_fork_{}", turn_counter.fetch_add(1, Ordering::Relaxed));
+                            out_tx
+                                .send(reply(json!({ "thread": { "id": forked } })))
+                                .unwrap();
+                        }
                         "turn/steer" => {
                             out_tx
                                 .send(reply(json!({ "turnId": msg["params"]["expectedTurnId"] })))

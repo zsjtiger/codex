@@ -212,6 +212,8 @@ export const threads = {
     api<Turn>("POST", `/threads/${id}/review`, { target }),
   /** Compacts the chat's history, so a long chat keeps room to work. */
   compact: (id: string) => api<Turn>("POST", `/threads/${id}/compact`),
+  /** Starts a new chat from a finished reply of this one. */
+  fork: (id: string, turnId: string) => api<Thread>("POST", `/threads/${id}/fork`, { turn_id: turnId }),
   /** Adds a note to the turn running in the chat. */
   steer: (id: string, input: string) => api<Turn>("POST", `/threads/${id}/steer`, { input }),
   /** Asks the model to write a turn's reply as a document of the chat. The summary is a turn of its own. */

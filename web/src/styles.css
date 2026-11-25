@@ -1128,3 +1128,5 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 .pd-viewer-body pre { margin: 0; white-space: pre-wrap; font-size: 13px; line-height: 1.6; }
 @media (max-width: 760px) { .pd-files { grid-template-columns: 1fr; } .pd-tree { border-right: 0; border-bottom: 1px solid var(--border); } .pd-facts { grid-template-columns: 1fr; } .pd-field { grid-template-columns: 1fr; gap: 2px; } }
 .pd-frontmatter { margin: 0 0 16px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); font-size: 12px; white-space: pre-wrap; }
+.reply-fork { width: auto; padding: 0 8px; font-size: 12px; }
+
