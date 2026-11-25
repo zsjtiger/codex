@@ -56,6 +56,7 @@ pub fn routes() -> Router<AppState> {
         .route("/environments/{id}/rate-limits", get(rate_limits))
         .route("/environments/{id}/mcp-servers", get(mcp_servers))
         .route("/environments/{id}/memory", get(codex_memory))
+        .route("/environments/{id}/codex-skills", get(codex_skills))
 }
 
 #[derive(Serialize)]
@@ -441,4 +442,71 @@ async fn codex_memory(
         consolidated_threads: status["v2ConsolidatedThreads"].as_u64().unwrap_or(0) as u32,
         ready: status["v2Ready"].as_bool().unwrap_or(false),
     }))
+}
+
+/// A skill codex found, and whether it is switched on.
+#[derive(Serialize)]
+pub struct CodexSkill {
+    name: String,
+    description: String,
+    /// Where codex found it: user, repo, system, or admin.
+    scope: String,
+    enabled: bool,
+    path: String,
+}
+
+/// A problem codex had reading a skill.
+#[derive(Serialize)]
+pub struct CodexSkillError {
+    path: String,
+    message: String,
+}
+
+/// What codex found in the environment's skill folders.
+#[derive(Serialize)]
+pub struct CodexSkills {
+    skills: Vec<CodexSkill>,
+    errors: Vec<CodexSkillError>,
+}
+
+/// The skills codex discovers in an environment, read now. Includes the skills Baize writes for the
+/// workspace, since codex finds those through its extra skill roots.
+async fn codex_skills(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<CodexSkills>, ApiError> {
+    let env = load(&state.pool, id).await?;
+    require_role(&state.pool, env.workspace_id, user.id, Role::Member).await?;
+    let lease = state
+        .runtime
+        .lease(id, env.endpoint.as_deref())
+        .await
+        .map_err(|err| ApiError::BadRequest(err.to_string()))?;
+    let response = lease
+        .request("skills/list", json!({ "cwds": [], "forceReload": true }))
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("could not list the skills: {err}")))?;
+    let mut skills = Vec::new();
+    let mut errors = Vec::new();
+    for entry in response["data"].as_array().into_iter().flatten() {
+        for skill in entry["skills"].as_array().into_iter().flatten() {
+            let (Some(name), Some(path)) = (skill["name"].as_str(), skill["path"].as_str()) else { continue };
+            skills.push(CodexSkill {
+                name: name.to_string(),
+                description: skill["description"].as_str().unwrap_or_default().to_string(),
+                scope: skill["scope"].as_str().unwrap_or_default().to_string(),
+                enabled: skill["enabled"].as_bool().unwrap_or(false),
+                path: path.to_string(),
+            });
+        }
+        for error in entry["errors"].as_array().into_iter().flatten() {
+            errors.push(CodexSkillError {
+                path: error["path"].as_str().unwrap_or_default().to_string(),
+                message: error["message"].as_str().unwrap_or_default().to_string(),
+            });
+        }
+    }
+    skills.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(Json(CodexSkills { skills, errors }))
 }

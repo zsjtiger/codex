@@ -5,6 +5,7 @@ import { apiUrl } from "./config";
 import { api, ApiError, getToken } from "./client";
 import type {
   CodexMemory,
+  CodexSkills,
   McpServer,
   RateLimits,
   CheckoutEntry,
@@ -164,6 +165,8 @@ export interface ModelOption {
 export const environments = {
   list: (ws: string) => api<Environment[]>("GET", `/workspaces/${ws}/environments`),
   models: (id: string) => api<ModelOption[]>("GET", `/environments/${id}/models`),
+  /** The skills codex discovers in this environment now, with any that it could not read. */
+  codexSkills: (id: string) => api<CodexSkills>("GET", `/environments/${id}/codex-skills`),
   /** Codex's own memory in this environment: how many past threads it has learned from, and whether it is ready. */
   codexMemory: (id: string) => api<CodexMemory>("GET", `/environments/${id}/memory`),
   /** Every MCP server codex has in this environment, with its state and tools, as it is now. */

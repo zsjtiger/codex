@@ -1184,3 +1184,11 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 .live-check { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
 
 .settings-subheading { margin-top: 18px; }
+
+/* Skills codex finds in the environment, on the plugins page. */
+.codex-skills { margin-top: 24px; display: flex; flex-direction: column; gap: 8px; }
+.codex-skills-title { font-size: 16px; margin: 0; }
+.codex-skill-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.codex-skill { display: flex; flex-direction: column; gap: 2px; }
+.codex-skill code { overflow-wrap: anywhere; }
+.codex-skill-errors { padding-left: 18px; margin: 0; }

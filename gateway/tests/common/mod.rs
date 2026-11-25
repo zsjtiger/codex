@@ -265,6 +265,19 @@ pub async fn mock_app_server() -> MockServer {
                         "memory/status" => {
                             out_tx.send(reply(json!({ "v2ConsolidatedThreads": 12, "v2Ready": true }))).unwrap();
                         }
+                        "skills/list" => {
+                            // Two skills in the codex's user folder, one of them switched off, and a folder that failed to read.
+                            out_tx
+                                .send(reply(json!({ "data": [{
+                                    "cwd": "/work/repo",
+                                    "skills": [
+                                        { "name": "zeta", "description": "Last one.", "path": "/home/x/.codex/gateway-skills/zeta/SKILL.md", "scope": "user", "enabled": true },
+                                        { "name": "alpha", "description": "First one.", "path": "/home/x/.codex/skills/alpha/SKILL.md", "scope": "user", "enabled": false }
+                                    ],
+                                    "errors": [{ "path": "/home/x/.codex/skills/broken/SKILL.md", "message": "missing name" }]
+                                }] })))
+                                .unwrap();
+                        }
                         "turn/steer" => {
                             out_tx
                                 .send(reply(json!({ "turnId": msg["params"]["expectedTurnId"] })))

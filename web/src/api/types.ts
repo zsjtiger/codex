@@ -119,6 +119,22 @@ export interface CodexMemory {
   ready: boolean;
 }
 
+/** A skill codex found in an environment. */
+export interface CodexSkill {
+  name: string;
+  description: string;
+  /** user, repo, system, or admin. */
+  scope: string;
+  enabled: boolean;
+  path: string;
+}
+
+/** What codex found in an environment's skill folders, and what it could not read. */
+export interface CodexSkills {
+  skills: CodexSkill[];
+  errors: { path: string; message: string }[];
+}
+
 export interface Turn {
   id: string;
   /** The assistant's reply, kept on the turn once its messages complete. */

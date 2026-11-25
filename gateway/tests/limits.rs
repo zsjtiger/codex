@@ -92,3 +92,27 @@ async fn codex_memory_is_read_and_the_connection_opts_into_experimental_methods(
     let (_, init) = requests.iter().find(|(m, _)| m == "initialize").expect("the connection was initialized");
     assert_eq!(init["capabilities"]["experimentalApi"], true);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn the_skills_codex_finds_are_listed_with_their_scope_and_errors(pool: PgPool) {
+    let state = AppState::new(pool.clone(), true, RuntimeConfig::default());
+    let mock = mock_app_server().await;
+    let token = login(&state, "codex-skills@example.com").await;
+    let (ws_id, _) = setup(&state, &token, Some(&mock.url)).await;
+    let (_, envs) = call(&state, "GET", &format!("/api/v1/workspaces/{ws_id}/environments"), &token, None).await;
+    let env_id = envs[0]["id"].as_str().unwrap().to_string();
+
+    let (status, found) = call(&state, "GET", &format!("/api/v1/environments/{env_id}/codex-skills"), &token, None).await;
+    assert_eq!(status, StatusCode::OK, "{found}");
+    assert_eq!(
+        found["skills"],
+        json!([
+            { "name": "alpha", "description": "First one.", "scope": "user", "enabled": false, "path": "/home/x/.codex/skills/alpha/SKILL.md" },
+            { "name": "zeta", "description": "Last one.", "scope": "user", "enabled": true, "path": "/home/x/.codex/gateway-skills/zeta/SKILL.md" }
+        ])
+    );
+    assert_eq!(found["errors"], json!([{ "path": "/home/x/.codex/skills/broken/SKILL.md", "message": "missing name" }]));
+    let requests = mock.requests.lock().unwrap().clone();
+    let (_, params) = requests.iter().find(|(m, _)| m == "skills/list").expect("codex was asked");
+    assert_eq!(params["forceReload"], true);
+}
