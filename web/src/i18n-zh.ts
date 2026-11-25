@@ -744,4 +744,6 @@ addChinese({
   "current": "当前",
   "and": "以及",
   "more": "更多",
+  "Review uncommitted changes": "审查未提交的改动",
+  "Compact the conversation": "压缩对话",
 });

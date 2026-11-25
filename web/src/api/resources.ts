@@ -207,6 +207,13 @@ export const threads = {
   toolUses: (id: string) => api<ToolUseRecord[]>("GET", `/threads/${id}/tool-uses?limit=100`),
   /** Screenshots an HTML file of the session's checkout. The gateway draws it in headless Chromium. */
   preview: (id: string, path: string) => postForImage(`/threads/${id}/preview`, { path }),
+  /** Starts a code review of the chat's changes, as a turn of the chat. */
+  review: (id: string, target: { type: "uncommittedChanges" } | { type: "baseBranch"; branch: string } | { type: "commit"; sha: string }) =>
+    api<Turn>("POST", `/threads/${id}/review`, { target }),
+  /** Compacts the chat's history, so a long chat keeps room to work. */
+  compact: (id: string) => api<Turn>("POST", `/threads/${id}/compact`),
+  /** Adds a note to the turn running in the chat. */
+  steer: (id: string, input: string) => api<Turn>("POST", `/threads/${id}/steer`, { input }),
   /** Asks the model to write a turn's reply as a document of the chat. The summary is a turn of its own. */
   summarize: (id: string, turnId: string) => api<Turn>("POST", `/threads/${id}/summaries`, { turn_id: turnId }),
   /** The finished commands and file changes of a thread, grouped by Codex turn. */

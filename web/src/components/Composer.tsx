@@ -49,6 +49,8 @@ interface ComposerProps {
   /** The environment whose codex runtime offers the models. */
   environmentId?: string | null;
   onSend: (text: string, options: SendOptions) => void;
+  /** A review or a compaction of the open chat, from the "/" menu. */
+  onAction?: (action: "review" | "compact") => void;
   onStop?: () => void;
   running?: boolean;
   disabled: boolean;
@@ -84,7 +86,7 @@ interface Pending {
  */
 export function Composer(props: ComposerProps) {
   const { t } = useI18n();
-  const { prefill, onPrefillUsed, environmentId, onSend, onStop, running, disabled, placeholder = t("home.placeholder"), projects, projectId, onProjectChange, onCreateProject, skills, upload, onError } = props;
+  const { prefill, onPrefillUsed, environmentId, onSend, onAction, onStop, running, disabled, placeholder = t("home.placeholder"), projects, projectId, onProjectChange, onCreateProject, skills, upload, onError } = props;
   const [draft, setDraft] = useState("");
   useEffect(() => {
     if (!prefill) return;
@@ -187,6 +189,12 @@ export function Composer(props: ComposerProps) {
         fileRef.current?.click();
       },
     },
+    ...(onAction
+      ? [
+          { key: "review", label: tx("Review uncommitted changes"), run: () => { setDraft(""); onAction("review"); } },
+          { key: "compact", label: tx("Compact the conversation"), run: () => { setDraft(""); onAction("compact"); } },
+        ].filter((item) => !query || item.key.includes(query))
+      : []),
     ...skills
       .filter((skill) => skill.name.toLowerCase().includes(query))
       .map((skill) => ({

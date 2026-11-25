@@ -282,6 +282,17 @@ export function useCodex() {
           await refreshThreads(ws);
           await selectThread(threadId);
         }
+        // A message sent while a turn runs is a note for that turn, not a turn of its own.
+        const running = turns.find((t) => (t.status === "running" || t.status === "queued") && t.codex_turn_id);
+        if (running && !options.attachment_ids && !options.skill_ids) {
+          try {
+            await threadApi.steer(threadId, input);
+            await loadTurns(threadId);
+            return;
+          } catch {
+            // The turn finished meanwhile: the message goes ahead as the next turn.
+          }
+        }
         await threadApi.send(threadId, { input, ...options });
         await loadTurns(threadId);
         await refreshThreads(ws);
@@ -291,7 +302,26 @@ export function useCodex() {
         setSending(false);
       }
     },
-    [draftProjectId, environment, fail, loadTurns, refreshThreads, selectThread, sending],
+    [draftProjectId, environment, fail, loadTurns, refreshThreads, selectThread, sending, turns],
+  );
+
+  // A review or a compaction of the open chat, from the message box.
+  const runAction = useCallback(
+    async (action: "review" | "compact") => {
+      const threadId = activeRef.current;
+      const ws = workspaceRef.current;
+      if (!threadId || !ws) return;
+      setError(null);
+      try {
+        if (action === "compact") await threadApi.compact(threadId);
+        else await threadApi.review(threadId, { type: "uncommittedChanges" });
+        await loadTurns(threadId);
+        await refreshThreads(ws);
+      } catch (err) {
+        fail(err);
+      }
+    },
+    [fail, loadTurns, refreshThreads],
   );
 
   const interrupt = useCallback(
@@ -386,6 +416,7 @@ export function useCodex() {
       if (workspaceRef.current) await refreshThreads(workspaceRef.current);
     },
     sendMessage,
+    runAction,
     answerApproval,
     setFeedback,
   };

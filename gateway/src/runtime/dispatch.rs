@@ -134,6 +134,8 @@ struct TurnRow {
     endpoint: Option<String>,
     skill_ids: Vec<Uuid>,
     repo_id: Option<Uuid>,
+    kind: String,
+    target: Option<String>,
 }
 
 /// Approval policy sent to codex for every thread and turn. See `start_codex_thread`.
@@ -233,8 +235,8 @@ async fn auto_commit_turn(state: &AppState, turn: &TurnRow, repo_id: Uuid) {
 }
 
 async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> {
-    let row = sqlx::query_as::<_, (Uuid, Uuid, Option<Uuid>, String, Option<String>, Option<String>, Option<String>, Option<Uuid>, Option<String>, Vec<Uuid>, Option<Uuid>)>(
-        "SELECT th.id, th.workspace_id, t.created_by, t.input, t.model, t.effort, th.codex_thread_id, th.environment_id, e.endpoint, t.skill_ids, th.repo_id
+    let row = sqlx::query_as::<_, (Uuid, Uuid, Option<Uuid>, String, Option<String>, Option<String>, Option<String>, Option<Uuid>, Option<String>, Vec<Uuid>, Option<Uuid>, String, Option<String>)>(
+        "SELECT th.id, th.workspace_id, t.created_by, t.input, t.model, t.effort, th.codex_thread_id, th.environment_id, e.endpoint, t.skill_ids, th.repo_id, t.kind, t.target
          FROM turns t
          JOIN threads th ON th.id = t.thread_id
          LEFT JOIN environments e ON e.id = th.environment_id
@@ -255,6 +257,8 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
         endpoint: row.8,
         skill_ids: row.9,
         repo_id: row.10,
+        kind: row.11,
+        target: row.12,
     };
     let environment_id = turn.environment_id.ok_or(DispatchError::NoEnvironment)?;
     let lease = state
@@ -305,6 +309,9 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
 
     // Subscribe before starting the turn so no notification can be missed.
     let mut events = lease.subscribe();
+    if turn.kind == "compact" {
+        return run_compact(state, turn_id, &lease, &codex_thread_id, &mut events).await;
+    }
     // Local turns are told where to save files for the user; those files are kept with the reply.
     let output_dir = (turn.endpoint.is_none()).then(|| outputs::output_dir(turn_id));
     let mut text = with_skills(&state.pool, &turn.skill_ids, &turn.input).await?;
@@ -343,7 +350,19 @@ async fn run_turn(state: &AppState, turn_id: Uuid) -> Result<(), DispatchError> 
     if let Some(cwd) = &cwd {
         params["cwd"] = json!(cwd);
     }
-    let response = lease.request("turn/start", params).await?;
+    // A review runs as a turn of its own, on the same thread; its target was chosen when it was queued.
+    let response = if turn.kind == "review" {
+        let target: Value = serde_json::from_str(turn.target.as_deref().unwrap_or("null"))
+            .map_err(|err| DispatchError::Protocol(format!("review target: {err}")))?;
+        lease
+            .request(
+                "review/start",
+                json!({ "threadId": codex_thread_id, "target": target, "delivery": "inline" }),
+            )
+            .await?
+    } else {
+        lease.request("turn/start", params).await?
+    };
     let codex_turn_id = response
         .pointer("/turn/id")
         .and_then(Value::as_str)
@@ -813,6 +832,93 @@ async fn mark_failed(pool: &PgPool, turn_id: Uuid, message: &str) -> Result<(), 
     .execute(pool)
     .await?;
     Ok(())
+}
+
+/// Compacts a thread's history. The turn completes when app-server reports that the thread was compacted.
+async fn run_compact(
+    state: &AppState,
+    turn_id: Uuid,
+    lease: &super::Lease,
+    codex_thread_id: &str,
+    events: &mut broadcast::Receiver<Notification>,
+) -> Result<(), DispatchError> {
+    sqlx::query("UPDATE turns SET status = 'running' WHERE id = $1")
+        .bind(turn_id)
+        .execute(&state.pool)
+        .await?;
+    let thread_id: Uuid = sqlx::query_scalar("SELECT thread_id FROM turns WHERE id = $1")
+        .bind(turn_id)
+        .fetch_one(&state.pool)
+        .await?;
+    sqlx::query("UPDATE threads SET state = 'running', updated_at = now() WHERE id = $1")
+        .bind(thread_id)
+        .execute(&state.pool)
+        .await?;
+    lease
+        .request("thread/compact/start", json!({ "threadId": codex_thread_id }))
+        .await?;
+    tokio::time::timeout(TURN_TIMEOUT, async {
+        loop {
+            match events.recv().await {
+                Ok(event)
+                    if event.method == "thread/compacted"
+                        && event.params.get("threadId").and_then(Value::as_str) == Some(codex_thread_id) =>
+                {
+                    return Ok(());
+                }
+                Ok(_) => {}
+                Err(broadcast::error::RecvError::Lagged(_)) => return Err(DispatchError::Lagged),
+                Err(broadcast::error::RecvError::Closed) => return Err(DispatchError::Disconnected),
+            }
+        }
+    })
+    .await
+    .map_err(|_| DispatchError::Timeout)??;
+    sqlx::query("UPDATE turns SET status = 'completed', completed_at = now() WHERE id = $1")
+        .bind(turn_id)
+        .execute(&state.pool)
+        .await?;
+    sqlx::query("UPDATE threads SET state = 'idle', updated_at = now() WHERE id = $1")
+        .bind(thread_id)
+        .execute(&state.pool)
+        .await?;
+    Ok(())
+}
+
+/// Adds text to the turn that is running in a thread, as app-server's steer. Returns the turn it went to.
+pub async fn steer(state: &AppState, thread_id: Uuid, text: &str) -> Result<String, String> {
+    let row: Option<(Option<String>, Option<String>, Option<Uuid>, Option<String>, String)> = sqlx::query_as(
+        "SELECT t.codex_turn_id, th.codex_thread_id, th.environment_id, e.endpoint, t.status
+         FROM turns t
+         JOIN threads th ON th.id = t.thread_id
+         LEFT JOIN environments e ON e.id = th.environment_id
+         WHERE t.thread_id = $1 AND t.status = 'running' AND t.kind IN ('message', 'review')
+         ORDER BY t.seq DESC LIMIT 1",
+    )
+    .bind(thread_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|err| err.to_string())?;
+    let Some((Some(codex_turn_id), Some(codex_thread_id), Some(environment_id), endpoint, _)) = row else {
+        return Err("no turn is running in this chat".to_string());
+    };
+    let lease = state
+        .runtime
+        .lease(environment_id, endpoint.as_deref())
+        .await
+        .map_err(|err| err.to_string())?;
+    lease
+        .request(
+            "turn/steer",
+            json!({
+                "threadId": codex_thread_id,
+                "expectedTurnId": codex_turn_id,
+                "input": [{ "type": "text", "text": text }],
+            }),
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(codex_turn_id)
 }
 
 /// Asks app-server to interrupt a running turn.

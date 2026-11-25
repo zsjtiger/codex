@@ -322,6 +322,7 @@ export function App() {
         {view === "chat" && (
           <Home
             onAddPlugin={savePluginFromChat}
+            onAction={codex.runAction}
             prefill={prefill}
             onPrefillUsed={() => setPrefill(null)}
             user={codex.user}

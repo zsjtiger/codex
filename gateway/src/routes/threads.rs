@@ -6,7 +6,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{Value, json};
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
@@ -229,6 +229,9 @@ pub fn routes() -> Router<AppState> {
         .route("/threads/{id}/work", get(list_work))
         .route("/threads/{id}/summaries", post(summarize))
         .route("/turns/{id}/interrupt", post(interrupt_turn))
+        .route("/threads/{id}/review", post(start_review))
+        .route("/threads/{id}/compact", post(start_compact))
+        .route("/threads/{id}/steer", post(steer_turn))
         .route("/turns/{id}/feedback", put(set_feedback))
 }
 
@@ -761,6 +764,145 @@ async fn set_feedback(
         .execute(&state.pool)
         .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub struct ReviewRequest {
+    target: Value,
+}
+
+#[derive(Deserialize)]
+pub struct SteerRequest {
+    input: String,
+}
+
+/// The label a review shows in the chat, and the target as app-server takes it. Only the fields
+/// app-server reads are passed on.
+fn review_target(target: &Value) -> Result<(String, Value), ApiError> {
+    let text = |field: &str| target.get(field).and_then(Value::as_str).unwrap_or_default().to_string();
+    match text("type").as_str() {
+        "uncommittedChanges" => Ok((
+            "Review uncommitted changes".to_string(),
+            json!({ "type": "uncommittedChanges" }),
+        )),
+        "baseBranch" => {
+            let branch = text("branch");
+            validate::length("branch", &branch, 1, 200)?;
+            if branch.starts_with('-') {
+                return Err(ApiError::BadRequest("a branch name cannot start with '-'".to_string()));
+            }
+            Ok((
+                format!("Review changes against {branch}"),
+                json!({ "type": "baseBranch", "branch": branch }),
+            ))
+        }
+        "commit" => {
+            let sha = text("sha");
+            if !(7..=40).contains(&sha.len()) || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+                return Err(ApiError::BadRequest("a commit is named by 7 to 40 hex characters".to_string()));
+            }
+            Ok((format!("Review commit {}", &sha[..7]), json!({ "type": "commit", "sha": sha })))
+        }
+        _ => Err(ApiError::BadRequest(
+            "the review target must be uncommittedChanges, baseBranch or commit".to_string(),
+        )),
+    }
+}
+
+/// Adds a turn that is not a plain message (a review, a compaction, or a steer note) to a chat. A
+/// queued one runs in its place in the chat's order.
+async fn enqueue_special(
+    state: &AppState,
+    thread_id: Uuid,
+    user_id: Uuid,
+    input: &str,
+    kind: &str,
+    target: Option<String>,
+    status: &str,
+) -> Result<(StatusCode, Json<TurnView>), ApiError> {
+    if !state.turn_limiter.allow(user_id) {
+        return Err(ApiError::TooManyRequests);
+    }
+    let mut tx = state.pool.begin().await?;
+    let archived_at: Option<DateTime<Utc>> =
+        sqlx::query_scalar("SELECT archived_at FROM threads WHERE id = $1 FOR UPDATE")
+            .bind(thread_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    if archived_at.is_some() {
+        return Err(ApiError::Conflict("thread is archived".to_string()));
+    }
+    let seq: i32 =
+        sqlx::query_scalar("SELECT COALESCE(MAX(seq), 0) + 1 FROM turns WHERE thread_id = $1")
+            .bind(thread_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    let turn = sqlx::query_as::<_, TurnView>(
+        "INSERT INTO turns (thread_id, seq, input, created_by, kind, target, status, completed_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, CASE WHEN $7 = 'completed' THEN now() END)
+         RETURNING id, thread_id, seq, status, input, error, codex_turn_id, model, effort, reply, feedback, attachment_ids, created_by, created_at, completed_at",
+    )
+    .bind(thread_id)
+    .bind(seq)
+    .bind(input)
+    .bind(user_id)
+    .bind(kind)
+    .bind(target)
+    .bind(status)
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query("UPDATE threads SET last_activity_at = now(), updated_at = now() WHERE id = $1")
+        .bind(thread_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    if status == "queued" {
+        crate::runtime::dispatch::spawn_drain(state.clone(), thread_id);
+    }
+    Ok((StatusCode::CREATED, Json(turn)))
+}
+
+/// Starts a code review of the chat's working copy, a branch's changes, or a commit. It runs as a turn
+/// of the chat, through app-server's review.
+async fn start_review(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<ReviewRequest>,
+) -> Result<(StatusCode, Json<TurnView>), ApiError> {
+    let access = thread_access(&state.pool, id).await?;
+    require_role(&state.pool, access.workspace_id, user.id, Role::Member).await?;
+    let (label, target) = review_target(&req.target)?;
+    enqueue_special(&state, id, user.id, &label, "review", Some(target.to_string()), "queued").await
+}
+
+/// Compacts the chat's history with app-server, so long chats keep room to work.
+async fn start_compact(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<(StatusCode, Json<TurnView>), ApiError> {
+    let access = thread_access(&state.pool, id).await?;
+    require_role(&state.pool, access.workspace_id, user.id, Role::Member).await?;
+    enqueue_special(&state, id, user.id, "Compact the conversation", "compact", None, "queued").await
+}
+
+/// Adds a note to the turn that is running in the chat, as app-server's steer. The note is kept in the
+/// chat, after the turn it was added to.
+async fn steer_turn(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<SteerRequest>,
+) -> Result<(StatusCode, Json<TurnView>), ApiError> {
+    let access = thread_access(&state.pool, id).await?;
+    require_role(&state.pool, access.workspace_id, user.id, Role::Member).await?;
+    let text = req.input.trim();
+    validate::length("input", text, 1, 100_000)?;
+    crate::runtime::dispatch::steer(&state, id, text)
+        .await
+        .map_err(ApiError::Conflict)?;
+    enqueue_special(&state, id, user.id, text, "steer", None, "completed").await
 }
 
 /// Asks app-server to stop a running turn. The turn finishes as `interrupted` once

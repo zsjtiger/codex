@@ -138,6 +138,50 @@ pub async fn mock_app_server() -> MockServer {
                                 }
                             }
                         }
+                        "review/start" => {
+                            // A review is a turn that finishes with its review as the reply.
+                            let turn_id =
+                                format!("turn_{}", turn_counter.fetch_add(1, Ordering::Relaxed));
+                            out_tx
+                                .send(reply(json!({ "reviewThreadId": "thr_mock", "turn": { "id": turn_id } })))
+                                .unwrap();
+                            let out = out_tx.clone();
+                            tokio::spawn(async move {
+                                tokio::time::sleep(Duration::from_millis(20)).await;
+                                out.send(
+                                    json!({
+                                        "method": "item/completed",
+                                        "params": {
+                                            "threadId": "thr_mock",
+                                            "turnId": turn_id,
+                                            "item": { "type": "agentMessage", "id": "msg_review", "text": "Review: no problems found." }
+                                        }
+                                    })
+                                    .to_string(),
+                                )
+                                .unwrap();
+                                out.send(
+                                    json!({
+                                        "method": "turn/completed",
+                                        "params": { "threadId": "thr_mock", "turn": { "id": turn_id, "status": "completed", "items": [], "error": null } }
+                                    })
+                                    .to_string(),
+                                )
+                                .unwrap();
+                            });
+                        }
+                        "thread/compact/start" => {
+                            // Compaction reports back with a notification, not a turn.
+                            out_tx.send(reply(json!({}))).unwrap();
+                            out_tx
+                                .send(json!({ "method": "thread/compacted", "params": { "threadId": "thr_mock" } }).to_string())
+                                .unwrap();
+                        }
+                        "turn/steer" => {
+                            out_tx
+                                .send(reply(json!({ "turnId": msg["params"]["expectedTurnId"] })))
+                                .unwrap();
+                        }
                         "turn/start" => {
                             let input = msg["params"]["input"][0]["text"]
                                 .as_str()
