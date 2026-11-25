@@ -348,3 +348,65 @@ async fn local_launch_starts_and_reaps_a_real_app_server(pool: PgPool) {
     assert_eq!(state.runtime.live_connections().await, 0);
     let _ = std::fs::remove_dir_all(&home_root);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn an_mcp_form_is_shown_to_the_watcher_and_the_answer_goes_back(pool: PgPool) {
+    let mock = mock_app_server().await;
+    let state = AppState::new(pool.clone(), true, RuntimeConfig::default());
+    let token = login(&state, "form@example.com").await;
+    let (_, thread_id) = setup(&state, &token, Some(&mock.url)).await;
+    let addr = spawn_gateway(state.clone()).await;
+
+    let mut watcher = connect(&state, addr, &token).await;
+    send(&mut watcher, json!({ "type": "subscribe", "threadId": thread_id })).await;
+    next_of_type(&mut watcher, "subscribed").await;
+
+    post_turn(&state, &token, &thread_id, "ELICIT which docs").await;
+    let request = next_of_type(&mut watcher, "approvalRequest").await;
+    assert_eq!(request["method"], "mcpServer/elicitation/request");
+    assert_eq!(request["params"]["serverName"], "docs");
+    assert_eq!(request["params"]["requestedSchema"]["properties"]["region"]["enum"], json!(["eu", "us"]));
+
+    send(
+        &mut watcher,
+        json!({ "type": "approvalResponse", "requestId": request["requestId"], "result": { "action": "accept", "content": { "region": "eu" } } }),
+    )
+    .await;
+    next_of_type(&mut watcher, "approvalAccepted").await;
+    assert_eq!(wait_for_turn(&state, &token, &thread_id, 0).await["status"], "completed");
+
+    let responses = mock.responses.lock().unwrap().clone();
+    let answer = responses.iter().find(|r| r["id"] == ELICIT_ID).expect("codex got an answer");
+    assert_eq!(answer["result"], json!({ "action": "accept", "content": { "region": "eu" } }));
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn an_mcp_form_is_declined_when_nobody_is_watching(pool: PgPool) {
+    let mock = mock_app_server().await;
+    let state = AppState::new(pool.clone(), true, RuntimeConfig::default());
+    let token = login(&state, "unwatched@example.com").await;
+    let (_, thread_id) = setup(&state, &token, Some(&mock.url)).await;
+
+    post_turn(&state, &token, &thread_id, "ELICIT which docs").await;
+    assert_eq!(wait_for_turn(&state, &token, &thread_id, 0).await["status"], "completed");
+    let responses = mock.responses.lock().unwrap().clone();
+    let answer = responses.iter().find(|r| r["id"] == ELICIT_ID).expect("codex got an answer");
+    assert_eq!(answer["result"], json!({ "action": "decline" }));
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn codex_can_read_the_clock_without_anyone_watching(pool: PgPool) {
+    let mock = mock_app_server().await;
+    let state = AppState::new(pool.clone(), true, RuntimeConfig::default());
+    let token = login(&state, "clock@example.com").await;
+    let (_, thread_id) = setup(&state, &token, Some(&mock.url)).await;
+
+    let before = chrono::Utc::now().timestamp();
+    post_turn(&state, &token, &thread_id, "CLOCK what time is it").await;
+    assert_eq!(wait_for_turn(&state, &token, &thread_id, 0).await["status"], "completed");
+    let after = chrono::Utc::now().timestamp();
+    let responses = mock.responses.lock().unwrap().clone();
+    let answer = responses.iter().find(|r| r["id"] == CLOCK_ID).expect("codex got the time");
+    let at = answer["result"]["currentTimeAt"].as_i64().expect("unix seconds");
+    assert!(before <= at && at <= after, "{at} is not between {before} and {after}");
+}

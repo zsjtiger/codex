@@ -143,6 +143,12 @@ impl Hub {
         connection: &Arc<RpcConnection>,
         request: ServerRequest,
     ) {
+        // The clock needs no one's answer: codex asks what time it is, and the gateway's clock is the answer.
+        if request.method == "currentTime/read" {
+            let now = chrono::Utc::now().timestamp();
+            let _ = connection.respond(request.id.clone(), json!({ "currentTimeAt": now })).await;
+            return;
+        }
         let codex_thread_id = request
             .params
             .get("threadId")
@@ -270,6 +276,7 @@ async fn decline(connection: &RpcConnection, id: &Value, method: &str) {
         "item/permissions/requestApproval" => Some(json!({ "permissions": {}, "scope": "turn" })),
         "item/tool/requestUserInput" => Some(json!({ "answers": {} })),
         "item/tool/call" => Some(json!({ "contentItems": [], "success": false })),
+        "mcpServer/elicitation/request" => Some(json!({ "action": "decline" })),
         _ => None,
     };
     match result {

@@ -12,6 +12,7 @@ import { attachments as attachmentApi } from "../api/resources";
 import { isDesktop, saveFileAs, showInFolder } from "../desktop";
 import type { Turn } from "../api/types";
 import { tx } from "../i18n";
+import { ElicitationCard } from "./ElicitationCard";
 
 /** "just now", "5 min ago", "3 h ago", or the date for older replies. */
 function relativeTime(iso: string): string {
@@ -660,19 +661,23 @@ export function Conversation({ variant = "chat", turns, agentText, activity, wor
           </div>
         );
       })}
-      {approvals.map((approval) => (
-        <div className="approval" key={approval.requestId}>
-          <div className="approval-title">{tx("Approval needed")}</div>
-          <code className="approval-body">{describe(approval)}</code>
-          <div className="approval-actions">
-            {choicesFor(approval.method).map((choice) => (
-              <button key={choice.label} onClick={() => onAnswer(approval, choice.result)}>
-                {choice.label}
-              </button>
-            ))}
+      {approvals.map((approval) =>
+        approval.method === "mcpServer/elicitation/request" ? (
+          <ElicitationCard key={approval.requestId} approval={approval} onAnswer={(result) => onAnswer(approval, result)} />
+        ) : (
+          <div className="approval" key={approval.requestId}>
+            <div className="approval-title">{tx("Approval needed")}</div>
+            <code className="approval-body">{describe(approval)}</code>
+            <div className="approval-actions">
+              {choicesFor(approval.method).map((choice) => (
+                <button key={choice.label} onClick={() => onAnswer(approval, choice.result)}>
+                  {choice.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        ),
+      )}
     </div>
   );
 }

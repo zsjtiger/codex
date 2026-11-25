@@ -26,6 +26,8 @@ use codex_gateway::{AppState, app};
 
 /// Request id the mock uses for its approval requests.
 pub const APPROVAL_ID: i64 = 900;
+pub const ELICIT_ID: i64 = 901;
+pub const CLOCK_ID: i64 = 902;
 
 pub struct MockServer {
     pub url: String,
@@ -274,6 +276,34 @@ pub async fn mock_app_server() -> MockServer {
                                     )
                                     .unwrap();
                                     wait_for_response(&responses, APPROVAL_ID).await;
+                                }
+                                if input.contains("ELICIT") {
+                                    // An MCP server asks the person for a choice, with a form.
+                                    out.send(
+                                        json!({
+                                            "id": ELICIT_ID,
+                                            "method": "mcpServer/elicitation/request",
+                                            "params": {
+                                                "threadId": "thr_mock",
+                                                "turnId": turn_id,
+                                                "serverName": "docs",
+                                                "mode": "form",
+                                                "message": "Which region?",
+                                                "requestedSchema": {
+                                                    "type": "object",
+                                                    "properties": { "region": { "type": "string", "enum": ["eu", "us"] } },
+                                                    "required": ["region"]
+                                                }
+                                            }
+                                        })
+                                        .to_string(),
+                                    )
+                                    .unwrap();
+                                    wait_for_response(&responses, ELICIT_ID).await;
+                                }
+                                if input.contains("CLOCK") {
+                                    out.send(json!({ "id": CLOCK_ID, "method": "currentTime/read", "params": { "threadId": "thr_mock" } }).to_string()).unwrap();
+                                    wait_for_response(&responses, CLOCK_ID).await;
                                 }
                                 if input.contains("TOOL") || input.contains("EDIT_DOC") || input.contains("SAVE_DOC") || input.contains("SAVE_EMPTY") || input.contains("请把下面的回答整理成一份结构清楚的文档") {
                                     out.send(
