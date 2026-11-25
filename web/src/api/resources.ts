@@ -4,6 +4,7 @@ import { apiUrl } from "./config";
 
 import { api, ApiError, getToken } from "./client";
 import type {
+  McpServer,
   RateLimits,
   CheckoutEntry,
   CommandResult,
@@ -162,6 +163,8 @@ export interface ModelOption {
 export const environments = {
   list: (ws: string) => api<Environment[]>("GET", `/workspaces/${ws}/environments`),
   models: (id: string) => api<ModelOption[]>("GET", `/environments/${id}/models`),
+  /** Every MCP server codex has in this environment, with its state and tools, as it is now. */
+  mcpServers: (id: string) => api<McpServer[]>("GET", `/environments/${id}/mcp-servers`),
   /** The codex account's rate limits in this environment. */
   rateLimits: (id: string) => api<RateLimits>("GET", `/environments/${id}/rate-limits`),
 };

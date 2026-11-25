@@ -104,6 +104,15 @@ export interface RateLimits {
   reached_type: string | null;
 }
 
+/** An MCP server codex has loaded in an environment, with its connection state and tools. */
+export interface McpServer {
+  name: string;
+  runtime_status: string | null;
+  auth_status: string | null;
+  tool_names: string[];
+  tools_error: string | null;
+}
+
 export interface Turn {
   id: string;
   /** The assistant's reply, kept on the turn once its messages complete. */

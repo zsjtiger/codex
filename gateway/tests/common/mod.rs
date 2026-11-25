@@ -245,6 +245,23 @@ pub async fn mock_app_server() -> MockServer {
                                 } })))
                                 .unwrap();
                         }
+                        "mcpServerStatus/list" => {
+                            // Two pages: the first server on page one, the second and a failed one on page two.
+                            let (data, next) = match msg["params"]["cursor"].as_str() {
+                                None => (
+                                    json!([{ "name": "alphaxiv", "runtimeStatus": "connected", "authStatus": "unsupported",
+                                             "tools": { "search_papers": {}, "get_paper": {} }, "toolsError": null,
+                                             "resources": [], "resourceTemplates": [] }]),
+                                    json!("page-2"),
+                                ),
+                                Some(_) => (
+                                    json!([{ "name": "notion", "runtimeStatus": "authenticationRequired", "authStatus": "notLoggedIn",
+                                             "tools": {}, "toolsError": "sign in first", "resources": [], "resourceTemplates": [] }]),
+                                    Value::Null,
+                                ),
+                            };
+                            out_tx.send(reply(json!({ "data": data, "nextCursor": next }))).unwrap();
+                        }
                         "turn/steer" => {
                             out_tx
                                 .send(reply(json!({ "turnId": msg["params"]["expectedTurnId"] })))

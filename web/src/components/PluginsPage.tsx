@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { connectors as connectorApi, marketplace as marketplaceApi, plugins as pluginApi, skills as skillApi } from "../api/resources";
-import type { CatalogPlugin, Connector, Plugin, PluginManifest, Skill } from "../api/types";
+import { connectors as connectorApi, environments, marketplace as marketplaceApi, plugins as pluginApi, skills as skillApi } from "../api/resources";
+import type { CatalogPlugin, Connector, McpServer, Plugin, PluginManifest, Skill } from "../api/types";
 import { parseManifest } from "../state/pluginDraft";
 import { CheckCircleIcon, ChevronDownIcon, PlugIcon, SearchIcon } from "./icons";
 import { PluginDetail } from "./PluginDetail";
@@ -20,11 +20,36 @@ const PLUGIN_EXAMPLE = `{
 
 interface PluginsPageProps {
   workspaceId: string;
+  /** The environment whose codex is asked for the live state of connectors. */
+  environmentId: string | null;
   isAdmin: boolean;
   onBack: () => void;
   onError: (message: string) => void;
   /** Opens a new chat that designs a plugin with Baize. */
   onCreateWithBaize: () => void;
+}
+
+/** What codex reports for a server right now, as a short line. */
+function liveLabel(server: McpServer | undefined, checked: boolean): string {
+  if (!checked) return "";
+  if (!server) return tx("Not running in codex");
+  const tools = server.tool_names.length;
+  switch (server.runtime_status) {
+    case "connected":
+      return `${tx("Running")} · ${tools} ${tx(tools === 1 ? "tool" : "tools")}`;
+    case "starting":
+      return tx("Starting in codex");
+    case "authenticationRequired":
+      return tx("Sign-in required in codex");
+    case "failed":
+      return server.tools_error ? `${tx("Failed")}: ${server.tools_error}` : tx("Failed in codex");
+    case "cancelled":
+      return tx("Cancelled in codex");
+    case "disabled":
+      return tx("Disabled in codex");
+    default:
+      return tx("Not started in codex");
+  }
 }
 
 function connectorStatusLabel(c: Connector): string {
@@ -54,12 +79,15 @@ function namesLine(names: string[]): string {
  * the workspace; uninstalling takes them out again. Connectors are MCP servers codex can call from new
  * chats; skills are instruction bundles added to new chats. Only admins change any of them.
  */
-export function PluginsPage({ workspaceId, isAdmin, onBack, onError, onCreateWithBaize }: PluginsPageProps) {
+export function PluginsPage({ workspaceId, environmentId, isAdmin, onBack, onError, onCreateWithBaize }: PluginsPageProps) {
   const [filter, setFilter] = useState<Filter>("All");
   const [query, setQuery] = useState("");
   const [pluginItems, setPluginItems] = useState<Plugin[]>([]);
   const [skillItems, setSkillItems] = useState<Skill[]>([]);
   const [connectorItems, setConnectorItems] = useState<Connector[]>([]);
+  // The servers codex has loaded now, by name, from the last "Check now". Null until it has been checked.
+  const [live, setLive] = useState<Record<string, McpServer> | null>(null);
+  const [checking, setChecking] = useState(false);
   const [formKind, setFormKind] = useState<FormKind | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [name, setName] = useState("");
@@ -307,6 +335,7 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError, onCreateWit
         <div className="pl-meta">
           {tx("Connector")} · {connectorStatusLabel(c)}
           {c.oauth_state === "pending" && ` · ${tx("Waiting for sign-in…")}`}
+          {live && <div>{liveLabel(live[c.key], true)}</div>}
         </div>
       </div>
       <RowMenu items={connectorMenu(c)} label={c.name} />
@@ -605,6 +634,29 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError, onCreateWit
           </div>
         )}
 
+        {showConnectors && connectorItems.length > 0 && environmentId && (
+          <div className="live-check">
+            <button
+              type="button"
+              className="link-button"
+              disabled={checking}
+              onClick={async () => {
+                setChecking(true);
+                try {
+                  const servers = await environments.mcpServers(environmentId);
+                  setLive(Object.fromEntries(servers.map((server) => [server.name, server])));
+                } catch (err) {
+                  onError(err instanceof Error ? err.message : tx("The servers could not be checked."));
+                } finally {
+                  setChecking(false);
+                }
+              }}
+            >
+              {checking ? tx("Checking…") : tx("Check now")}
+            </button>
+            <span className="muted small">{tx("Asks codex in this environment what is running now.")}</span>
+          </div>
+        )}
         {showConnectors && connectorItems.length > 0 && (
           <p className="muted small">
             {tx("Connected connectors are added to chats that start after the change. Status is the last report from codex in any chat; it shows \"Not checked\" until a chat has started with the connector. Connectors that need sign-in use OAuth: sign in, then start a new chat. Sign-in needs the gateway's public address.")}

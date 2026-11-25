@@ -54,6 +54,7 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/environments/{id}/models", get(models))
         .route("/environments/{id}/rate-limits", get(rate_limits))
+        .route("/environments/{id}/mcp-servers", get(mcp_servers))
 }
 
 #[derive(Serialize)]
@@ -347,4 +348,66 @@ async fn rate_limits(
         credits: snapshot.credits.map(|c| Credits { has_credits: c.has_credits, unlimited: c.unlimited, balance: c.balance }),
         reached_type: snapshot.rate_limit_reached_type,
     }))
+}
+
+/// An MCP server as codex has it loaded in an environment right now.
+#[derive(Serialize)]
+pub struct McpServer {
+    /// The server's name in codex's configuration; a connector's key.
+    name: String,
+    /// Connection state, as codex names it: connected, starting, authenticationRequired, failed, and so on.
+    runtime_status: Option<String>,
+    auth_status: Option<String>,
+    /// Names of the tools the server offers, sorted.
+    tool_names: Vec<String>,
+    tools_error: Option<String>,
+}
+
+/// Every MCP server codex has in an environment, with its connection state and tools. Reads the whole list,
+/// a page at a time.
+async fn mcp_servers(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<McpServer>>, ApiError> {
+    const PAGE_LIMIT: u32 = 100;
+    const MAX_PAGES: usize = 20;
+    let env = load(&state.pool, id).await?;
+    require_role(&state.pool, env.workspace_id, user.id, Role::Member).await?;
+    let lease = state
+        .runtime
+        .lease(id, env.endpoint.as_deref())
+        .await
+        .map_err(|err| ApiError::BadRequest(err.to_string()))?;
+    let mut servers = Vec::new();
+    let mut cursor: Option<String> = None;
+    for _ in 0..MAX_PAGES {
+        let response = lease
+            .request(
+                "mcpServerStatus/list",
+                json!({ "detail": "toolsAndAuthOnly", "limit": PAGE_LIMIT, "cursor": cursor }),
+            )
+            .await
+            .map_err(|err| ApiError::BadRequest(format!("could not list the servers: {err}")))?;
+        for entry in response["data"].as_array().into_iter().flatten() {
+            let Some(name) = entry["name"].as_str() else { continue };
+            let mut tool_names: Vec<String> = entry["tools"]
+                .as_object()
+                .map(|tools| tools.keys().cloned().collect())
+                .unwrap_or_default();
+            tool_names.sort();
+            servers.push(McpServer {
+                name: name.to_string(),
+                runtime_status: entry["runtimeStatus"].as_str().map(str::to_string),
+                auth_status: entry["authStatus"].as_str().map(str::to_string),
+                tool_names,
+                tools_error: entry["toolsError"].as_str().map(str::to_string),
+            });
+        }
+        cursor = response["nextCursor"].as_str().map(str::to_string);
+        if cursor.is_none() {
+            break;
+        }
+    }
+    Ok(Json(servers))
 }

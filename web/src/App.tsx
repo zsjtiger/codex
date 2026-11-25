@@ -303,6 +303,7 @@ export function App() {
         {view === "customize" && (
           <PluginsPage
             workspaceId={workspaceId}
+            environmentId={codex.environment?.id ?? null}
             isAdmin={isAdmin}
             onBack={() => setView("chat")}
             onError={onError}
