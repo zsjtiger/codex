@@ -48,6 +48,16 @@ export interface ToolUseRecord {
   created_at: string;
 }
 
+/** The unified diff of everything a code turn changed, as Codex last reported it. */
+export interface TurnDiff {
+  /** The chat's turn, when the gateway still knows it. */
+  turn_id: string | null;
+  seq: number | null;
+  input: string | null;
+  codex_turn_id: string;
+  diff: string;
+}
+
 export interface Turn {
   id: string;
   /** The assistant's reply, kept on the turn once its messages complete. */

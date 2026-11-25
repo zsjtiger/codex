@@ -128,6 +128,9 @@ impl Hub {
             record_work(pool, thread_id, params).await;
             self.record_reply(pool, thread_id, params).await;
         }
+        if method == "turn/diff/updated" {
+            record_turn_diff(pool, thread_id, params).await;
+        }
         self.send_to(
             thread_id,
             &json!({ "type": "event", "threadId": thread_id, "method": method, "params": params }),
@@ -391,6 +394,32 @@ fn capped(text: &str, limit: usize) -> String {
         start += 1;
     }
     format!("[earlier output cut]\n{}", &text[start..])
+}
+
+/// Largest diff kept per turn, in bytes. The end of a very long diff is what is kept.
+const TURN_DIFF_LIMIT: usize = 256 * 1024;
+
+/// Keeps the latest diff of everything a turn changed. Codex sends the whole turn's diff each time,
+/// so a new report replaces the one before.
+async fn record_turn_diff(pool: &PgPool, thread_id: Uuid, params: &Value) {
+    let (Some(codex_turn_id), Some(diff)) = (
+        params.get("turnId").and_then(Value::as_str),
+        params.get("diff").and_then(Value::as_str),
+    ) else {
+        return;
+    };
+    let result = sqlx::query(
+        "INSERT INTO turn_diffs (thread_id, codex_turn_id, diff) VALUES ($1, $2, $3)
+         ON CONFLICT (thread_id, codex_turn_id) DO UPDATE SET diff = EXCLUDED.diff, updated_at = now()",
+    )
+    .bind(thread_id)
+    .bind(codex_turn_id)
+    .bind(capped(diff, TURN_DIFF_LIMIT))
+    .execute(pool)
+    .await;
+    if let Err(err) = result {
+        tracing::warn!(%err, "could not record a turn's diff");
+    }
 }
 
 /// Keeps a finished command or file change, so the code view shows it again after a reload.

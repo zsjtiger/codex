@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MarkdownView } from "./Markdown";
 import { splitDocumentEdits } from "./documentEdits";
 import { type PluginDraft, parsePluginDraft } from "../state/pluginDraft";
@@ -425,6 +425,46 @@ function FileChangeRow({ file, status }: { file: WorkFile; status: string }) {
   );
 }
 
+/** Splits a unified diff into files. Each file's kind comes from its header: added, deleted or edited. */
+function splitDiff(diff: string): WorkFile[] {
+  return diff
+    .split(/^(?=diff --git )/m)
+    .filter((chunk) => chunk.trim() !== "")
+    .map((chunk) => {
+      const path =
+        /^\+\+\+ b\/(.+)$/m.exec(chunk)?.[1] ??
+        /^--- a\/(.+)$/m.exec(chunk)?.[1] ??
+        /^diff --git a\/\S+ b\/(.+)$/m.exec(chunk)?.[1] ??
+        "";
+      const kind = /^--- \/dev\/null$/m.test(chunk) ? "add" : /^\+\+\+ \/dev\/null$/m.test(chunk) ? "delete" : "update";
+      return { path, kind, diff: chunk };
+    });
+}
+
+/**
+ * Everything a code turn changed, as Codex reports it for the whole turn. It also covers files that
+ * shell commands changed, which the per-file work log cannot see. Collapsed until opened.
+ */
+function TurnChanges({ diff }: { diff: string }) {
+  const [open, setOpen] = useState(false);
+  const files = useMemo(() => splitDiff(diff), [diff]);
+  const counts = diffCounts(diff);
+  if (files.length === 0) return null;
+  return (
+    <div className="turn-changes">
+      <button type="button" className="work-head" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className="work-verb">{tx("Changes")}</span>
+        <span className="work-counts">
+          {files.length} {tx(files.length === 1 ? "file" : "files")} · <span className="diff-add-count">+{counts.added}</span>{" "}
+          <span className="diff-del-count">−{counts.removed}</span>
+        </span>
+        <ChevronIcon className={open ? "thinking-chevron thinking-chevron-open" : "thinking-chevron"} />
+      </button>
+      {open && files.map((file, index) => <FileChangeRow key={`${file.path}-${index}`} file={file} status="completed" />)}
+    </div>
+  );
+}
+
 /** The plan Codex is working from, with each step's state. */
 function PlanView({ plan }: { plan: NonNullable<WorkLog["plan"]> }) {
   const mark = (status: string) => (status === "completed" ? "✓" : status === "inProgress" ? "◐" : "○");
@@ -528,6 +568,8 @@ interface ConversationProps {
   activity: Record<string, Activity>;
   /** What Codex is doing per turn: commands with live output, file diffs and the plan. */
   work?: Record<string, WorkLog>;
+  /** The diff of everything each code turn changed. */
+  diffs?: Record<string, string>;
   approvals: Approval[];
   onAnswer: (approval: Approval, result: unknown) => void;
   onFeedback: (turnId: string, rating: "up" | "down" | null) => void;
@@ -537,7 +579,7 @@ interface ConversationProps {
   onSummarize?: (turnId: string) => void;
 }
 
-export function Conversation({ variant = "chat", turns, agentText, activity, work = {}, approvals, onAnswer, onFeedback, onRegenerate, onSaveDocument, onSummarize, onAddPlugin, onFork }: ConversationProps) {
+export function Conversation({ variant = "chat", turns, agentText, activity, work = {}, diffs = {}, approvals, onAnswer, onFeedback, onRegenerate, onSaveDocument, onSummarize, onAddPlugin, onFork }: ConversationProps) {
   const code = variant === "code";
   return (
     <div className={code ? "conversation code-conversation" : "conversation"}>
@@ -569,6 +611,7 @@ export function Conversation({ variant = "chat", turns, agentText, activity, wor
                 </div>
               )}
               {workLog && (workLog.order.length > 0 || workLog.plan) && <WorkLogView log={workLog} />}
+              {turn.codex_turn_id && diffs[turn.codex_turn_id] && <TurnChanges diff={diffs[turn.codex_turn_id]} />}
               {otherSteps && otherSteps.steps.length > 0 && <CodeActivity activity={otherSteps} />}
               {(reply || changeNote) && (
                 <>

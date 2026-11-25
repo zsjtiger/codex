@@ -878,6 +878,7 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 
 /* Code sessions: what Codex is doing while it writes code. */
 .work-log { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.turn-changes { display: flex; flex-direction: column; gap: 6px; font-size: 14px; margin-top: 4px; }
 .work-item { border-left: 2px solid var(--border); padding-left: 10px; }
 .work-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 0; border: none; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; min-width: 0; }
 .work-head:hover { background: var(--hover); border-radius: 6px; }

@@ -36,6 +36,7 @@ interface HomeProps {
   environment: Environment | null;
   activity: Record<string, Activity>;
   work: Record<string, WorkLog>;
+  diffs: Record<string, string>;
   approvals: Approval[];
   sending: boolean;
   projects: Project[];
@@ -56,7 +57,7 @@ interface HomeProps {
 
 export function Home(props: HomeProps) {
   const { t } = useI18n();
-  const { prefill, onPrefillUsed, onAddPlugin, onAction, onFork, user, workspaceId, thread, threads, onOpenThread, turns, agentText, streamText, toolUses, activity, work, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
+  const { prefill, onPrefillUsed, onAddPlugin, onAction, onFork, user, workspaceId, thread, threads, onOpenThread, turns, agentText, streamText, toolUses, activity, work, diffs, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
   const pending = approvals.filter((a) => a.threadId === thread?.id);
   const runningTurn = [...turns].reverse().find((t) => (t.status === "running" || t.status === "queued") && t.codex_turn_id);
   const [recent, setRecent] = useState<Artifact[]>([]);
@@ -227,6 +228,7 @@ export function Home(props: HomeProps) {
               agentText={agentText}
               activity={activity}
               work={work}
+              diffs={diffs}
               approvals={pending}
               onAnswer={onAnswer}
               onFeedback={onFeedback}

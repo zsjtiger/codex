@@ -51,6 +51,8 @@ export function useCodex() {
   // Live thinking for each codex turn: reasoning text and the steps (searches, commands, ...) so far.
   const [activity, setActivity] = useState<Record<string, Activity>>({});
   const [work, setWork] = useState<Record<string, WorkLog>>({});
+  // The latest diff of everything each codex turn changed, from turn/diff/updated or the saved copy.
+  const [diffs, setDiffs] = useState<Record<string, string>>({});
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [socketStatus, setSocketStatus] = useState<SocketStatus>("closed");
   const [error, setError] = useState<string | null>(null);
@@ -70,10 +72,11 @@ export function useCodex() {
   }, []);
 
   const loadTurns = useCallback(async (threadId: string) => {
-    const [list, uses, work] = await Promise.all([
+    const [list, uses, work, diffList] = await Promise.all([
       api<Turn[]>("GET", `/threads/${threadId}/turns?limit=100`),
       threadApi.toolUses(threadId),
       threadApi.work(threadId),
+      threadApi.diffs(threadId),
     ]);
     if (activeRef.current === threadId) setTurns(list);
     const stored = uses.map((use) => ({ id: use.item_id, kind: use.kind, label: use.label }));
@@ -88,6 +91,9 @@ export function useCodex() {
       if (log) saved[turn.codex_turn_id] = log;
     }
     setWork((prev) => ({ ...saved, ...prev }));
+    // A live diff for the same turn is newer than the saved one, so it wins.
+    const savedDiffs = Object.fromEntries(diffList.map((turn) => [turn.codex_turn_id, turn.diff]));
+    setDiffs((prev) => ({ ...savedDiffs, ...prev }));
   }, []);
 
   const handleFrame = useCallback(
@@ -103,6 +109,10 @@ export function useCodex() {
               const current = prev[turnKey] ?? { reasoning: "", steps: [] };
               return { ...prev, [turnKey]: { ...current, reasoning: current.reasoning + delta } };
             });
+          }
+          if (method === "turn/diff/updated" && typeof params.turnId === "string") {
+            const key = params.turnId;
+            setDiffs((prev) => ({ ...prev, [key]: String(params.diff ?? "") }));
           }
           // Commands, their output, file diffs and the plan, for the code view.
           if (WORK_METHODS.has(method)) {
@@ -400,6 +410,7 @@ export function useCodex() {
     toolUses,
     activity,
     work,
+    diffs,
     approvals,
     socketStatus,
     error,

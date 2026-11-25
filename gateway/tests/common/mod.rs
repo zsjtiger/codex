@@ -255,6 +255,19 @@ pub async fn mock_app_server() -> MockServer {
                                     )
                                     .unwrap();
                                 }
+                                if input.contains("DIFF") {
+                                    // Codex reports the whole turn's diff each time it changes; the second report replaces the first.
+                                    for diff in ["--- a/notes.md\n+++ b/notes.md\n+first\n", "--- a/notes.md\n+++ b/notes.md\n+second\n"] {
+                                        out.send(
+                                            json!({
+                                                "method": "turn/diff/updated",
+                                                "params": { "threadId": "thr_mock", "turnId": turn_id, "diff": diff }
+                                            })
+                                            .to_string(),
+                                        )
+                                        .unwrap();
+                                    }
+                                }
                                 if input.contains("SLOW") {
                                     tokio::time::sleep(Duration::from_millis(400)).await;
                                 }

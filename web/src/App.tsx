@@ -338,6 +338,7 @@ export function App() {
             environment={codex.environment}
             activity={codex.activity}
             work={codex.work}
+            diffs={codex.diffs}
             approvals={codex.approvals}
             sending={codex.sending}
             projects={projects}

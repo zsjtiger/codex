@@ -88,3 +88,30 @@ async fn turns_codex_id(state: &AppState, token: &str, chat_id: &str) -> String 
     let (_, turns) = call(state, "GET", &format!("/api/v1/threads/{chat_id}/turns"), token, None).await;
     turns[0]["codex_turn_id"].as_str().unwrap().to_string()
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn the_diff_of_a_turn_is_kept_as_codex_last_reported_it(pool: PgPool) {
+    let state = AppState::new(pool.clone(), true, RuntimeConfig::default());
+    let mock = mock_app_server().await;
+    let token = login(&state, "diff@example.com").await;
+    let (_, chat_id) = setup(&state, &token, Some(&mock.url)).await;
+
+    let (status, turn) = call(&state, "POST", &format!("/api/v1/threads/{chat_id}/turns"), &token, Some(json!({ "input": "DIFF write the notes" }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{turn}");
+    assert_eq!(wait_for_turn(&state, &token, &chat_id, 0).await["status"], "completed");
+
+    let (status, diffs) = call(&state, "GET", &format!("/api/v1/threads/{chat_id}/diffs"), &token, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let diffs = diffs.as_array().expect("a list");
+    assert_eq!(diffs.len(), 1, "{diffs:?}");
+    assert_eq!(diffs[0]["diff"], "--- a/notes.md\n+++ b/notes.md\n+second\n");
+    assert_eq!(diffs[0]["input"], "DIFF write the notes");
+    assert_eq!(diffs[0]["seq"], 1);
+    assert_eq!(diffs[0]["turn_id"], turn["id"]);
+
+    // A turn with no changes has no diff.
+    let (_, _) = call(&state, "POST", &format!("/api/v1/threads/{chat_id}/turns"), &token, Some(json!({ "input": "just talk" }))).await;
+    assert_eq!(wait_for_turn(&state, &token, &chat_id, 1).await["status"], "completed");
+    let (_, diffs) = call(&state, "GET", &format!("/api/v1/threads/{chat_id}/diffs"), &token, None).await;
+    assert_eq!(diffs.as_array().unwrap().len(), 1);
+}

@@ -4,6 +4,7 @@ import { apiUrl } from "./config";
 
 import { api, ApiError, getToken } from "./client";
 import type {
+  TurnDiff,
   Artifact,
   ArtifactVersion,
   CatalogPlugin,
@@ -218,6 +219,8 @@ export const threads = {
   steer: (id: string, input: string) => api<Turn>("POST", `/threads/${id}/steer`, { input }),
   /** Asks the model to write a turn's reply as a document of the chat. The summary is a turn of its own. */
   summarize: (id: string, turnId: string) => api<Turn>("POST", `/threads/${id}/summaries`, { turn_id: turnId }),
+  /** The diff of everything each code turn changed, in turn order. */
+  diffs: (id: string) => api<TurnDiff[]>("GET", `/threads/${id}/diffs`),
   /** The finished commands and file changes of a thread, grouped by Codex turn. */
   work: (id: string) => api<{ codex_turn_id: string; items: unknown[] }[]>("GET", `/threads/${id}/work`),
   send: (id: string, body: { input: string; model?: string; effort?: string; attachment_ids?: string[]; skill_ids?: string[] }) =>

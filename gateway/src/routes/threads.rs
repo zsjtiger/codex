@@ -227,6 +227,7 @@ pub fn routes() -> Router<AppState> {
         .route("/threads/{id}/turns", get(list_turns).post(create_turn))
         .route("/threads/{id}/tool-uses", get(list_tool_uses))
         .route("/threads/{id}/work", get(list_work))
+        .route("/threads/{id}/diffs", get(list_diffs))
         .route("/threads/{id}/summaries", post(summarize))
         .route("/turns/{id}/interrupt", post(interrupt_turn))
         .route("/threads/{id}/review", post(start_review))
@@ -390,6 +391,38 @@ async fn list_work(
         }
     }
     Ok(Json(turns))
+}
+
+#[derive(Serialize, FromRow)]
+pub struct TurnDiff {
+    /// The chat's turn, when it is still known to the gateway.
+    turn_id: Option<Uuid>,
+    seq: Option<i32>,
+    input: Option<String>,
+    codex_turn_id: String,
+    /// The unified diff of everything the turn changed.
+    diff: String,
+}
+
+/// The diffs of a code chat's turns, in the order the turns happened.
+async fn list_diffs(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<TurnDiff>>, ApiError> {
+    let access = thread_access(&state.pool, id).await?;
+    require_role(&state.pool, access.workspace_id, user.id, Role::Member).await?;
+    let rows = sqlx::query_as::<_, TurnDiff>(
+        "SELECT t.id AS turn_id, t.seq, t.input, d.codex_turn_id, d.diff
+           FROM turn_diffs d
+           LEFT JOIN turns t ON t.thread_id = d.thread_id AND t.codex_turn_id = d.codex_turn_id
+          WHERE d.thread_id = $1
+          ORDER BY t.seq NULLS LAST, d.updated_at",
+    )
+    .bind(id)
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(rows))
 }
 
 async fn create_thread(
