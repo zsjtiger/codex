@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { connectors as connectorApi, marketplace as marketplaceApi, plugins as pluginApi, skills as skillApi } from "../api/resources";
 import type { CatalogPlugin, Connector, Plugin, PluginManifest, Skill } from "../api/types";
 import { parseManifest } from "../state/pluginDraft";
+import { CheckCircleIcon, ChevronDownIcon, PlugIcon, SearchIcon } from "./icons";
 import { PluginDetail } from "./PluginDetail";
+import { RowMenu, type MenuItem } from "./RowMenu";
 import { tx } from "../i18n";
 
 const filters = ["All", "Connectors", "Skills"] as const;
@@ -41,9 +43,10 @@ function connectorStatusLabel(c: Connector): string {
   }
 }
 
-/** The first letter of a name, shown in a square as the item's mark. */
-function markOf(name: string): string {
-  return (name.trim().charAt(0) || "?").toUpperCase();
+/** Names as a short line: the first three, then how many more. */
+function namesLine(names: string[]): string {
+  if (names.length <= 3) return names.join(", ");
+  return `${names.slice(0, 3).join(", ")} ${tx("and")} ${names.length - 3} ${tx("more")}`;
 }
 
 /**
@@ -99,6 +102,16 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError, onCreateWit
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
+
+  // Escape closes the Add menu.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [menuOpen]);
 
   const resetForm = () => {
     setFormKind(null);
@@ -227,87 +240,92 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError, onCreateWit
         : name.trim() && instructions.trim();
   const showSections = filter === "All" && !needle;
 
+  // Each row's "…" menu holds the actions for that item.
+  const pluginMenu = (plugin: Plugin): MenuItem[] => {
+    if (!isAdmin) return [];
+    return [
+      plugin.installed
+        ? { label: tx("Uninstall"), onClick: () => void act(() => pluginApi.uninstall(plugin.id), tx("Could not uninstall the plugin.")) }
+        : { label: tx("Install"), onClick: () => void act(() => pluginApi.install(plugin.id), tx("Could not install the plugin.")) },
+      { label: tx("Delete"), danger: true, onClick: () => removePlugin(plugin) },
+    ];
+  };
+  const connectorMenu = (c: Connector): MenuItem[] => {
+    const items: MenuItem[] = [];
+    if (c.enabled) {
+      items.push({
+        label: c.oauth_state === "signed_in" ? tx("Sign in again") : tx("Sign in"),
+        onClick: () => void signIn(c),
+      });
+    }
+    if (isAdmin) {
+      items.push({
+        label: c.enabled ? tx("Disconnect") : tx("Connect"),
+        onClick: () => void act(() => connectorApi.update(c.id, { enabled: !c.enabled }), tx("Could not update the connector.")),
+      });
+      items.push({
+        label: tx("Remove"),
+        danger: true,
+        onClick: () => void act(() => connectorApi.remove(c.id), tx("Could not remove the connector.")),
+      });
+    }
+    return items;
+  };
+  const skillMenu = (skill: Skill): MenuItem[] => {
+    if (!isAdmin) return [];
+    return [
+      {
+        label: skill.enabled ? tx("Turn off") : tx("Turn on"),
+        onClick: () => void act(() => skillApi.update(skill.id, { enabled: !skill.enabled }), tx("Could not update the item.")),
+      },
+      { label: tx("Delete"), danger: true, onClick: () => void act(() => skillApi.remove(skill.id), tx("Could not delete the item.")) },
+    ];
+  };
+
   const pluginRows = visiblePlugins.map((plugin) => (
-            <div key={plugin.id} className="list-row plugin-row">
-              <span className="plugin-mark">{markOf(plugin.name)}</span>
-              <div className="list-main clickable" onClick={() => setOpenPluginId(plugin.id)}>
-                <div className="list-title">
-                  {plugin.name} <span className="plugin-kind">{tx("Plugin")}</span>
-                </div>
-                <div className="list-sub">
-                  {plugin.description || `${plugin.manifest.skills.length} ${tx("skills")} · ${plugin.manifest.connectors.length} ${tx("connectors")}`}
-                </div>
-              </div>
-              <div className="list-actions">
-                <span className={`status ${plugin.installed ? "status-on" : ""}`}>
-                  {tx(plugin.installed ? "Installed" : "Not installed")}
-                </span>
-                {isAdmin &&
-                  (plugin.installed ? (
-                    <button onClick={() => void act(() => pluginApi.uninstall(plugin.id), tx("Could not uninstall the plugin."))}>{tx("Uninstall")}</button>
-                  ) : (
-                    <button className="primary" onClick={() => void act(() => pluginApi.install(plugin.id), tx("Could not install the plugin."))}>
-                      {tx("Install")}
-                    </button>
-                  ))}
-                {isAdmin && <button onClick={() => removePlugin(plugin)}>{tx("Delete")}</button>}
-              </div>
-            </div>
-          ));
+    <div key={plugin.id} className="pl-row">
+      <span className="pl-icon">
+        <PlugIcon />
+      </span>
+      <div className="pl-main" onClick={() => setOpenPluginId(plugin.id)}>
+        <div className="pl-name">{plugin.name}</div>
+        <div className="pl-meta">
+          {tx("Plugin")} · {plugin.catalog_key ? tx("By Baize") : tx("By you")}
+          {!plugin.installed && ` · ${tx("Not installed")}`}
+        </div>
+      </div>
+      <RowMenu items={pluginMenu(plugin)} label={plugin.name} />
+    </div>
+  ));
   const connectorRows = visibleConnectors.map((c) => (
-            <div key={c.id} className="list-row plugin-row">
-              <span className="plugin-mark">{markOf(c.name)}</span>
-              <div className="list-main">
-                <div className="list-title">
-                  {c.name} <span className="plugin-kind">{tx("Connector")}</span>
-                </div>
-                <div className="list-sub">
-                  <code>{c.key}</code> · {c.url}
-                </div>
-              </div>
-              <div className="list-actions">
-                {c.oauth_state && (
-                  <span className={`status ${c.oauth_state === "signed_in" ? "status-on" : ""}`} title={c.oauth_error ?? undefined}>
-                    {c.oauth_state === "pending" ? tx("Waiting for sign-in…") : c.oauth_state === "signed_in" ? tx("Signed in") : tx("Sign-in failed")}
-                  </span>
-                )}
-                <span className={`status ${c.enabled && c.status === "ready" ? "status-on" : ""}`} title={c.status_error ?? undefined}>
-                  {connectorStatusLabel(c)}
-                </span>
-                {c.enabled && (
-                  <button onClick={() => void signIn(c)} disabled={c.oauth_state === "pending"}>
-                    {c.oauth_state === "signed_in" ? tx("Sign in again") : tx("Sign in")}
-                  </button>
-                )}
-                {isAdmin && (
-                  <button onClick={() => void act(() => connectorApi.update(c.id, { enabled: !c.enabled }), tx("Could not update the connector."))}>
-                    {c.enabled ? tx("Disconnect") : tx("Connect")}
-                  </button>
-                )}
-                {isAdmin && <button onClick={() => void act(() => connectorApi.remove(c.id), tx("Could not remove the connector."))}>{tx("Remove")}</button>}
-              </div>
-            </div>
-          ));
+    <div key={c.id} className="pl-row">
+      <span className="pl-icon">
+        <PlugIcon />
+      </span>
+      <div className="pl-main">
+        <div className="pl-name">{c.name}</div>
+        <div className="pl-meta">
+          {tx("Connector")} · {connectorStatusLabel(c)}
+          {c.oauth_state === "pending" && ` · ${tx("Waiting for sign-in…")}`}
+        </div>
+      </div>
+      <RowMenu items={connectorMenu(c)} label={c.name} />
+    </div>
+  ));
   const skillRows = visibleSkills.map((skill) => (
-            <div key={skill.id} className="list-row plugin-row">
-              <span className="plugin-mark">{markOf(skill.name)}</span>
-              <div className="list-main">
-                <div className="list-title">
-                  {skill.name} <span className="plugin-kind">{tx(skill.kind === "plugin" ? "Plugin" : "Skill")}</span>
-                </div>
-                <div className="list-sub">{skill.description || skill.instructions.slice(0, 120)}</div>
-              </div>
-              <div className="list-actions">
-                <span className={`status ${skill.enabled ? "status-on" : ""}`}>{tx(skill.enabled ? "On" : "Off")}</span>
-                {isAdmin && (
-                  <button onClick={() => void act(() => skillApi.update(skill.id, { enabled: !skill.enabled }), tx("Could not update the item."))}>
-                    {skill.enabled ? tx("Turn off") : tx("Turn on")}
-                  </button>
-                )}
-                {isAdmin && <button onClick={() => void act(() => skillApi.remove(skill.id), tx("Could not delete the item."))}>{tx("Delete")}</button>}
-              </div>
-            </div>
-          ));
+    <div key={skill.id} className="pl-row">
+      <span className="pl-icon">
+        <PlugIcon />
+      </span>
+      <div className="pl-main">
+        <div className="pl-name">{skill.name}</div>
+        <div className="pl-meta">
+          {tx(skill.kind === "plugin" ? "Plugin" : "Skill")} · {tx("By you")} · {tx(skill.enabled ? "On" : "Off")}
+        </div>
+      </div>
+      <RowMenu items={skillMenu(skill)} label={skill.name} />
+    </div>
+  ));
 
   const openedPlugin = pluginItems.find((p) => p.id === openPluginId) ?? null;
   if (openedPlugin) {
@@ -346,13 +364,29 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError, onCreateWit
     );
   }
 
+  const addMenuItems: MenuItem[] = [
+    { label: tx("Upload plugin"), onClick: () => fileRef.current?.click() },
+    { label: tx("Create a plugin"), onClick: () => openForm("plugin") },
+    { label: tx("Create with Baize"), onClick: () => onCreateWithBaize() },
+    { label: tx("Browse marketplace"), onClick: () => setShowAllMarket(true) },
+    { label: tx("Add custom connector"), onClick: () => openForm("connector") },
+    { label: tx("Create a skill"), onClick: () => openForm("skill") },
+  ];
+  const pageMenuItems: MenuItem[] = [
+    { label: tx("Browse marketplace"), onClick: () => setShowAllMarket(true) },
+    ...(isAdmin ? [{ label: tx("Upload plugin"), onClick: () => fileRef.current?.click() }] : []),
+  ];
+
   return (
     <main className="customize-page">
       <div className="customize-inner">
         <button className="link-button" onClick={onBack}>
           {tx("← Back to chat")}
         </button>
-        <h1>{tx("Plugins")}</h1>
+        <div className="pl-title">
+          <h1>{tx("Plugins")}</h1>
+          <RowMenu items={pageMenuItems} label={tx("More")} />
+        </div>
 
         {failure && (
           <p className="banner error" role="alert">
@@ -363,22 +397,23 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError, onCreateWit
           </p>
         )}
 
-        <div className="plugin-toolbar">
-          <input
-            className="plugin-search"
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={tx("Search plugins")}
-            aria-label={tx("Search plugins")}
-          />
-          <div className="tabs" role="tablist">
+        <div className="pl-toolbar">
+          <label className="pl-search">
+            <SearchIcon />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={tx("Search plugins")}
+              aria-label={tx("Search plugins")}
+            />
+          </label>
+          <div className="segmented" role="tablist">
             {filters.map((name) => (
               <button
                 key={name}
                 role="tab"
                 aria-selected={filter === name}
-                className={`tab ${filter === name ? "tab-active" : ""}`}
                 onClick={() => {
                   setFilter(name);
                   resetForm();
@@ -389,48 +424,43 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError, onCreateWit
             ))}
           </div>
           {isAdmin && !formKind && (
-            <div className="plugin-add">
-              <button className="add-button" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
-                {tx("Add")} ▾
+            <div className="pl-add">
+              <button type="button" className="pl-add-button" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
+                {tx("Add")}
+                <ChevronDownIcon />
               </button>
               {menuOpen && (
                 <>
                   <div className="plugin-menu-backdrop" onClick={() => setMenuOpen(false)} />
                   <div className="plugin-menu" role="menu">
-                    <button role="menuitem" onClick={() => { setMenuOpen(false); fileRef.current?.click(); }}>
-                      {tx("Upload plugin")}
-                    </button>
-                    <button role="menuitem" onClick={() => { setMenuOpen(false); openForm("plugin"); }}>
-                      {tx("Create a plugin")}
-                    </button>
-                    <button role="menuitem" onClick={() => { setMenuOpen(false); onCreateWithBaize(); }}>
-                      {tx("Create with Baize")}
-                    </button>
-                    <button role="menuitem" onClick={() => { setMenuOpen(false); setShowAllMarket(true); }}>
-                      {tx("Browse marketplace")}
-                    </button>
-                    <button role="menuitem" onClick={() => { setMenuOpen(false); openForm("connector"); }}>
-                      {tx("Add custom connector")}
-                    </button>
-                    <button role="menuitem" onClick={() => { setMenuOpen(false); openForm("skill"); }}>
-                      {tx("Create a skill")}
-                    </button>
+                    {addMenuItems.map((item) => (
+                      <button
+                        key={item.label}
+                        role="menuitem"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          item.onClick();
+                        }}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
                   </div>
                 </>
               )}
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".json,application/json"
-                hidden
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  event.target.value = "";
-                  if (file) void readUpload(file);
-                }}
-              />
             </div>
           )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".json,application/json"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) void readUpload(file);
+            }}
+          />
         </div>
 
         {!isAdmin && <p className="muted small">{tx("Only workspace admins can add or change these.")}</p>}
@@ -504,35 +534,47 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError, onCreateWit
 
         {showSections ? (
           <>
-            <h2 className="plugin-section">{tx("Your plugins")}</h2>
-            {visiblePlugins.length === 0 && <p className="muted small">{tx("No plugins added yet. Add one from Most used below, or with the Add menu.")}</p>}
-            <div className="list plugin-list">{pluginRows}</div>
+            <div className="pl-section">
+              <h2>{tx("Your plugins")}</h2>
+            </div>
+            {visiblePlugins.length === 0 && (
+              <p className="muted small">{tx("No plugins added yet. Add one from Most used below, or with the Add menu.")}</p>
+            )}
+            <div className="pl-list">{pluginRows}</div>
+            {visiblePlugins.length > 0 && (
+              <p className="pl-footnote">{namesLine(visiblePlugins.map((p) => p.name))}</p>
+            )}
 
-            <h2 className="plugin-section">{tx("Most used")}</h2>
-            <div className="market-grid">
+            <div className="pl-section">
+              <h2>{tx("Most used")}</h2>
+            </div>
+            <div className="mu-grid">
               {(showAllMarket ? catalog : catalog.slice(0, 4)).map((entry) => {
                 const added = pluginItems.find((p) => p.catalog_key === entry.key);
                 return (
-                  <div key={entry.key} className="market-card">
-                    <div className="market-head">
-                      <span className="plugin-mark">{markOf(entry.name)}</span>
-                      <span className="market-name">{entry.name}</span>
+                  <div key={entry.key} className="mu-item">
+                    <span className="pl-icon">
+                      <PlugIcon />
+                    </span>
+                    <div className="mu-text">
+                      <div className="mu-name">
+                        {entry.name}
+                        <CheckCircleIcon width={14} height={14} />
+                      </div>
+                      <div className="mu-desc">{entry.description}</div>
+                      <div className="mu-meta">
+                        {tx("Plugin")} · {entry.publisher} · {entry.installs} {tx("installs")}
+                      </div>
                     </div>
-                    <div className="muted market-desc">{entry.description}</div>
-                    <div className="muted market-meta">
-                      {entry.publisher} · {entry.installs} {tx("installs")}
-                    </div>
-                    <div className="market-actions">
-                      {added?.installed ? (
-                        <span className="status status-on">{tx("Installed")}</span>
-                      ) : (
-                        isAdmin && (
-                          <button className="primary" onClick={() => void installFromCatalog(entry)}>
-                            {tx("Install")}
-                          </button>
-                        )
-                      )}
-                    </div>
+                    {added?.installed ? (
+                      <span className="status status-on">{tx("Installed")}</span>
+                    ) : (
+                      isAdmin && (
+                        <button className="primary mu-install" onClick={() => void installFromCatalog(entry)}>
+                          {tx("Install")}
+                        </button>
+                      )
+                    )}
                   </div>
                 );
               })}
@@ -543,14 +585,20 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError, onCreateWit
               </button>
             )}
 
-            <h2 className="plugin-section">{tx("Connectors and skills")}</h2>
-            <div className="list plugin-list">
-              {connectorRows}
-              {skillRows}
-            </div>
+            {(visibleConnectors.length > 0 || visibleSkills.length > 0) && (
+              <>
+                <div className="pl-section">
+                  <h2>{tx("Connectors and skills")}</h2>
+                </div>
+                <div className="pl-list">
+                  {connectorRows}
+                  {skillRows}
+                </div>
+              </>
+            )}
           </>
         ) : (
-          <div className="list plugin-list">
+          <div className="pl-list">
             {pluginRows}
             {connectorRows}
             {skillRows}
