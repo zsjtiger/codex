@@ -227,6 +227,7 @@ export function App() {
         onHiddenChange={changeHidden}
         user={codex.user}
         workspaceName={codex.workspace?.name ?? ""}
+        workspaceId={codex.workspace?.id ?? null}
         socketStatus={codex.socketStatus}
         onSignOut={() => void codex.signOut()}
       />

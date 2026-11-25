@@ -53,6 +53,7 @@ pub fn routes() -> Router<AppState> {
             get(get_one).patch(update).delete(delete),
         )
         .route("/environments/{id}/models", get(models))
+        .route("/environments/{id}/rate-limits", get(rate_limits))
 }
 
 #[derive(Serialize)]
@@ -258,4 +259,92 @@ async fn delete(
     tx.commit().await?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// One rate-limit window: how much of it is used, how long it is, and when it resets.
+#[derive(Serialize)]
+pub struct RateWindow {
+    used_percent: i64,
+    window_minutes: Option<i64>,
+    resets_at: Option<i64>,
+}
+
+#[derive(Serialize)]
+pub struct Credits {
+    has_credits: bool,
+    unlimited: bool,
+    balance: Option<String>,
+}
+
+/// The codex account's limits in an environment. Each environment has its own account, so these are the
+/// environment's, not a person's.
+#[derive(Serialize)]
+pub struct RateLimits {
+    limit_name: Option<String>,
+    plan_type: Option<String>,
+    primary: Option<RateWindow>,
+    secondary: Option<RateWindow>,
+    credits: Option<Credits>,
+    reached_type: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawWindow {
+    used_percent: i64,
+    window_duration_mins: Option<i64>,
+    resets_at: Option<i64>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawCredits {
+    has_credits: bool,
+    unlimited: bool,
+    balance: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawSnapshot {
+    limit_name: Option<String>,
+    plan_type: Option<String>,
+    primary: Option<RawWindow>,
+    secondary: Option<RawWindow>,
+    credits: Option<RawCredits>,
+    rate_limit_reached_type: Option<String>,
+}
+
+/// The codex account's rate limits for an environment, as codex reports them now.
+async fn rate_limits(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<RateLimits>, ApiError> {
+    let env = load(&state.pool, id).await?;
+    require_role(&state.pool, env.workspace_id, user.id, Role::Member).await?;
+    let lease = state
+        .runtime
+        .lease(id, env.endpoint.as_deref())
+        .await
+        .map_err(|err| ApiError::BadRequest(err.to_string()))?;
+    let response = lease
+        .request("account/rateLimits/read", serde_json::Value::Null)
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("could not read the limits: {err}")))?;
+    let snapshot: RawSnapshot = serde_json::from_value(response["rateLimits"].clone())
+        .map_err(|_| ApiError::Internal)?;
+    let window = |raw: RawWindow| RateWindow {
+        used_percent: raw.used_percent,
+        window_minutes: raw.window_duration_mins,
+        resets_at: raw.resets_at,
+    };
+    Ok(Json(RateLimits {
+        limit_name: snapshot.limit_name,
+        plan_type: snapshot.plan_type,
+        primary: snapshot.primary.map(window),
+        secondary: snapshot.secondary.map(window),
+        credits: snapshot.credits.map(|c| Credits { has_credits: c.has_credits, unlimited: c.unlimited, balance: c.balance }),
+        reached_type: snapshot.rate_limit_reached_type,
+    }))
 }

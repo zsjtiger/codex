@@ -46,6 +46,7 @@ interface SidebarProps {
   onHiddenChange: (hidden: NavLabel[]) => void;
   user: User;
   workspaceName: string;
+  workspaceId?: string | null;
   mode: Mode;
   onMode: (mode: Mode) => void;
   /** A chat (not a code session) is running, so the chat switch shows a dot. */
@@ -58,7 +59,7 @@ const statusLabel: Record<SocketStatus, string> = { open: "Live", connecting: tx
 
 export function Sidebar(props: SidebarProps) {
   const { t, locale, setLocale } = useI18n();
-  const { open, onOpenSettings, onRenameThread, onArchiveThread, onDeleteThread, onToggle, threads, activeId, activeView, onSelect, onNew, onSearch, onView, hidden, onHiddenChange, user, workspaceName, socketStatus, onSignOut, mode, onMode, chatActive } = props;
+  const { open, onOpenSettings, onRenameThread, onArchiveThread, onDeleteThread, onToggle, threads, activeId, activeView, onSelect, onNew, onSearch, onView, hidden, onHiddenChange, user, workspaceName, workspaceId, socketStatus, onSignOut, mode, onMode, chatActive } = props;
   const [chatMenuId, setChatMenuId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState("");
@@ -322,7 +323,7 @@ export function Sidebar(props: SidebarProps) {
           <ChevronIcon />
         </button>
       </footer>
-      {usageOpen && <UsageDialog onClose={() => setUsageOpen(false)} />}
+      {usageOpen && <UsageDialog workspaceId={workspaceId ?? null} onClose={() => setUsageOpen(false)} />}
     </aside>
   );
 }

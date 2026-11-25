@@ -87,6 +87,23 @@ export interface CommandResult {
   stderr: string;
 }
 
+/** One rate-limit window of a codex account. */
+export interface RateWindow {
+  used_percent: number;
+  window_minutes: number | null;
+  resets_at: number | null;
+}
+
+/** The codex account's limits in an environment. */
+export interface RateLimits {
+  limit_name: string | null;
+  plan_type: string | null;
+  primary: RateWindow | null;
+  secondary: RateWindow | null;
+  credits: { has_credits: boolean; unlimited: boolean; balance: string | null } | null;
+  reached_type: string | null;
+}
+
 export interface Turn {
   id: string;
   /** The assistant's reply, kept on the turn once its messages complete. */

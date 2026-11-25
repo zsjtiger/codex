@@ -232,6 +232,19 @@ pub async fn mock_app_server() -> MockServer {
                             };
                             out_tx.send(reply(reply_value)).unwrap();
                         }
+                        "account/rateLimits/read" => {
+                            // The codex account's limits: a five-hour window and a weekly one, with credits.
+                            out_tx
+                                .send(reply(json!({ "rateLimits": {
+                                    "limitName": null,
+                                    "planType": "plus",
+                                    "primary": { "usedPercent": 42, "windowDurationMins": 300, "resetsAt": 1800000000 },
+                                    "secondary": { "usedPercent": 7, "windowDurationMins": 10080, "resetsAt": null },
+                                    "credits": { "hasCredits": true, "unlimited": false, "balance": "12.50" },
+                                    "rateLimitReachedType": null
+                                } })))
+                                .unwrap();
+                        }
                         "turn/steer" => {
                             out_tx
                                 .send(reply(json!({ "turnId": msg["params"]["expectedTurnId"] })))

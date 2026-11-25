@@ -1,14 +1,91 @@
 import { useEffect, useState } from "react";
-import { usage } from "../api/resources";
-import type { UsageReport } from "../api/types";
+import { environments, usage } from "../api/resources";
+import type { Environment, RateLimits, RateWindow, UsageReport } from "../api/types";
 import { tx } from "../i18n";
 
 const RANGES = [7, 30, 90];
 
 const format = (n: number) => n.toLocaleString();
 
-/** Shows the signed-in user's token usage for a chosen period. Only used amounts are shown. */
-export function UsageDialog({ onClose }: { onClose: () => void }) {
+/** A window's length in words: "5 hours", "7 days". */
+function windowLabel(minutes: number | null): string {
+  if (minutes === null) return tx("Limit");
+  if (minutes % 1440 === 0) return `${minutes / 1440} ${tx("days")}`;
+  if (minutes % 60 === 0) return `${minutes / 60} ${tx("hours")}`;
+  return `${minutes} ${tx("minutes")}`;
+}
+
+function WindowRow({ window }: { window: RateWindow }) {
+  const used = Math.min(100, Math.max(0, window.used_percent));
+  return (
+    <div className="limit-window">
+      <div className="usage-row">
+        <span>{windowLabel(window.window_minutes)}</span>
+        <strong>{used}% {tx("used")}</strong>
+      </div>
+      <div className="limit-bar" role="meter" aria-valuenow={used} aria-valuemin={0} aria-valuemax={100}>
+        <span style={{ width: `${used}%` }} />
+      </div>
+      <div className="muted small">
+        {window.resets_at !== null ? `${tx("Resets")} ${new Date(window.resets_at * 1000).toLocaleString()}` : tx("No reset time")}
+      </div>
+    </div>
+  );
+}
+
+/** One environment's codex account: its plan, its windows, and its credits. */
+function EnvironmentLimits({ environment }: { environment: Environment }) {
+  const [limits, setLimits] = useState<RateLimits | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let current = true;
+    environments
+      .rateLimits(environment.id)
+      .then((next) => current && setLimits(next))
+      .catch((err) => current && setError(err instanceof Error ? err.message : tx("Could not read the limits.")));
+    return () => {
+      current = false;
+    };
+  }, [environment.id]);
+  return (
+    <section className="limit-environment">
+      <h3>{environment.name}</h3>
+      {error && <p className="muted small">{error}</p>}
+      {!error && !limits && <p className="muted">{tx("Loading…")}</p>}
+      {limits && (
+        <>
+          {limits.plan_type && <div className="muted small">{tx("Plan")}: {limits.plan_type}</div>}
+          {limits.reached_type && <p className="banner error">{tx("A limit has been reached.")}</p>}
+          {limits.primary && <WindowRow window={limits.primary} />}
+          {limits.secondary && <WindowRow window={limits.secondary} />}
+          {limits.credits && (
+            <div className="usage-row">
+              <span>{tx("Credits")}</span>
+              <strong>
+                {limits.credits.unlimited ? tx("Unlimited") : limits.credits.has_credits ? limits.credits.balance ?? tx("Available") : tx("None")}
+              </strong>
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+/** Shows the signed-in user's token usage for a chosen period, and the codex limits of the workspace's environments. */
+export function UsageDialog({ workspaceId, onClose }: { workspaceId: string | null; onClose: () => void }) {
+  const [envs, setEnvs] = useState<Environment[]>([]);
+  useEffect(() => {
+    if (!workspaceId) return;
+    let current = true;
+    environments
+      .list(workspaceId)
+      .then((next) => current && setEnvs(next))
+      .catch(() => current && setEnvs([]));
+    return () => {
+      current = false;
+    };
+  }, [workspaceId]);
   const [days, setDays] = useState(30);
   const [report, setReport] = useState<UsageReport | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -82,6 +159,16 @@ export function UsageDialog({ onClose }: { onClose: () => void }) {
               </ul>
             )}
           </>
+        )}
+
+        {envs.length > 0 && (
+          <div className="limit-list">
+            <h2 className="limit-heading">{tx("Codex limits")}</h2>
+            <p className="muted small">{tx("Each environment has its own codex account.")}</p>
+            {envs.map((environment) => (
+              <EnvironmentLimits key={environment.id} environment={environment} />
+            ))}
+          </div>
         )}
       </div>
     </div>

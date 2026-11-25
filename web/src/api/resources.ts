@@ -4,6 +4,7 @@ import { apiUrl } from "./config";
 
 import { api, ApiError, getToken } from "./client";
 import type {
+  RateLimits,
   CheckoutEntry,
   CommandResult,
   CheckoutFile,
@@ -161,6 +162,8 @@ export interface ModelOption {
 export const environments = {
   list: (ws: string) => api<Environment[]>("GET", `/workspaces/${ws}/environments`),
   models: (id: string) => api<ModelOption[]>("GET", `/environments/${id}/models`),
+  /** The codex account's rate limits in this environment. */
+  rateLimits: (id: string) => api<RateLimits>("GET", `/environments/${id}/rate-limits`),
 };
 
 /** GitHub repositories linked to the workspace for code sessions. */

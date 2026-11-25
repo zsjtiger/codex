@@ -1170,3 +1170,12 @@ html.desktop .app { height: 100vh; margin-top: 0; }
   font: inherit; padding: 6px 8px; border: 1px solid var(--border, #e5e0d6); border-radius: 6px; background: transparent; color: inherit;
 }
 .elicitation-field input[type="checkbox"] { width: auto; align-self: flex-start; margin: 0; }
+
+/* Codex limits per environment, under the token usage in the usage dialog. */
+.limit-list { margin-top: 18px; display: flex; flex-direction: column; gap: 14px; }
+.limit-heading { font-size: 16px; margin: 0; }
+.limit-environment { border-top: 1px solid var(--border, #e5e0d6); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.limit-environment h3 { font-size: 14px; margin: 0; }
+.limit-window { display: flex; flex-direction: column; gap: 4px; }
+.limit-bar { height: 6px; border-radius: 3px; background: var(--border, #e5e0d6); overflow: hidden; }
+.limit-bar span { display: block; height: 100%; background: var(--accent, #d97757); }
