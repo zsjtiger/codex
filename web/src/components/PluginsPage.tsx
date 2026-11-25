@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { connectors as connectorApi, marketplace as marketplaceApi, plugins as pluginApi, skills as skillApi } from "../api/resources";
 import type { CatalogPlugin, Connector, Plugin, PluginManifest, Skill } from "../api/types";
 import { parseManifest } from "../state/pluginDraft";
+import { PluginDetail } from "./PluginDetail";
 import { tx } from "../i18n";
 
 const filters = ["All", "Connectors", "Skills"] as const;
@@ -65,6 +66,8 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError, onCreateWit
   const [manifestText, setManifestText] = useState("");
   const [catalog, setCatalog] = useState<CatalogPlugin[]>([]);
   const [showAllMarket, setShowAllMarket] = useState(false);
+  // The plugin whose detail page is open, if any.
+  const [openPluginId, setOpenPluginId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Errors show on this page: the app's notice is only drawn on the chat page.
@@ -227,7 +230,7 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError, onCreateWit
   const pluginRows = visiblePlugins.map((plugin) => (
             <div key={plugin.id} className="list-row plugin-row">
               <span className="plugin-mark">{markOf(plugin.name)}</span>
-              <div className="list-main">
+              <div className="list-main clickable" onClick={() => setOpenPluginId(plugin.id)}>
                 <div className="list-title">
                   {plugin.name} <span className="plugin-kind">{tx("Plugin")}</span>
                 </div>
@@ -305,6 +308,43 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError, onCreateWit
               </div>
             </div>
           ));
+
+  const openedPlugin = pluginItems.find((p) => p.id === openPluginId) ?? null;
+  if (openedPlugin) {
+    const deleteOpened = async () => {
+      if (openedPlugin.installed && !window.confirm(tx("Delete this plugin? Its installed skills and connectors are removed too."))) return;
+      try {
+        await pluginApi.remove(openedPlugin.id);
+        setOpenPluginId(null);
+        await reload();
+      } catch (err) {
+        fail(err, tx("Could not delete the plugin."));
+      }
+    };
+    return (
+      <main className="customize-page">
+        <div className="customize-inner">
+          {failure && (
+            <p className="banner error" role="alert">
+              {failure}
+              <button className="banner-close" onClick={() => setFailure(null)} aria-label={tx("Dismiss")}>
+                ×
+              </button>
+            </p>
+          )}
+          <PluginDetail
+            plugin={openedPlugin}
+            connectors={connectorItems}
+            isAdmin={isAdmin}
+            onBack={() => setOpenPluginId(null)}
+            onInstall={() => void act(() => pluginApi.install(openedPlugin.id), tx("Could not install the plugin."))}
+            onUninstall={() => void act(() => pluginApi.uninstall(openedPlugin.id), tx("Could not uninstall the plugin."))}
+            onDelete={() => void deleteOpened()}
+          />
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="customize-page">
