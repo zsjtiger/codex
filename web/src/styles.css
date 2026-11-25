@@ -1012,4 +1012,7 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 .market-meta { font-size: 11px; }
 .market-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; min-height: 26px; }
 .market-actions button { height: 26px; padding: 0 10px; font-size: 12px; }
-.reply-add-plugin { width: auto; padding: 0 10px; font-size: 13px; }
+.plugin-design-card { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.plugin-design-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.plugin-design-card button { flex: none; }
+

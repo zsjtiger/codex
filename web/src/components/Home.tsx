@@ -17,8 +17,8 @@ interface HomeProps {
   /** Text the composer starts with, from the plugins page. */
   prefill?: string | null;
   onPrefillUsed?: () => void;
-  /** Adds a plugin a reply designed, as a draft for the plugins page to review. */
-  onAddPlugin?: (draft: PluginDraft) => void;
+  /** Saves a plugin a reply designed into the workspace. */
+  onAddPlugin?: (draft: PluginDraft) => Promise<void>;
   user: User;
   workspaceId: string;
   thread: Thread | null;

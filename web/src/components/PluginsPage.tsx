@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { connectors as connectorApi, marketplace as marketplaceApi, plugins as pluginApi, skills as skillApi } from "../api/resources";
 import type { CatalogPlugin, Connector, Plugin, PluginManifest, Skill } from "../api/types";
-import { type PluginDraft, parseManifest } from "../state/pluginDraft";
+import { parseManifest } from "../state/pluginDraft";
 import { tx } from "../i18n";
 
 const filters = ["All", "Connectors", "Skills"] as const;
@@ -22,9 +22,6 @@ interface PluginsPageProps {
   onError: (message: string) => void;
   /** Opens a new chat that designs a plugin with Baize. */
   onCreateWithBaize: () => void;
-  /** A design made in a chat, to read into the form for review. */
-  initialDraft: PluginDraft | null;
-  onDraftUsed: () => void;
 }
 
 function connectorStatusLabel(c: Connector): string {
@@ -53,7 +50,7 @@ function markOf(name: string): string {
  * the workspace; uninstalling takes them out again. Connectors are MCP servers codex can call from new
  * chats; skills are instruction bundles added to new chats. Only admins change any of them.
  */
-export function PluginsPage({ workspaceId, isAdmin, onBack, onError, onCreateWithBaize, initialDraft, onDraftUsed }: PluginsPageProps) {
+export function PluginsPage({ workspaceId, isAdmin, onBack, onError, onCreateWithBaize }: PluginsPageProps) {
   const [filter, setFilter] = useState<Filter>("All");
   const [query, setQuery] = useState("");
   const [pluginItems, setPluginItems] = useState<Plugin[]>([]);
@@ -108,17 +105,6 @@ export function PluginsPage({ workspaceId, isAdmin, onBack, onError, onCreateWit
     setUrl("");
     setManifestText("");
   };
-
-  // A plugin designed in a chat is read into the form, where it is reviewed before it is added.
-  useEffect(() => {
-    if (!initialDraft) return;
-    setFormKind("plugin");
-    setName(initialDraft.name);
-    setDescription(initialDraft.description);
-    setManifestText(JSON.stringify(initialDraft.manifest, null, 2));
-    onDraftUsed();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialDraft]);
 
   const openForm = (kind: FormKind) => {
     resetForm();

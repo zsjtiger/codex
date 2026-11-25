@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invites as invitesApi, projects as projectApi } from "./api/resources";
+import { invites as invitesApi, plugins as pluginApi, projects as projectApi } from "./api/resources";
 import type { Artifact, Project, ScheduledTask } from "./api/types";
 import { ArtifactsPage } from "./components/ArtifactsPage";
 import { PluginsPage } from "./components/PluginsPage";
@@ -38,8 +38,6 @@ export function App() {
   const returnedFromGitHub = new URLSearchParams(window.location.search).has("github");
   const [view, setView] = useState<View>(returnedFromGitHub ? "code" : "chat");
   const [mode, setMode] = useState<"chat" | "code">(returnedFromGitHub ? "code" : "chat");
-  // A plugin a chat designed, waiting for the plugins page to read it into its form.
-  const [pluginDraft, setPluginDraft] = useState<PluginDraft | null>(null);
   // Text the chat composer starts with (the Baize request), used once.
   const [prefill, setPrefill] = useState<string | null>(null);
   // The project the Projects page opens on, set when a search result points into a project.
@@ -193,11 +191,15 @@ export function App() {
     setPrefill(draftPrompt(tx("（在这里描述你想要的插件）")));
     closeOnPhone();
   };
-  // A plugin a chat designed goes to the plugins page, to be reviewed before it is added.
-  const addPluginFromChat = (draft: PluginDraft) => {
-    setPluginDraft(draft);
-    setView("customize");
-    closeOnPhone();
+  // "Save plugin" on a design in a chat: the plugin is added to the workspace, ready to install.
+  const savePluginFromChat = async (draft: PluginDraft) => {
+    if (!workspaceId) return;
+    try {
+      await pluginApi.create(workspaceId, { name: draft.name, description: draft.description, manifest: draft.manifest });
+    } catch (err) {
+      onError(err instanceof Error ? err.message : tx("Could not save the plugin."));
+      throw err;
+    }
   };
   const activeThread = codex.threads.find((t) => t.id === codex.activeId) ?? null;
 
@@ -304,8 +306,6 @@ export function App() {
             onBack={() => setView("chat")}
             onError={onError}
             onCreateWithBaize={createPluginWithBaize}
-            initialDraft={pluginDraft}
-            onDraftUsed={() => setPluginDraft(null)}
           />
         )}
         {view === "scheduled" && (
@@ -321,7 +321,7 @@ export function App() {
         )}
         {view === "chat" && (
           <Home
-            onAddPlugin={addPluginFromChat}
+            onAddPlugin={savePluginFromChat}
             prefill={prefill}
             onPrefillUsed={() => setPrefill(null)}
             user={codex.user}
