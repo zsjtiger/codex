@@ -37,6 +37,8 @@ fn union_validator(union: &str) -> jsonschema::Validator {
 const NOT_IN_SCHEMA: &[&str] = &[
     "gitDiffToRemote",
     "memory/reset",
+    "server/diagnostics",
+    "thread/settings/update",
     "memory/status",
     "thread/backgroundTerminals/clean",
     "thread/backgroundTerminals/list",
@@ -175,6 +177,18 @@ async fn exercise_features(state: &AppState, pool: &PgPool, token: &str, mock: &
     api("GET", format!("/environments/{env}/codex-plugins"), None).await;
     api("GET", format!("/environments/{env}/memory"), None).await;
     api("POST", format!("/environments/{env}/memory/reset"), None).await;
+    api("GET", format!("/environments/{env}/config/requirements"), None).await;
+    api("PUT", format!("/environments/{env}/config/value"), Some(json!({ "key_path": "model", "value": "gpt-5", "merge_strategy": "replace" }))).await;
+    api("POST", format!("/environments/{env}/config/batch"), Some(json!({ "edits": [{ "key_path": "features.goals", "value": true, "merge_strategy": "upsert" }] }))).await;
+    api("POST", format!("/environments/{env}/config/mcp-reload"), None).await;
+    api("GET", format!("/environments/{env}/experimental-features"), None).await;
+    api("PUT", format!("/environments/{env}/experimental-features"), Some(json!({ "enablement": { "goals": true } }))).await;
+    api("POST", format!("/environments/{env}/codex-skills/config"), Some(json!({ "name": "alpha", "enabled": true }))).await;
+    api("GET", format!("/environments/{env}/diagnostics"), None).await;
+    api("GET", format!("/threads/{chat}/hooks"), None).await;
+    api("PUT", format!("/threads/{chat}/settings"), Some(json!({ "model": "gpt-5", "effort": "high" }))).await;
+    api("POST", format!("/threads/{chat}/mcp/tool-call"), Some(json!({ "server": "alphaxiv", "tool": "search_papers", "arguments": { "query": "x" } }))).await;
+    api("POST", format!("/threads/{chat}/mcp/resource-read"), Some(json!({ "server": "alphaxiv", "uri": "paper://1" }))).await;
     api("GET", format!("/threads/{chat}/diffs"), None).await;
     let _ = StatusCode::OK;
 }
@@ -318,7 +332,19 @@ const RESPONSE_TYPES: &[(&str, &str)] = &[
     ("mcpServerStatus/list", "ListMcpServerStatusResponse"),
     ("skills/list", "SkillsListResponse"),
     ("plugin/installed", "PluginInstalledResponse"),
+    ("configRequirements/read", "ConfigRequirementsReadResponse"),
+    ("config/value/write", "ConfigWriteResponse"),
+    ("config/batchWrite", "ConfigWriteResponse"),
+    ("experimentalFeature/list", "ExperimentalFeatureListResponse"),
+    ("experimentalFeature/enablement/set", "ExperimentalFeatureEnablementSetResponse"),
+    ("skills/config/write", "SkillsConfigWriteResponse"),
+    ("hooks/list", "HooksListResponse"),
+    ("mcpServer/tool/call", "McpServerToolCallResponse"),
+    ("mcpServer/resource/read", "McpResourceReadResponse"),
 ];
+
+/// Requests whose answer the schema gives no result type for: the gateway ignores what they return.
+const NO_RESULT_TYPE: &[&str] = &["config/mcpServer/reload"];
 
 /// Removes every `required` list from a schema, at every depth.
 fn without_required(value: &mut Value) {
@@ -378,7 +404,7 @@ async fn every_answer_the_mock_gives_matches_the_protocol(pool: PgPool) {
             continue;
         }
         let Some(name) = table.get(method.as_str()) else {
-            if NOT_IN_SCHEMA.contains(&method.as_str()) {
+            if NOT_IN_SCHEMA.contains(&method.as_str()) || NO_RESULT_TYPE.contains(&method.as_str()) {
                 continue;
             }
             wrong.push(format!("{method}: no response type is listed for it in RESPONSE_TYPES"));

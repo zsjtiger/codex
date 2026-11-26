@@ -103,6 +103,20 @@ Each item says what to do, what the gateway assumes, and what to change if Codex
 - Do: revert a turn, then fork the chat from a turn before it.
 - Check: the fork does not contain the reverted turns (`fork_thread` skips them).
 
+## 11. Config, features and member runtime calls (`config/value/write`, `config/batchWrite`, `config/mcpServer/reload`, `experimentalFeature/*`, `skills/config/write`, `server/diagnostics`, `thread/settings/update`, `hooks/list`, `mcpServer/tool/call`, `mcpServer/resource/read`)
+
+- Do: as an admin, read the config requirements, set a harmless value (for example `features.goals`), reload the MCP
+  servers, toggle an experimental feature, switch a skill off and on, and open the diagnostics. As a member, change the
+  chat's model and effort, list the hooks, call an MCP tool, and read an MCP resource.
+- Assumed: `config/value/write` and `config/batchWrite` answer with `ConfigWriteResponse` (the batch response type is
+  inferred, not in the schema). `config/mcpServer/reload` answers with no result type.
+- Not in the bundled schema, so confirm them here: `thread/settings/update` takes `threadId`, `model` and `effort`
+  (the schema has `effort` only on the `ThreadSettings` notification); `server/diagnostics` returns `process` and
+  `gauges`; `hooks/list` accepts `cwds: []`.
+- Check: an edit appears in the config file, and a secret-looking key is refused by the gateway, not by codex. A member
+  gets 403 on every admin route. The audit log shows key paths and tool names, never values or arguments.
+- If not: fix the parameter names in `routes/thread_runtime.rs` and `routes/codex_config.rs`, and the matching mock arms.
+
 ## After the checks
 
 - Record the result of each item in a short note: "as assumed", or what Codex actually sent.

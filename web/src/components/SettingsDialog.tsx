@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { memory as memoryApi } from "../api/resources";
 import { CodexMemoryList } from "./CodexMemory";
+import { CodexAdminSection } from "./CodexAdmin";
 import type { MemoryImportResult, MemoryNote, Thread, User, Workspace } from "../api/types";
 import { AuditSection, MembersSection, WorkspaceSection } from "./WorkspaceSections";
 import { useI18n } from "../i18n";
@@ -58,7 +59,7 @@ interface SettingsDialogProps {
   onError: (message: string) => void;
 }
 
-type Section = "account" | "memory" | "workspace" | "members" | "audit";
+type Section = "account" | "memory" | "workspace" | "members" | "audit" | "codex";
 
 /** Account settings. Memory holds notes that are added to the user's new chats when it is on. */
 export function SettingsDialog({ user, workspace, threads, onClose, onError }: SettingsDialogProps) {
@@ -246,6 +247,7 @@ export function SettingsDialog({ user, workspace, threads, onClose, onError }: S
                 <button className={section === "workspace" ? "settings-nav-item settings-nav-active" : "settings-nav-item"} onClick={() => setSection("workspace")}>{t("settings.title")}</button>
                 <button className={section === "members" ? "settings-nav-item settings-nav-active" : "settings-nav-item"} onClick={() => setSection("members")}>{t("settings.members")}</button>
                 <button className={section === "audit" ? "settings-nav-item settings-nav-active" : "settings-nav-item"} onClick={() => setSection("audit")}>{t("settings.auditLog")}</button>
+                <button className={section === "codex" ? "settings-nav-item settings-nav-active" : "settings-nav-item"} onClick={() => setSection("codex")}>{tx("Codex")}</button>
               </>
             )}
           </nav>
@@ -283,6 +285,7 @@ export function SettingsDialog({ user, workspace, threads, onClose, onError }: S
             {section === "workspace" && isAdmin && workspace && <WorkspaceSection workspace={workspace} onError={onError} />}
             {section === "members" && isAdmin && workspace && <MembersSection workspace={workspace} user={user} onError={onError} />}
             {section === "audit" && isAdmin && workspace && <AuditSection workspace={workspace} onError={onError} />}
+            {section === "codex" && isAdmin && workspace && <CodexAdminSection workspaceId={workspace.id} onError={onError} />}
 
             {section === "memory" && (
               <>

@@ -134,6 +134,29 @@ export interface McpServer {
 }
 
 /** Codex's own memory in an environment: past threads it has learned from, and whether it is ready. */
+/** One edit to codex's config. Values are JSON; a secret-looking key is refused by the gateway. */
+export interface ConfigValueWrite {
+  key_path: string;
+  value: unknown;
+  merge_strategy: "replace" | "upsert";
+  expected_version?: string | null;
+}
+
+/** An experimental feature codex has, and whether it is on in this environment. */
+export interface ExperimentalFeature {
+  name: string;
+  stage: string;
+  displayName: string | null;
+  description: string | null;
+  enabled: boolean;
+  defaultEnabled: boolean;
+}
+
+export interface ExperimentalFeatures {
+  data: ExperimentalFeature[];
+  nextCursor: string | null;
+}
+
 export interface CodexMemory {
   consolidated_threads: number;
   ready: boolean;

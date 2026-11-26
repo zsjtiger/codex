@@ -127,7 +127,7 @@ async fn models(
 
 const COLUMNS: &str = "id, workspace_id, name, status, endpoint, created_at, updated_at";
 
-async fn load(pool: &sqlx::PgPool, id: Uuid) -> Result<EnvironmentView, ApiError> {
+pub(super) async fn load(pool: &sqlx::PgPool, id: Uuid) -> Result<EnvironmentView, ApiError> {
     let sql = format!("SELECT {COLUMNS} FROM environments WHERE id = $1");
     Ok(sqlx::query_as::<_, EnvironmentView>(&sql)
         .bind(id)

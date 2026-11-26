@@ -431,6 +431,48 @@ pub async fn mock_app_server() -> MockServer {
                                 "threadId": "thr_mock", "sourceTurnId": source,
                                 "result": { "type": "completed", "text": "Now run the tests." } } }).to_string()).unwrap();
                         }
+                        "configRequirements/read" => {
+                            out_tx.send(reply(json!({ "requirements": null, "supportsIndependentSpeedModes": false }))).unwrap();
+                        }
+                        "config/value/write" | "config/batchWrite" => {
+                            out_tx
+                                .send(reply(json!({ "filePath": "/home/x/.codex/config.toml", "status": "okOverridden", "version": "v7", "overriddenMetadata": null })))
+                                .unwrap();
+                        }
+                        "experimentalFeature/list" => {
+                            out_tx.send(reply(json!({ "data": [
+                                { "name": "goals", "stage": "beta", "displayName": "Goals", "description": "Long-running goals.", "announcement": null,
+                                  "enabled": false, "defaultEnabled": false },
+                                { "name": "hooks", "stage": "stable", "displayName": null, "description": null, "announcement": null,
+                                  "enabled": true, "defaultEnabled": true }
+                            ], "nextCursor": null }))).unwrap();
+                        }
+                        "experimentalFeature/enablement/set" => {
+                            out_tx.send(reply(json!({ "enablement": msg["params"]["enablement"].clone() }))).unwrap();
+                        }
+                        "skills/config/write" => {
+                            out_tx.send(reply(json!({ "effectiveEnabled": msg["params"]["enabled"].clone() }))).unwrap();
+                        }
+                        "server/diagnostics" => {
+                            out_tx.send(reply(json!({ "process": { "pid": 4321, "uptimeSeconds": 60 }, "gauges": { "threads": 2 } }))).unwrap();
+                        }
+                        "hooks/list" => {
+                            out_tx.send(reply(json!({ "data": [] }))).unwrap();
+                        }
+                        "thread/settings/update" => {
+                            out_tx.send(reply(json!({}))).unwrap();
+                        }
+                        "mcpServer/tool/call" => {
+                            out_tx
+                                .send(reply(json!({ "content": [{ "type": "text", "text": "3 papers found" }], "isError": false, "structuredContent": null, "_meta": null })))
+                                .unwrap();
+                        }
+                        "mcpServer/resource/read" => {
+                            let uri = msg["params"]["uri"].clone();
+                            out_tx
+                                .send(reply(json!({ "contents": [{ "uri": uri, "mimeType": "text/plain", "text": "resource body" }], "originCallId": null })))
+                                .unwrap();
+                        }
                         "memory/reset" => {
                             out_tx.send(reply(json!({}))).unwrap();
                         }

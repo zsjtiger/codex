@@ -5,7 +5,7 @@ use axum::{
     Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::{get, post},
+    routing::{get, post, put},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -27,6 +27,10 @@ pub fn routes() -> Router<AppState> {
         .route("/threads/{id}/background-terminals", get(list_terminals))
         .route("/threads/{id}/background-terminals/clean", post(clean_terminals))
         .route("/threads/{id}/background-terminals/{process_id}/terminate", post(terminate_terminal))
+        .route("/threads/{id}/hooks", get(list_hooks))
+        .route("/threads/{id}/settings", put(update_settings))
+        .route("/threads/{id}/mcp/tool-call", post(call_mcp_tool))
+        .route("/threads/{id}/mcp/resource-read", post(read_mcp_resource))
         .route("/turns/{id}/prediction", post(request_prediction))
 }
 
@@ -307,4 +311,155 @@ async fn request_prediction(State(state): State<AppState>, user: CurrentUser, Pa
         .await
         .map_err(|err| ApiError::BadRequest(format!("could not ask for a suggestion: {err}")))?;
     Ok(StatusCode::ACCEPTED)
+}
+
+/// The hooks codex has configured for the environment's working folders. Members can read them.
+async fn list_hooks(State(state): State<AppState>, user: CurrentUser, Path(id): Path<Uuid>) -> Result<Json<Value>, ApiError> {
+    let chat = member(&state, id, &user).await?;
+    let lease = lease_for(&state, &chat).await?;
+    let response = lease
+        .request("hooks/list", json!({ "cwds": [] }))
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("could not list the hooks: {err}")))?;
+    Ok(Json(response))
+}
+
+#[derive(Deserialize)]
+pub struct SettingsChange {
+    /// The model to use from now on. Only these two settings can be changed here: the sandbox, approvals,
+    /// and the folder stay as the chat was started with.
+    model: Option<String>,
+    effort: Option<String>,
+}
+
+/// Changes the chat's model or reasoning effort. Each change is recorded in the audit log.
+async fn update_settings(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<SettingsChange>,
+) -> Result<StatusCode, ApiError> {
+    let chat = member(&state, id, &user).await?;
+    let thread = started(&chat)?.to_string();
+    if req.model.is_none() && req.effort.is_none() {
+        return Err(ApiError::BadRequest("name a model or an effort to change".to_string()));
+    }
+    let mut params = json!({ "threadId": thread });
+    if let Some(model) = &req.model {
+        let model = model.trim();
+        if model.is_empty() || model.len() > 200 {
+            return Err(ApiError::BadRequest("the model name is 1 to 200 characters".to_string()));
+        }
+        params["model"] = json!(model);
+    }
+    if let Some(effort) = &req.effort {
+        let effort = effort.trim();
+        if effort.is_empty() || effort.len() > 64 {
+            return Err(ApiError::BadRequest("the effort is 1 to 64 characters".to_string()));
+        }
+        params["effort"] = json!(effort);
+    }
+    let lease = lease_for(&state, &chat).await?;
+    lease
+        .request("thread/settings/update", params.clone())
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("could not change the settings: {err}")))?;
+    audit::record(
+        &state.pool,
+        chat.workspace_id,
+        user.id,
+        "thread.settings_update",
+        "thread",
+        id,
+        json!({ "model": req.model, "effort": req.effort }),
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub struct McpToolCall {
+    server: String,
+    tool: String,
+    arguments: Option<Value>,
+}
+
+/// Calls a tool on one of codex's MCP servers, for the chat. The arguments are passed on but not recorded in
+/// the audit log, since they may hold private text.
+async fn call_mcp_tool(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<McpToolCall>,
+) -> Result<Json<Value>, ApiError> {
+    let chat = member(&state, id, &user).await?;
+    let thread = started(&chat)?.to_string();
+    check_mcp_name(&req.server, "server")?;
+    check_mcp_name(&req.tool, "tool")?;
+    if req.arguments.as_ref().is_some_and(|value| !value.is_object() && !value.is_null()) {
+        return Err(ApiError::BadRequest("the arguments are an object".to_string()));
+    }
+    let lease = lease_for(&state, &chat).await?;
+    let response = lease
+        .request(
+            "mcpServer/tool/call",
+            json!({ "threadId": thread, "server": req.server, "tool": req.tool, "arguments": req.arguments }),
+        )
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("the tool call failed: {err}")))?;
+    audit::record(
+        &state.pool,
+        chat.workspace_id,
+        user.id,
+        "thread.mcp_tool_call",
+        "thread",
+        id,
+        json!({ "server": req.server, "tool": req.tool }),
+    )
+    .await?;
+    Ok(Json(response))
+}
+
+#[derive(Deserialize)]
+pub struct McpResourceRead {
+    server: String,
+    uri: String,
+}
+
+/// Reads a resource from one of codex's MCP servers, for the chat. The address is not recorded in the audit log.
+async fn read_mcp_resource(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<McpResourceRead>,
+) -> Result<Json<Value>, ApiError> {
+    let chat = member(&state, id, &user).await?;
+    let thread = started(&chat)?.to_string();
+    check_mcp_name(&req.server, "server")?;
+    if req.uri.is_empty() || req.uri.len() > 2_000 {
+        return Err(ApiError::BadRequest("the resource address is 1 to 2000 characters".to_string()));
+    }
+    let lease = lease_for(&state, &chat).await?;
+    let response = lease
+        .request("mcpServer/resource/read", json!({ "threadId": thread, "server": req.server, "uri": req.uri }))
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("the resource could not be read: {err}")))?;
+    audit::record(
+        &state.pool,
+        chat.workspace_id,
+        user.id,
+        "thread.mcp_resource_read",
+        "thread",
+        id,
+        json!({ "server": req.server }),
+    )
+    .await?;
+    Ok(Json(response))
+}
+
+fn check_mcp_name(name: &str, what: &str) -> Result<(), ApiError> {
+    if name.is_empty() || name.len() > 200 {
+        return Err(ApiError::BadRequest(format!("the MCP {what} name is 1 to 200 characters")));
+    }
+    Ok(())
 }

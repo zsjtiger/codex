@@ -5,6 +5,8 @@ import { apiUrl } from "./config";
 import { api, ApiError, getToken } from "./client";
 import type {
   BackgroundTerminal,
+  ConfigValueWrite,
+  ExperimentalFeatures,
   Goal,
   WorkspaceDiff,
   CodexMemory,
@@ -177,6 +179,22 @@ export const environments = {
   resetCodexMemory: (id: string) => api<void>("POST", `/environments/${id}/memory/reset`),
   /** Codex's own memory in this environment: how many past threads it has learned from, and whether it is ready. */
   codexMemory: (id: string) => api<CodexMemory>("GET", `/environments/${id}/memory`),
+  /** Codex's config requirements in this environment, as codex reports them. Admins only. */
+  configRequirements: (id: string) => api<unknown>("GET", `/environments/${id}/config/requirements`),
+  /** Sets one codex config value. The key must not look like a secret. Admins only. */
+  writeConfigValue: (id: string, body: ConfigValueWrite) => api<unknown>("PUT", `/environments/${id}/config/value`, body),
+  /** Reloads codex's MCP servers from its config. Admins only. */
+  reloadMcpServers: (id: string) => api<void>("POST", `/environments/${id}/config/mcp-reload`),
+  /** Codex's experimental features and whether each is on. Admins only. */
+  experimentalFeatures: (id: string) => api<ExperimentalFeatures>("GET", `/environments/${id}/experimental-features`),
+  /** Turns experimental features on or off, by name. Admins only. */
+  setExperimentalFeatures: (id: string, enablement: Record<string, boolean>) =>
+    api<unknown>("PUT", `/environments/${id}/experimental-features`, { enablement }),
+  /** Switches one of codex's skills on or off, by the name codex lists it under. Admins only. */
+  setSkillEnabled: (id: string, name: string, enabled: boolean) =>
+    api<{ effectiveEnabled: boolean }>("POST", `/environments/${id}/codex-skills/config`, { name, enabled }),
+  /** Codex's own diagnostics for this environment. Admins only. */
+  diagnostics: (id: string) => api<unknown>("GET", `/environments/${id}/diagnostics`),
   /** Every MCP server codex has in this environment, with its state and tools, as it is now. */
   mcpServers: (id: string) => api<McpServer[]>("GET", `/environments/${id}/mcp-servers`),
   /** The codex account's rate limits in this environment. */

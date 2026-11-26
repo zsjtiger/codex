@@ -5,6 +5,7 @@ use crate::state::AppState;
 mod artifacts;
 mod checkout;
 mod code;
+mod codex_config;
 mod attachments;
 mod auth;
 pub mod connectors;
@@ -30,6 +31,7 @@ pub fn router() -> Router<AppState> {
         .merge(workspaces::routes())
         .merge(members::routes())
         .merge(environments::routes())
+        .merge(codex_config::routes())
         .merge(threads::routes())
         .merge(thread_runtime::routes())
         .merge(code::routes())
