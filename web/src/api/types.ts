@@ -167,6 +167,8 @@ export interface Turn {
   thread_id: string;
   seq: number;
   status: TurnStatus;
+  /** When codex was rewound to before this turn. Null for a turn that is still in the chat's history. */
+  reverted_at?: string | null;
   input: string;
   error: string | null;
   codex_turn_id: string | null;

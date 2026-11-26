@@ -26,6 +26,8 @@ function relativeTime(iso: string): string {
 interface ReplyActionsProps {
   /** Starts a new chat from this reply. */
   onFork?: (turnId: string) => void;
+  /** Rewinds the chat to before this turn. */
+  onRevert?: (turnId: string) => void;
   turn: Turn;
   reply: string;
   onFeedback: (turnId: string, rating: "up" | "down" | null) => void;
@@ -99,7 +101,7 @@ function PluginDesignCard({ draft, onSave }: { draft: PluginDraft; onSave: () =>
   );
 }
 
-function ReplyActions({ turn, reply, onFeedback, onRegenerate, onSaveDocument, onSummarize, onFork }: ReplyActionsProps) {
+function ReplyActions({ turn, reply, onFeedback, onRegenerate, onSaveDocument, onSummarize, onFork, onRevert }: ReplyActionsProps) {
   const [copied, setCopied] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const timer = useRef<number | undefined>(undefined);
@@ -152,6 +154,20 @@ function ReplyActions({ turn, reply, onFeedback, onRegenerate, onSaveDocument, o
       {onSaveDocument && (
         <button type="button" className="reply-action" onClick={() => onSaveDocument(reply)} aria-label={tx("Save as document")} title={tx("Save as document")}>
           <FileIcon />
+        </button>
+      )}
+      {onRevert && !turn.reverted_at && (
+        <button
+          type="button"
+          className="reply-action reply-revert"
+          onClick={() => {
+            // Rewinding codex cannot be undone from the chat, and the turns after this one are marked as reverted.
+            if (window.confirm(tx("Rewind the chat to before this turn? The turns from here on are marked as reverted, and codex starts again from before them."))) {
+              onRevert(turn.id);
+            }
+          }}
+        >
+          {tx("Revert to before")}
         </button>
       )}
       {onFork && (
@@ -560,6 +576,8 @@ function CodeActivity({ activity }: { activity: Activity }) {
 interface ConversationProps {
   /** Starts a new chat from a reply. */
   onFork?: (turnId: string) => void;
+  /** Rewinds the chat to before this turn. */
+  onRevert?: (turnId: string) => void;
   /** Saves the plugin a reply designed. */
   onAddPlugin?: (draft: PluginDraft) => Promise<void>;
   /** "code" shows replies as plain text with grouped activity, as in a code session. */
@@ -580,7 +598,7 @@ interface ConversationProps {
   onSummarize?: (turnId: string) => void;
 }
 
-export function Conversation({ variant = "chat", turns, agentText, activity, work = {}, diffs = {}, approvals, onAnswer, onFeedback, onRegenerate, onSaveDocument, onSummarize, onAddPlugin, onFork }: ConversationProps) {
+export function Conversation({ variant = "chat", turns, agentText, activity, work = {}, diffs = {}, approvals, onAnswer, onFeedback, onRegenerate, onSaveDocument, onSummarize, onAddPlugin, onFork, onRevert }: ConversationProps) {
   const code = variant === "code";
   return (
     <div className={code ? "conversation code-conversation" : "conversation"}>
@@ -602,7 +620,8 @@ export function Conversation({ variant = "chat", turns, agentText, activity, wor
             steps: hasWork ? live.steps.filter((step) => step.kind !== "Command" && step.kind !== "File change") : live.steps,
           };
           return (
-            <div className="turn code-turn" key={turn.id}>
+            <div className={turn.reverted_at ? "turn code-turn turn-reverted" : "turn code-turn"} key={turn.id}>
+              {turn.reverted_at && <div className="muted small reverted-note">{tx("Reverted")}</div>}
               <div className="code-user">{turn.input}</div>
               {turn.attachments && turn.attachments.length > 0 && (
                 <div className="turn-files">
@@ -621,7 +640,7 @@ export function Conversation({ variant = "chat", turns, agentText, activity, wor
                   {pluginDraft && onAddPlugin && <PluginDesignCard draft={pluginDraft} onSave={() => onAddPlugin(pluginDraft)} />}
                     {changeNote && <p className="muted small doc-edited">{changeNote}</p>}
                   </div>
-                  {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} onSummarize={onSummarize} onFork={onFork} />}
+                  {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} onSummarize={onSummarize} onFork={onFork} onRevert={onRevert} />}
                 </>
               )}
               {(turn.status !== "completed" && turn.status !== "running" && turn.status !== "queued") || turn.error ? (
@@ -634,7 +653,8 @@ export function Conversation({ variant = "chat", turns, agentText, activity, wor
           );
         }
         return (
-          <div className="turn" key={turn.id}>
+          <div className={turn.reverted_at ? "turn turn-reverted" : "turn"} key={turn.id}>
+            {turn.reverted_at && <div className="muted small reverted-note">{tx("Reverted")}</div>}
             <div className="bubble user">{turn.input}</div>
             {turn.attachments && turn.attachments.length > 0 && (
               <div className="turn-files">
@@ -651,7 +671,7 @@ export function Conversation({ variant = "chat", turns, agentText, activity, wor
                   {pluginDraft && onAddPlugin && <PluginDesignCard draft={pluginDraft} onSave={() => onAddPlugin(pluginDraft)} />}
                   {changeNote && <p className="muted small doc-edited">{changeNote}</p>}
                 </div>
-                {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} onSummarize={onSummarize} onFork={onFork} />}
+                {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} onSummarize={onSummarize} onFork={onFork} onRevert={onRevert} />}
               </>
             )}
             <div className={`turn-status status-${turn.status}`}>

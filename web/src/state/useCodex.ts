@@ -343,6 +343,21 @@ export function useCodex() {
   );
 
   // Starts a new chat from a finished reply, and opens it.
+  const revertTurn = useCallback(
+    async (turnId: string) => {
+      const threadId = activeRef.current;
+      if (!threadId) return;
+      setError(null);
+      try {
+        await threadApi.revert(turnId);
+        await loadTurns(threadId);
+      } catch (err) {
+        fail(err);
+      }
+    },
+    [fail, loadTurns],
+  );
+
   const forkFromTurn = useCallback(
     async (turnId: string) => {
       const threadId = activeRef.current;
@@ -477,6 +492,7 @@ export function useCodex() {
     sendMessage,
     runAction,
     forkFromTurn,
+    revertTurn,
     answerApproval,
     setFeedback,
   };

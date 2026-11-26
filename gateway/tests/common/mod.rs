@@ -329,6 +329,9 @@ pub async fn mock_app_server() -> MockServer {
                                 })))
                                 .unwrap();
                         }
+                        "thread/revert" => {
+                            out_tx.send(reply(json!({ "thread": { "id": "thr_mock" }, "turnsBackwardsCursor": null }))).unwrap();
+                        }
                         "memory/reset" => {
                             out_tx.send(reply(json!({}))).unwrap();
                         }

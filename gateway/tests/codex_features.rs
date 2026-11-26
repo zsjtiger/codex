@@ -164,3 +164,57 @@ async fn an_at_mention_searches_the_checkout_the_code_chat_runs_in(pool: PgPool)
     assert_eq!(found, json!([]));
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_finished_turn_is_reverted_through_codex_and_marked_with_the_turns_after_it(pool: PgPool) {
+    let state = AppState::new(pool.clone(), true, RuntimeConfig::default());
+    let mock = mock_app_server().await;
+    let token = login(&state, "revert@example.com").await;
+    let (ws_id, chat_id) = setup(&state, &token, Some(&mock.url)).await;
+
+    post_turn(&state, &token, &chat_id, "first").await;
+    assert_eq!(wait_for_turn(&state, &token, &chat_id, 0).await["status"], "completed");
+    post_turn(&state, &token, &chat_id, "second").await;
+    assert_eq!(wait_for_turn(&state, &token, &chat_id, 1).await["status"], "completed");
+    let (_, turns) = call(&state, "GET", &format!("/api/v1/threads/{chat_id}/turns"), &token, None).await;
+    let first = turns[0]["id"].as_str().unwrap().to_string();
+    let first_codex = turns[0]["codex_turn_id"].as_str().unwrap().to_string();
+
+    // Reverting the first turn rewinds codex to before it; the second turn after it is marked too.
+    let (status, body) = call(&state, "POST", &format!("/api/v1/turns/{first}/revert"), &token, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    let requests = mock.requests.lock().unwrap().clone();
+    let (_, params) = requests.iter().rev().find(|(m, _)| m == "thread/revert").expect("codex was asked to revert");
+    assert_eq!(params["threadId"], "thr_mock");
+    assert_eq!(params["beforeTurnId"], first_codex.as_str());
+    let (_, turns) = call(&state, "GET", &format!("/api/v1/threads/{chat_id}/turns"), &token, None).await;
+    assert!(turns[0]["reverted_at"].is_string(), "{turns:?}");
+    assert!(turns[1]["reverted_at"].is_string(), "{turns:?}");
+
+    // A reverted turn cannot be reverted again.
+    let (status, _) = call(&state, "POST", &format!("/api/v1/turns/{first}/revert"), &token, None).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    // Revert is audited, with how many turns it marked.
+    let audited: i64 = sqlx::query_scalar("SELECT count(*) FROM audit_logs WHERE action = 'turn.revert' AND metadata->>'turns' = '2'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(audited, 1);
+
+    // A turn cannot be reverted while another in the chat is running.
+    post_turn(&state, &token, &chat_id, "SLOW third").await;
+    assert_eq!(wait_for_turn(&state, &token, &chat_id, 2).await["status"], "completed");
+    post_turn(&state, &token, &chat_id, "SLOW fourth").await;
+    let (_, turns) = call(&state, "GET", &format!("/api/v1/threads/{chat_id}/turns"), &token, None).await;
+    let third = turns[2]["id"].as_str().unwrap().to_string();
+    let (status, _) = call(&state, "POST", &format!("/api/v1/turns/{third}/revert"), &token, None).await;
+    assert_eq!(status, StatusCode::CONFLICT, "a turn is running");
+    wait_for_turn(&state, &token, &chat_id, 3).await;
+
+    // Someone outside the workspace cannot revert.
+    let outsider = login(&state, "revert-outsider@example.com").await;
+    let (status, _) = call(&state, "POST", &format!("/api/v1/turns/{third}/revert"), &outsider, None).await;
+    assert_ne!(status, StatusCode::NO_CONTENT);
+    let _ = ws_id;
+}

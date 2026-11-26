@@ -236,6 +236,8 @@ export const threads = {
   /** Compacts the chat's history, so a long chat keeps room to work. */
   compact: (id: string) => api<Turn>("POST", `/threads/${id}/compact`),
   /** Starts a new chat from a finished reply of this one. */
+  /** Rewinds the chat to before a finished turn, through codex. The turn and the ones after it stay, marked. */
+  revert: (turnId: string) => api<void>("POST", `/turns/${turnId}/revert`),
   fork: (id: string, turnId: string) => api<Thread>("POST", `/threads/${id}/fork`, { turn_id: turnId }),
   /** Adds a note to the turn running in the chat. */
   steer: (id: string, input: string) => api<Turn>("POST", `/threads/${id}/steer`, { input }),

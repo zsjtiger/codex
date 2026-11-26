@@ -128,6 +128,9 @@ pub struct TurnView {
     pub created_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
+    /// When codex was rewound to before this turn. Set on the turn reverted and every turn after it.
+    #[sqlx(default)]
+    pub reverted_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Deserialize)]
@@ -212,7 +215,7 @@ fn is_text(content_type: &str) -> bool {
     content_type.starts_with("text/") || content_type == "application/json"
 }
 
-const TURN_COLUMNS: &str = "id, thread_id, seq, status, input, error, codex_turn_id, model, effort, reply, feedback, attachment_ids, output_attachment_ids, created_by, created_at, completed_at";
+const TURN_COLUMNS: &str = "id, thread_id, seq, status, input, error, codex_turn_id, model, effort, reply, feedback, attachment_ids, output_attachment_ids, created_by, created_at, completed_at, reverted_at";
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -235,6 +238,7 @@ pub fn routes() -> Router<AppState> {
         .route("/threads/{id}/steer", post(steer_turn))
         .route("/threads/{id}/fork", post(fork_thread))
         .route("/turns/{id}/feedback", put(set_feedback))
+        .route("/turns/{id}/revert", post(revert_turn))
 }
 
 const COLUMNS: &str = "id, workspace_id, environment_id, project_id, created_by, title, state, codex_thread_id, \
@@ -1016,7 +1020,7 @@ async fn fork_thread(
         "INSERT INTO turns (thread_id, seq, input, reply, status, kind, target, created_by, completed_at, model, effort, attachment_ids)
          SELECT $1, ROW_NUMBER() OVER (ORDER BY seq), input, reply, status, kind, target, created_by, completed_at, model, effort, attachment_ids
          FROM turns
-         WHERE thread_id = $2 AND seq <= $3 AND status IN ('completed', 'failed', 'interrupted')",
+         WHERE thread_id = $2 AND seq <= $3 AND status IN ('completed', 'failed', 'interrupted') AND reverted_at IS NULL",
     )
     .bind(new_id)
     .bind(id)
@@ -1050,4 +1054,62 @@ async fn interrupt_turn(
         .await
         .map_err(|err| ApiError::Conflict(err.to_string()))?;
     Ok(StatusCode::ACCEPTED)
+}
+
+/// Rewinds a chat to before a finished turn, through codex's thread/revert. The turn and every turn after it are
+/// kept in the history, marked as reverted. Whether files changed by those turns come back is codex's to do,
+/// and is not checked here. Members can do this; each revert is recorded in the audit log.
+async fn revert_turn(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    let row: Option<(Uuid, Uuid, i32, String, Option<String>, Option<DateTime<Utc>>, Option<String>, Option<Uuid>, Option<String>)> = sqlx::query_as(
+        "SELECT t.thread_id, th.workspace_id, t.seq, t.status, t.codex_turn_id, t.reverted_at,
+                th.codex_thread_id, th.environment_id, e.endpoint
+           FROM turns t
+           JOIN threads th ON th.id = t.thread_id
+           LEFT JOIN environments e ON e.id = th.environment_id
+          WHERE t.id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?;
+    let Some((thread_id, workspace_id, seq, status, codex_turn_id, reverted_at, codex_thread_id, environment_id, endpoint)) = row else {
+        return Err(ApiError::NotFound);
+    };
+    require_role(&state.pool, workspace_id, user.id, Role::Member).await?;
+    if !matches!(status.as_str(), "completed" | "failed" | "interrupted") {
+        return Err(ApiError::Conflict("only a finished turn can be reverted".to_string()));
+    }
+    if reverted_at.is_some() {
+        return Err(ApiError::Conflict("this turn was already reverted".to_string()));
+    }
+    let (Some(codex_turn_id), Some(codex_thread_id), Some(environment_id)) = (codex_turn_id, codex_thread_id, environment_id) else {
+        return Err(ApiError::Conflict("this turn has no codex history to rewind to".to_string()));
+    };
+    let busy: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM turns WHERE thread_id = $1 AND status IN ('running', 'queued'))")
+        .bind(thread_id)
+        .fetch_one(&state.pool)
+        .await?;
+    if busy {
+        return Err(ApiError::Conflict("wait for the running turn to finish before reverting".to_string()));
+    }
+    let lease = state
+        .runtime
+        .lease(environment_id, endpoint.as_deref())
+        .await
+        .map_err(|err| ApiError::BadRequest(err.to_string()))?;
+    lease
+        .request("thread/revert", json!({ "threadId": codex_thread_id, "beforeTurnId": codex_turn_id }))
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("could not revert the chat: {err}")))?;
+    let marked = sqlx::query("UPDATE turns SET reverted_at = now() WHERE thread_id = $1 AND seq >= $2 AND reverted_at IS NULL")
+        .bind(thread_id)
+        .bind(seq)
+        .execute(&state.pool)
+        .await?
+        .rows_affected();
+    audit::record(&state.pool, workspace_id, user.id, "turn.revert", "thread", thread_id, json!({ "turn": id, "turns": marked })).await?;
+    Ok(StatusCode::NO_CONTENT)
 }

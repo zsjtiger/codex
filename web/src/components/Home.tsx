@@ -24,6 +24,7 @@ interface HomeProps {
   onPrefillUsed?: () => void;
   /** Starts a new chat from a reply of this one. */
   onFork?: (turnId: string) => void;
+  onRevert?: (turnId: string) => void;
   /** A review or a compaction of the open chat. */
   onAction?: (action: "review" | "compact") => void;
   /** Saves a plugin a reply designed into the workspace. */
@@ -65,7 +66,7 @@ interface HomeProps {
 
 export function Home(props: HomeProps) {
   const { t } = useI18n();
-  const { prefill, onPrefillUsed, onAddPlugin, onAction, onFork, user, workspaceId, thread, threads, onOpenThread, turns, agentText, streamText, toolUses, activity, work, diffs, commandOutput, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError, notices, onDismissNotice } = props;
+  const { prefill, onPrefillUsed, onAddPlugin, onAction, onFork, onRevert, user, workspaceId, thread, threads, onOpenThread, turns, agentText, streamText, toolUses, activity, work, diffs, commandOutput, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError, notices, onDismissNotice } = props;
   const pending = approvals.filter((a) => a.threadId === thread?.id);
   const threadId = thread?.id ?? "";
   const hasRepo = Boolean(thread?.repo_id);
@@ -258,6 +259,7 @@ export function Home(props: HomeProps) {
               onSaveDocument={(reply) => void saveDocument(reply)}
               onSummarize={(turnId) => void summarize(turnId)}
               onFork={onFork}
+              onRevert={onRevert}
               onAddPlugin={onAddPlugin}
             />
             {docs.map((doc) => (

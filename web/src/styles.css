@@ -1211,3 +1211,7 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 }
 .checkout-line { display: flex; align-items: center; }
 .checkout-line .checkout-row { flex: 1; min-width: 0; }
+
+/* A turn codex was rewound past stays in the history, but muted. */
+.turn-reverted { opacity: 0.55; }
+.reverted-note { margin-bottom: 2px; }
