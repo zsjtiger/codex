@@ -3,6 +3,7 @@ import { connectors as connectorApi, environments, marketplace as marketplaceApi
 import type { CatalogPlugin, Connector, McpServer, Plugin, PluginManifest, Skill } from "../api/types";
 import { parseManifest } from "../state/pluginDraft";
 import { CheckCircleIcon, ChevronDownIcon, PlugIcon, SearchIcon } from "./icons";
+import { CodexPlugins } from "./CodexPlugins";
 import { CodexSkills } from "./CodexSkills";
 import { PluginDetail } from "./PluginDetail";
 import { RowMenu, type MenuItem } from "./RowMenu";
@@ -636,6 +637,7 @@ export function PluginsPage({ workspaceId, environmentId, isAdmin, onBack, onErr
         )}
 
         {showSkills && environmentId && <CodexSkills environmentId={environmentId} onError={onError} />}
+        {showSkills && environmentId && <CodexPlugins environmentId={environmentId} onError={onError} />}
 
         {showConnectors && connectorItems.length > 0 && environmentId && (
           <div className="live-check">

@@ -57,6 +57,7 @@ pub fn routes() -> Router<AppState> {
         .route("/environments/{id}/mcp-servers", get(mcp_servers))
         .route("/environments/{id}/memory", get(codex_memory))
         .route("/environments/{id}/codex-skills", get(codex_skills))
+        .route("/environments/{id}/codex-plugins", get(codex_plugins))
 }
 
 #[derive(Serialize)]
@@ -509,4 +510,75 @@ async fn codex_skills(
     }
     skills.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(Json(CodexSkills { skills, errors }))
+}
+
+/// A plugin codex has installed in an environment.
+#[derive(Serialize)]
+pub struct CodexPlugin {
+    id: String,
+    name: String,
+    /// The marketplace the plugin came from.
+    marketplace: String,
+    version: Option<String>,
+    enabled: bool,
+}
+
+/// A marketplace codex could not load.
+#[derive(Serialize)]
+pub struct CodexPluginError {
+    marketplace_path: String,
+    message: String,
+}
+
+#[derive(Serialize)]
+pub struct CodexPlugins {
+    plugins: Vec<CodexPlugin>,
+    errors: Vec<CodexPluginError>,
+}
+
+/// The plugins codex has installed in an environment, read now. Only installed plugins are listed.
+async fn codex_plugins(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<CodexPlugins>, ApiError> {
+    let env = load(&state.pool, id).await?;
+    require_role(&state.pool, env.workspace_id, user.id, Role::Member).await?;
+    let lease = state
+        .runtime
+        .lease(id, env.endpoint.as_deref())
+        .await
+        .map_err(|err| ApiError::BadRequest(err.to_string()))?;
+    let response = lease
+        .request("plugin/installed", json!({}))
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("could not list the plugins: {err}")))?;
+    let mut plugins = Vec::new();
+    for marketplace in response["marketplaces"].as_array().into_iter().flatten() {
+        let market = marketplace["name"].as_str().unwrap_or_default().to_string();
+        for plugin in marketplace["plugins"].as_array().into_iter().flatten() {
+            if plugin["installed"].as_bool() != Some(true) {
+                continue;
+            }
+            let Some(id) = plugin["id"].as_str() else { continue };
+            plugins.push(CodexPlugin {
+                id: id.to_string(),
+                name: plugin["name"].as_str().unwrap_or(id).to_string(),
+                marketplace: market.clone(),
+                version: plugin["version"].as_str().map(str::to_string),
+                enabled: plugin["enabled"].as_bool().unwrap_or(false),
+            });
+        }
+    }
+    plugins.sort_by(|a, b| a.marketplace.cmp(&b.marketplace).then_with(|| a.name.cmp(&b.name)));
+    let errors = response["marketplaceLoadErrors"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|error| CodexPluginError {
+            marketplace_path: error["marketplacePath"].as_str().unwrap_or_default().to_string(),
+            message: error["message"].as_str().unwrap_or_default().to_string(),
+        })
+        .collect();
+    Ok(Json(CodexPlugins { plugins, errors }))
 }

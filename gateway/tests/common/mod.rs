@@ -278,6 +278,23 @@ pub async fn mock_app_server() -> MockServer {
                                 }] })))
                                 .unwrap();
                         }
+                        "plugin/installed" => {
+                            // Two marketplaces: one with an installed plugin and an uninstalled one, one that failed to load.
+                            out_tx
+                                .send(reply(json!({
+                                    "marketplaces": [
+                                        { "name": "openai-curated", "path": null, "interface": null, "plugins": [
+                                            { "id": "docs@openai-curated", "name": "docs", "version": "1.2.0", "installed": true, "enabled": true, "source": {"type": "local", "path": "/p/docs"}, "installPolicy": "AVAILABLE" },
+                                            { "id": "slides@openai-curated", "name": "slides", "version": null, "installed": false, "enabled": false, "source": {"type": "local", "path": "/p/slides"}, "installPolicy": "AVAILABLE" }
+                                        ] },
+                                        { "name": "local", "path": null, "interface": null, "plugins": [
+                                            { "id": "notes@local", "name": "notes", "version": null, "installed": true, "enabled": false, "source": {"type": "local", "path": "/p/notes"}, "installPolicy": "AVAILABLE" }
+                                        ] }
+                                    ],
+                                    "marketplaceLoadErrors": [{ "marketplacePath": "/home/x/.codex/plugins/broken", "message": "bad manifest" }]
+                                })))
+                                .unwrap();
+                        }
                         "turn/steer" => {
                             out_tx
                                 .send(reply(json!({ "turnId": msg["params"]["expectedTurnId"] })))

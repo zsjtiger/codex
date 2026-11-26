@@ -1192,3 +1192,4 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 .codex-skill { display: flex; flex-direction: column; gap: 2px; }
 .codex-skill code { overflow-wrap: anywhere; }
 .codex-skill-errors { padding-left: 18px; margin: 0; }
+.codex-plugin-group { display: flex; flex-direction: column; gap: 6px; }

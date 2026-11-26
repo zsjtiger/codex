@@ -116,3 +116,24 @@ async fn the_skills_codex_finds_are_listed_with_their_scope_and_errors(pool: PgP
     let (_, params) = requests.iter().find(|(m, _)| m == "skills/list").expect("codex was asked");
     assert_eq!(params["forceReload"], true);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn the_plugins_codex_has_installed_are_listed_with_their_marketplace(pool: PgPool) {
+    let state = AppState::new(pool.clone(), true, RuntimeConfig::default());
+    let mock = mock_app_server().await;
+    let token = login(&state, "codex-plugins@example.com").await;
+    let (ws_id, _) = setup(&state, &token, Some(&mock.url)).await;
+    let (_, envs) = call(&state, "GET", &format!("/api/v1/workspaces/{ws_id}/environments"), &token, None).await;
+    let env_id = envs[0]["id"].as_str().unwrap().to_string();
+
+    let (status, found) = call(&state, "GET", &format!("/api/v1/environments/{env_id}/codex-plugins"), &token, None).await;
+    assert_eq!(status, StatusCode::OK, "{found}");
+    assert_eq!(
+        found["plugins"],
+        json!([
+            { "id": "notes@local", "name": "notes", "marketplace": "local", "version": null, "enabled": false },
+            { "id": "docs@openai-curated", "name": "docs", "marketplace": "openai-curated", "version": "1.2.0", "enabled": true }
+        ])
+    );
+    assert_eq!(found["errors"], json!([{ "marketplace_path": "/home/x/.codex/plugins/broken", "message": "bad manifest" }]));
+}

@@ -135,6 +135,21 @@ export interface CodexSkills {
   errors: { path: string; message: string }[];
 }
 
+/** A plugin codex has installed in an environment. */
+export interface CodexPlugin {
+  id: string;
+  name: string;
+  marketplace: string;
+  version: string | null;
+  enabled: boolean;
+}
+
+/** The plugins codex has installed in an environment, and any marketplace it could not load. */
+export interface CodexPlugins {
+  plugins: CodexPlugin[];
+  errors: { marketplace_path: string; message: string }[];
+}
+
 export interface Turn {
   id: string;
   /** The assistant's reply, kept on the turn once its messages complete. */
