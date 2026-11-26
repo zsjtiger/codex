@@ -279,6 +279,35 @@ pub async fn mock_app_server() -> MockServer {
                                     }
                                     out.send(json!({ "id": id, "result": { "exitCode": -1, "stdout": "", "stderr": "" } }).to_string()).unwrap();
                                 });
+                            } else if command.contains("prompt") || command.contains("shell") {
+                                // An interactive command: it says it is ready, waits for the gateway to close its input,
+                                // then echoes what it was given.
+                                out_tx.send(delta("stdout", "ready\n")).unwrap();
+                                let requests = Arc::clone(&requests);
+                                let out = out_tx.clone();
+                                let id = id.clone();
+                                let process_id = process_id.clone();
+                                tokio::spawn(async move {
+                                    for _ in 0..500 {
+                                        let closed = requests.lock().unwrap().iter().any(|(m, p)| m == "command/exec/write" && p["processId"] == process_id.as_str() && p["closeStdin"] == true);
+                                        if closed {
+                                            break;
+                                        }
+                                        tokio::time::sleep(Duration::from_millis(10)).await;
+                                    }
+                                    let mut given = String::new();
+                                    for (m, p) in requests.lock().unwrap().iter() {
+                                        if m == "command/exec/write" && p["processId"] == process_id.as_str() {
+                                            if let Some(bytes) = p["deltaBase64"].as_str().and_then(|d| STANDARD.decode(d).ok()) {
+                                                given.push_str(&String::from_utf8_lossy(&bytes));
+                                            }
+                                        }
+                                    }
+                                    out.send(json!({ "method": "command/exec/outputDelta", "params": {
+                                        "processId": process_id, "stream": "stdout",
+                                        "deltaBase64": STANDARD.encode(format!("got: {given}")), "capReached": false } }).to_string()).unwrap();
+                                    out.send(json!({ "id": id, "result": { "exitCode": 0, "stdout": "", "stderr": "" } }).to_string()).unwrap();
+                                });
                             } else if command.contains("fail") {
                                 out_tx.send(delta("stderr", "nope\n")).unwrap();
                                 out_tx.send(reply(json!({ "exitCode": 3, "stdout": "", "stderr": "" }))).unwrap();

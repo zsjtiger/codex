@@ -126,14 +126,23 @@ async fn start_error_fails_the_turn(pool: PgPool) {
         "{turn}"
     );
 
-    let (_, thread) = call(
-        &state,
-        "GET",
-        &format!("/api/v1/threads/{thread_id}"),
-        &token,
-        None,
-    )
-    .await;
+    // The chat's state follows its turn a moment later, so it is read until it catches up.
+    let mut thread = serde_json::Value::Null;
+    for _ in 0..200 {
+        let (_, found) = call(
+            &state,
+            "GET",
+            &format!("/api/v1/threads/{thread_id}"),
+            &token,
+            None,
+        )
+        .await;
+        thread = found;
+        if thread["state"] == "failed" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
     assert_eq!(thread["state"], "failed");
 }
 

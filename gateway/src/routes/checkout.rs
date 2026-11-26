@@ -17,6 +17,7 @@ use uuid::Uuid;
 
 use crate::{
     audit,
+    runtime::hub::ProcessMode,
     auth::CurrentUser,
     authz::{Role, require_role},
     error::ApiError,
@@ -39,6 +40,8 @@ pub fn routes() -> Router<AppState> {
         .route("/threads/{id}/files/read", get(read_file))
         .route("/threads/{id}/run", post(run_command))
         .route("/threads/{id}/run/{process_id}/stop", post(stop_command))
+        .route("/threads/{id}/run/{process_id}/input", post(write_input))
+        .route("/threads/{id}/run/{process_id}/resize", post(resize_terminal))
         .route("/threads/{id}/workspace-diff", get(workspace_diff))
         .route("/threads/{id}/files/watch", post(start_watch))
         .route("/threads/{id}/files/watch/{watch_id}", axum::routing::delete(stop_watch))
@@ -450,6 +453,12 @@ pub struct RunRequest {
     timeout_ms: Option<i64>,
     /// An id for this run, chosen by the browser so it can stop the run while it goes. A UUID; made up if absent.
     process_id: Option<String>,
+    /// Keep the command's standard input open, so text can be written to it while it runs.
+    #[serde(default)]
+    interactive: bool,
+    /// Run the command in a terminal. Implies `interactive`; the terminal's size can then be set while it runs.
+    #[serde(default)]
+    tty: bool,
 }
 
 #[derive(Serialize)]
@@ -487,7 +496,9 @@ async fn run_command(
     let root = checkout.root.canonicalize().map_err(|_| ApiError::NotFound)?;
     let lease = codex_for(&state, &checkout).await?;
     let hub = state.runtime.hub();
-    if !hub.start_process(&process_id, id) {
+    // A terminal needs an open standard input too, which codex's terminal mode provides.
+    let mode = ProcessMode { thread_id: id, stdin: req.interactive || req.tty, tty: req.tty };
+    if !hub.start_process(&process_id, mode) {
         return Err(ApiError::Conflict("a command with that id is already running".to_string()));
     }
     // Output streams to the chat as codex sends it; the reply carries what was kept, so nothing is lost.
@@ -499,6 +510,8 @@ async fn run_command(
                 "cwd": root,
                 "processId": process_id,
                 "streamStdoutStderr": true,
+                "streamStdin": mode.stdin && !mode.tty,
+                "tty": mode.tty,
                 "timeoutMs": timeout,
                 "outputBytesCap": RUN_OUTPUT_CAP,
                 "sandboxPolicy": {
@@ -621,5 +634,83 @@ async fn stop_watch(
         .request("fs/unwatch", json!({ "watchId": watch_id }))
         .await
         .map_err(|err| ApiError::BadRequest(format!("could not stop the watch: {err}")))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Largest text sent to a running command at once.
+const INPUT_LIMIT: usize = 64 * 1024;
+
+#[derive(Deserialize)]
+pub struct InputRequest {
+    /// Text written to the command's standard input.
+    text: Option<String>,
+    /// Close the command's standard input once the text is written; the command then sees end of input.
+    #[serde(default)]
+    close_stdin: bool,
+}
+
+/// Writes text to a running command's standard input, and/or closes it. Only a run started with its input open
+/// takes input. What is typed is not kept: the audit log records how many bytes were sent.
+async fn write_input(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    PathParam((id, process_id)): PathParam<(Uuid, String)>,
+    Json(req): Json<InputRequest>,
+) -> Result<StatusCode, ApiError> {
+    let workspace_id = member_of(&state, id, &user).await?;
+    let text = req.text.unwrap_or_default();
+    if text.is_empty() && !req.close_stdin {
+        return Err(ApiError::BadRequest("send some text, or close the input".to_string()));
+    }
+    if text.len() > INPUT_LIMIT {
+        return Err(ApiError::BadRequest("at most 64 KB at a time".to_string()));
+    }
+    let hub = state.runtime.hub();
+    let mode = hub.process_mode(&process_id).filter(|mode| mode.thread_id == id).ok_or(ApiError::NotFound)?;
+    if !mode.stdin {
+        return Err(ApiError::Conflict("this command was not started for input".to_string()));
+    }
+    let checkout = checkout_of(&state, id).await?.ok_or(ApiError::NotFound)?;
+    let lease = codex_for(&state, &checkout).await?;
+    let mut params = json!({ "processId": process_id, "closeStdin": req.close_stdin });
+    if !text.is_empty() {
+        params["deltaBase64"] = json!(STANDARD.encode(text.as_bytes()));
+    }
+    lease
+        .request("command/exec/write", params)
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("could not write to the command: {err}")))?;
+    audit::record(&state.pool, workspace_id, user.id, "checkout.command_input", "thread", id, json!({ "bytes": text.len(), "closed": req.close_stdin })).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub struct ResizeRequest {
+    rows: u16,
+    cols: u16,
+}
+
+/// Sets the size of a running command's terminal. Only a run started in a terminal has one.
+async fn resize_terminal(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    PathParam((id, process_id)): PathParam<(Uuid, String)>,
+    Json(req): Json<ResizeRequest>,
+) -> Result<StatusCode, ApiError> {
+    member_of(&state, id, &user).await?;
+    if !(1..=1000).contains(&req.rows) || !(1..=1000).contains(&req.cols) {
+        return Err(ApiError::BadRequest("a terminal is 1 to 1000 rows and columns".to_string()));
+    }
+    let hub = state.runtime.hub();
+    let mode = hub.process_mode(&process_id).filter(|mode| mode.thread_id == id).ok_or(ApiError::NotFound)?;
+    if !mode.tty {
+        return Err(ApiError::Conflict("this command does not have a terminal".to_string()));
+    }
+    let checkout = checkout_of(&state, id).await?.ok_or(ApiError::NotFound)?;
+    let lease = codex_for(&state, &checkout).await?;
+    lease
+        .request("command/exec/resize", json!({ "processId": process_id, "size": { "rows": req.rows, "cols": req.cols } }))
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("could not resize the terminal: {err}")))?;
     Ok(StatusCode::NO_CONTENT)
 }

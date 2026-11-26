@@ -1227,3 +1227,7 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 
 /* Background terminals codex runs for a code chat. */
 .codex-terminal-command { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+
+/* Options for a command run from a code chat, and the input and size of a running one. */
+.run-options { display: flex; gap: 16px; }
+.run-options label { display: flex; align-items: center; gap: 6px; }

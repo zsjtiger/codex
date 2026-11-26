@@ -52,6 +52,18 @@ struct ProcessOutput {
     thread_id: Uuid,
     stdout: Vec<u8>,
     stderr: Vec<u8>,
+    /// Whether the run was started with its standard input open, so text can be written to it.
+    stdin: bool,
+    /// Whether the run has a terminal, so its size can be set.
+    tty: bool,
+}
+
+/// What a command run was started with, for the requests that follow it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProcessMode {
+    pub thread_id: Uuid,
+    pub stdin: bool,
+    pub tty: bool,
 }
 
 #[derive(Default)]
@@ -139,13 +151,25 @@ impl Hub {
     }
 
     /// Starts collecting the output of a command run. False if a run with that id is already going.
-    pub fn start_process(&self, process_id: &str, thread_id: Uuid) -> bool {
+    pub fn start_process(&self, process_id: &str, mode: ProcessMode) -> bool {
         let mut processes = self.processes.lock().expect("processes lock poisoned");
         if processes.contains_key(process_id) {
             return false;
         }
-        processes.insert(process_id.to_string(), ProcessOutput { thread_id, ..Default::default() });
+        processes.insert(
+            process_id.to_string(),
+            ProcessOutput { thread_id: mode.thread_id, stdin: mode.stdin, tty: mode.tty, ..Default::default() },
+        );
         true
+    }
+
+    /// What a command run that is going was started with.
+    pub fn process_mode(&self, process_id: &str) -> Option<ProcessMode> {
+        self.processes.lock().expect("processes lock poisoned").get(process_id).map(|process| ProcessMode {
+            thread_id: process.thread_id,
+            stdin: process.stdin,
+            tty: process.tty,
+        })
     }
 
     /// Records a file watch a chat has open. Its changes are sent to that chat.

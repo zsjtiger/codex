@@ -402,3 +402,108 @@ async fn changes_to_a_watched_checkout_reach_its_chat_until_the_watch_is_stopped
     assert!(quiet.map(|frame| frame["method"] != "fs/changed").unwrap_or(true), "no change after the watch was stopped");
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// Waits until codex has been asked to run a command with this process id, so its input can be written.
+async fn wait_for_process(mock: &MockServer, process_id: &str) {
+    for _ in 0..500 {
+        if mock.requests.lock().unwrap().iter().any(|(m, p)| m == "command/exec" && p["processId"] == process_id) {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("the command never started");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_running_command_takes_input_and_its_terminal_can_be_resized(pool: PgPool) {
+    let root = std::env::temp_dir().join(format!("checkout-{}", Uuid::new_v4()));
+    let state = state_with_checkouts(&pool, &root);
+    let mock = mock_app_server().await;
+    let token = login(&state, "input@example.com").await;
+    let (chat_id, _) = code_chat(&pool, &state, &token, &mock.url, &root).await;
+    let base = format!("/api/v1/threads/{chat_id}/run");
+
+    // A command that is not interactive takes no input, and never reaches codex with any.
+    let plain = Uuid::new_v4().to_string();
+    let plain_state = state.clone();
+    let plain_token = token.clone();
+    let plain_base = base.clone();
+    let plain_pid = plain.clone();
+    let plain_run = tokio::spawn(async move {
+        call(&plain_state, "POST", &plain_base, &plain_token, Some(json!({ "command": "echo hi", "process_id": plain_pid }))).await
+    });
+    wait_for_process(&mock, &plain).await;
+    let (status, _) = call(&state, "POST", &format!("{base}/{plain}/input"), &token, Some(json!({ "text": "x" }))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (status, _) = call(&state, "POST", &format!("{base}/{plain}/resize"), &token, Some(json!({ "rows": 24, "cols": 80 }))).await;
+    assert_eq!(status, StatusCode::CONFLICT, "a command without a terminal has no size");
+    plain_run.await.unwrap();
+
+    // An interactive command: text goes to its standard input, which is then closed.
+    let pid = Uuid::new_v4().to_string();
+    let run_state = state.clone();
+    let run_token = token.clone();
+    let run_base = base.clone();
+    let run_pid = pid.clone();
+    let run = tokio::spawn(async move {
+        call(&run_state, "POST", &run_base, &run_token, Some(json!({ "command": "prompt", "process_id": run_pid, "interactive": true }))).await
+    });
+    wait_for_process(&mock, &pid).await;
+    let (status, _) = call(&state, "POST", &format!("{base}/{pid}/input"), &token, Some(json!({ "text": "yes\n" }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = call(&state, "POST", &format!("{base}/{pid}/input"), &token, Some(json!({ "close_stdin": true }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, finished) = run.await.unwrap();
+    assert_eq!(status, StatusCode::OK, "{finished}");
+    assert_eq!(finished["stdout"], "ready\ngot: yes\n", "what it printed, and what it was given");
+
+    let requests = mock.requests.lock().unwrap().clone();
+    let (_, started) = requests.iter().find(|(m, p)| m == "command/exec" && p["processId"] == pid.as_str()).unwrap();
+    assert_eq!(started["streamStdin"], true);
+    assert_eq!(started["tty"], false);
+    let writes: Vec<_> = requests.iter().filter(|(m, p)| m == "command/exec/write" && p["processId"] == pid.as_str()).collect();
+    assert_eq!(writes.len(), 2);
+    assert_eq!(writes[0].1["closeStdin"], false);
+    assert_eq!(writes[1].1["closeStdin"], true);
+
+    // Input is refused when it is empty, too large, or for a command that is not running.
+    let (status, _) = call(&state, "POST", &format!("{base}/{pid}/input"), &token, Some(json!({}))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = call(&state, "POST", &format!("{base}/{pid}/input"), &token, Some(json!({ "text": "x".repeat(64 * 1024 + 1) }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "too much at once is refused");
+    let (status, _) = call(&state, "POST", &format!("{base}/{pid}/input"), &token, Some(json!({ "text": "x" }))).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "the command has finished");
+
+    // The input is audited by size, not by content.
+    let audited: Vec<serde_json::Value> = sqlx::query_scalar("SELECT metadata FROM audit_logs WHERE action = 'checkout.command_input' AND target_id = $1 ORDER BY created_at")
+        .bind(&chat_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(audited, vec![json!({ "bytes": 4, "closed": false }), json!({ "bytes": 0, "closed": true })]);
+
+    // A terminal can be resized while it runs; the size goes to codex.
+    let term = Uuid::new_v4().to_string();
+    let term_state = state.clone();
+    let term_token = token.clone();
+    let term_base = base.clone();
+    let term_pid = term.clone();
+    let term_run = tokio::spawn(async move {
+        call(&term_state, "POST", &term_base, &term_token, Some(json!({ "command": "shell", "process_id": term_pid, "tty": true }))).await
+    });
+    wait_for_process(&mock, &term).await;
+    let (status, _) = call(&state, "POST", &format!("{base}/{term}/resize"), &token, Some(json!({ "rows": 0, "cols": 80 }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = call(&state, "POST", &format!("{base}/{term}/resize"), &token, Some(json!({ "rows": 40, "cols": 120 }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = call(&state, "POST", &format!("{base}/{term}/input"), &token, Some(json!({ "close_stdin": true }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "a terminal takes input too");
+    term_run.await.unwrap();
+    let requests = mock.requests.lock().unwrap().clone();
+    let (_, resized) = requests.iter().rev().find(|(m, _)| m == "command/exec/resize").expect("codex was asked to resize");
+    assert_eq!(resized["processId"], term.as_str());
+    assert_eq!(resized["size"], json!({ "rows": 40, "cols": 120 }));
+    let (_, started) = requests.iter().find(|(m, p)| m == "command/exec" && p["processId"] == term.as_str()).unwrap();
+    assert_eq!(started["tty"], true);
+    let _ = std::fs::remove_dir_all(&root);
+}

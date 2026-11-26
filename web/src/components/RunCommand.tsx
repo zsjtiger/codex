@@ -10,6 +10,10 @@ const KEEP = 5;
 interface Run {
   command: string;
   processId: string;
+  /** The run takes text on its input while it goes. */
+  interactive: boolean;
+  /** The run is in a terminal, so its size can be set. */
+  tty: boolean;
   /** Set once the run has ended; until then the output is what has streamed so far. */
   result: CommandResult | null;
 }
@@ -28,7 +32,12 @@ export function RunCommand({
   onError: (message: string) => void;
 }) {
   const [command, setCommand] = useState("");
+  const [interactive, setInteractive] = useState(false);
+  const [tty, setTty] = useState(false);
   const [runs, setRuns] = useState<Run[]>([]);
+  // Text being typed into each running interactive command, and the terminal size asked for each.
+  const [typed, setTyped] = useState<Record<string, string>>({});
+  const [sizes, setSizes] = useState<Record<string, { rows: number; cols: number }>>({});
 
   const finish = (processId: string, result: CommandResult) => {
     forgetCommandOutput(processId);
@@ -40,15 +49,35 @@ export function RunCommand({
     if (!text) return;
     // The browser names the run, so it can stop it while it goes.
     const processId = crypto.randomUUID();
-    setRuns((prev) => [{ command: text, processId, result: null }, ...prev].slice(0, KEEP));
+    // A terminal takes input too, so choosing one implies input.
+    const takesInput = interactive || tty;
+    setRuns((prev) => [{ command: text, processId, interactive: takesInput, tty, result: null }, ...prev].slice(0, KEEP));
     setCommand("");
     try {
-      const result = await threadApi.run(threadId, text, processId);
+      const result = await threadApi.run(threadId, text, processId, { interactive: takesInput, tty });
       finish(processId, result);
     } catch (err) {
       forgetCommandOutput(processId);
       setRuns((prev) => prev.filter((entry) => entry.processId !== processId));
       onError(err instanceof Error ? err.message : tx("The command could not be run."));
+    }
+  };
+
+  const send = async (processId: string, body: { text?: string; close_stdin?: boolean }) => {
+    try {
+      await threadApi.sendInput(threadId, processId, body);
+      if (body.text !== undefined) setTyped((prev) => ({ ...prev, [processId]: "" }));
+    } catch (err) {
+      onError(err instanceof Error ? err.message : tx("The input could not be sent."));
+    }
+  };
+
+  const resize = async (processId: string) => {
+    const size = sizes[processId] ?? { rows: 24, cols: 80 };
+    try {
+      await threadApi.resizeTerminal(threadId, processId, size.rows, size.cols);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : tx("The terminal could not be resized."));
     }
   };
 
@@ -79,6 +108,14 @@ export function RunCommand({
           {tx("Run")}
         </button>
       </form>
+      <div className="run-options">
+        <label className="muted small">
+          <input type="checkbox" checked={interactive || tty} disabled={tty} onChange={(event) => setInteractive(event.target.checked)} /> {tx("Takes input")}
+        </label>
+        <label className="muted small">
+          <input type="checkbox" checked={tty} onChange={(event) => setTty(event.target.checked)} /> {tx("In a terminal")}
+        </label>
+      </div>
       {runs.map((entry) => {
         const live = output[entry.processId];
         const stdout = entry.result ? entry.result.stdout : live?.stdout ?? "";
@@ -99,6 +136,52 @@ export function RunCommand({
               )}
             </div>
             {running && <div className="muted small">{tx("Running…")}</div>}
+            {running && entry.interactive && (
+              <form
+                className="run-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const text = typed[entry.processId] ?? "";
+                  if (text) void send(entry.processId, { text: `${text}\n` });
+                }}
+              >
+                <input
+                  value={typed[entry.processId] ?? ""}
+                  onChange={(event) => setTyped((prev) => ({ ...prev, [entry.processId]: event.target.value }))}
+                  placeholder={tx("Type into the command, then Enter")}
+                  aria-label={tx("Input to the command")}
+                />
+                <button className="primary" disabled={!(typed[entry.processId] ?? "")}>
+                  {tx("Send")}
+                </button>
+                <button type="button" className="link-button" onClick={() => void send(entry.processId, { close_stdin: true })}>
+                  {tx("Close input")}
+                </button>
+              </form>
+            )}
+            {running && entry.tty && (
+              <div className="run-form">
+                <input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={(sizes[entry.processId] ?? { rows: 24, cols: 80 }).rows}
+                  onChange={(event) => setSizes((prev) => ({ ...prev, [entry.processId]: { ...(prev[entry.processId] ?? { rows: 24, cols: 80 }), rows: Number(event.target.value) } }))}
+                  aria-label={tx("Rows")}
+                />
+                <input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={(sizes[entry.processId] ?? { rows: 24, cols: 80 }).cols}
+                  onChange={(event) => setSizes((prev) => ({ ...prev, [entry.processId]: { ...(prev[entry.processId] ?? { rows: 24, cols: 80 }), cols: Number(event.target.value) } }))}
+                  aria-label={tx("Columns")}
+                />
+                <button type="button" className="link-button" onClick={() => void resize(entry.processId)}>
+                  {tx("Set size")}
+                </button>
+              </div>
+            )}
             {stdout && <pre className="run-output">{stdout}</pre>}
             {stderr && <pre className="run-output run-error">{stderr}</pre>}
           </div>

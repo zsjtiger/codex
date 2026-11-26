@@ -280,8 +280,14 @@ export const threads = {
   /** One file of a code chat's checkout, as text. */
   readFile: (id: string, path: string) => api<CheckoutFile>("GET", `/threads/${id}/files/read?path=${encodeURIComponent(path)}`),
   /** Runs one command in a code chat's checkout, under the sandbox, and waits for it to finish. */
-  run: (id: string, command: string, processId: string) =>
-    api<CommandResult>("POST", `/threads/${id}/run`, { command, process_id: processId }),
+  run: (id: string, command: string, processId: string, options: { interactive?: boolean; tty?: boolean } = {}) =>
+    api<CommandResult>("POST", `/threads/${id}/run`, { command, process_id: processId, interactive: options.interactive ?? false, tty: options.tty ?? false }),
+  /** Writes text to a running command's input, and/or closes its input. Only a command started for input takes it. */
+  sendInput: (id: string, processId: string, body: { text?: string; close_stdin?: boolean }) =>
+    api<void>("POST", `/threads/${id}/run/${processId}/input`, body),
+  /** Sets the size of a running command's terminal. Only a command started in a terminal has one. */
+  resizeTerminal: (id: string, processId: string, rows: number, cols: number) =>
+    api<void>("POST", `/threads/${id}/run/${processId}/resize`, { rows, cols }),
   /** Stops a command run that is going. Its run then ends with the output it had. */
   stopRun: (id: string, processId: string) => api<void>("POST", `/threads/${id}/run/${processId}/stop`),
   /** Everything in the checkout that differs from the remote's copy of its branch, as codex computes it. */
