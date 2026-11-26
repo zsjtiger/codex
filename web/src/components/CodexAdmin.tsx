@@ -44,12 +44,13 @@ function ConfigEditor({ environmentId, onDone }: { environmentId: string; onDone
   };
 
   return (
-    <div className="settings-row settings-row-stack">
+    <div className="settings-row settings-row-top">
+      <div className="settings-grow">
       <div className="detail-label">{tx("Set a config value")}</div>
       <div className="muted small">{tx("Secret keys (anything named key, token, secret, password or credential) are refused. Values are not written to the audit log.")}</div>
       <input aria-label={tx("Key path")} placeholder="features.goals" value={keyPath} onChange={(e) => setKeyPath(e.target.value)} />
       <textarea aria-label={tx("Value as JSON")} placeholder={'"gpt-5"'} rows={2} value={value} onChange={(e) => setValue(e.target.value)} />
-      <div className="row-gap">
+      <div className="codex-admin-controls">
         <select aria-label={tx("Merge strategy")} value={strategy} onChange={(e) => setStrategy(e.target.value as "replace" | "upsert")}>
           <option value="replace">{tx("Replace")}</option>
           <option value="upsert">{tx("Merge into")}</option>
@@ -60,6 +61,7 @@ function ConfigEditor({ environmentId, onDone }: { environmentId: string; onDone
         </button>
       </div>
       {error && <div className="error small">{error}</div>}
+      </div>
     </div>
   );
 }
@@ -184,15 +186,17 @@ function JsonView({ load, label }: { load: () => Promise<unknown>; label: string
       .then((next) => setValue(JSON.stringify(next, null, 2)))
       .catch((err) => setError(messageOf(err, "Could not read it.")));
   return (
-    <div className="settings-row settings-row-stack">
-      <div className="settings-row">
-        <div className="detail-label">{label}</div>
-        <button type="button" className="link-button" onClick={() => void show()}>
-          {tx("Show")}
-        </button>
+    <div className="settings-row settings-row-top">
+      <div className="settings-grow">
+        <div className="settings-row">
+          <div className="detail-label">{label}</div>
+          <button type="button" className="link-button" onClick={() => void show()}>
+            {tx("Show")}
+          </button>
+        </div>
+        {error && <div className="error small">{error}</div>}
+        {value && <pre className="small code-block">{value}</pre>}
       </div>
-      {error && <div className="error small">{error}</div>}
-      {value && <pre className="small code-block">{value}</pre>}
     </div>
   );
 }

@@ -1240,3 +1240,10 @@ html.desktop .app { height: 100vh; margin-top: 0; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .suggestion-use:hover { background: var(--hover, rgba(0, 0, 0, 0.04)); }
+
+/* Codex admin settings: the config editor's controls sit in a wrapping row, and fields fill their column. */
+.codex-admin-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
+.codex-admin-controls input, .codex-admin-controls select { flex: 1 1 160px; min-width: 0; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; font-size: 14px; }
+.settings-grow input[type="text"], .settings-grow input:not([type]), .settings-grow textarea { width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; font-size: 14px; }
+.settings-grow textarea { font-family: ui-monospace, monospace; }
+.settings-subtitle { font-size: 14px; font-weight: 600; margin: 20px 0 4px; }
