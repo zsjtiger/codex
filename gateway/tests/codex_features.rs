@@ -100,8 +100,18 @@ async fn the_diff_of_a_turn_is_kept_as_codex_last_reported_it(pool: PgPool) {
     assert_eq!(status, StatusCode::CREATED, "{turn}");
     assert_eq!(wait_for_turn(&state, &token, &chat_id, 0).await["status"], "completed");
 
-    let (status, diffs) = call(&state, "GET", &format!("/api/v1/threads/{chat_id}/diffs"), &token, None).await;
-    assert_eq!(status, StatusCode::OK);
+    // The turn can be marked complete a moment before the last diff report is stored, so the stored diff is
+    // read until it is the last one codex sent.
+    let mut diffs = json!(null);
+    for _ in 0..100 {
+        let (status, found) = call(&state, "GET", &format!("/api/v1/threads/{chat_id}/diffs"), &token, None).await;
+        assert_eq!(status, StatusCode::OK);
+        diffs = found;
+        if diffs.as_array().map(|list| list.len()) == Some(1) && diffs[0]["diff"] == "--- a/notes.md\n+++ b/notes.md\n+second\n" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
     let diffs = diffs.as_array().expect("a list");
     assert_eq!(diffs.len(), 1, "{diffs:?}");
     assert_eq!(diffs[0]["diff"], "--- a/notes.md\n+++ b/notes.md\n+second\n");
