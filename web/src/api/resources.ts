@@ -4,6 +4,8 @@ import { apiUrl } from "./config";
 
 import { api, ApiError, getToken } from "./client";
 import type {
+  BackgroundTerminal,
+  Goal,
   WorkspaceDiff,
   CodexMemory,
   CodexPlugins,
@@ -248,6 +250,21 @@ export const threads = {
   /** The entries of a folder in a code chat's checkout; "" is the root. */
   listFiles: (id: string, path: string) =>
     api<CheckoutEntry[]>("GET", `/threads/${id}/files/list?path=${encodeURIComponent(path)}`),
+  /** The chat's goal, or null when it has none. */
+  goal: (id: string) => api<Goal | null>("GET", `/threads/${id}/goal`),
+  /** Sets the chat's goal, or changes part of it. A budget of null removes it. */
+  setGoal: (id: string, body: { objective?: string; status?: string; token_budget?: number | null }) =>
+    api<Goal>("PUT", `/threads/${id}/goal`, body),
+  /** Clears the chat's goal. */
+  clearGoal: (id: string) => api<void>("DELETE", `/threads/${id}/goal`),
+  /** The background terminals codex runs for the chat. */
+  backgroundTerminals: (id: string) =>
+    api<{ terminals: BackgroundTerminal[]; next_cursor: string | null }>("GET", `/threads/${id}/background-terminals`),
+  /** Stops one of the chat's background terminals. */
+  stopTerminal: (id: string, processId: string) =>
+    api<void>("POST", `/threads/${id}/background-terminals/${processId}/terminate`),
+  /** Stops the background terminals codex has finished with. */
+  cleanTerminals: (id: string) => api<void>("POST", `/threads/${id}/background-terminals/clean`),
   /** Writes a text file in a code chat's checkout, creating it if needed. */
   writeFile: (id: string, path: string, content: string) => api<void>("PUT", `/threads/${id}/files/content`, { path, content }),
   /** Creates a folder in a code chat's checkout. Its parent folder must exist. */

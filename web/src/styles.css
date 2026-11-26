@@ -1215,3 +1215,15 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 /* A turn codex was rewound past stays in the history, but muted. */
 .turn-reverted { opacity: 0.55; }
 .reverted-note { margin-bottom: 2px; }
+
+/* A chat's goal, above its conversation. */
+.goal-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 6px 16px; font-size: 13px; }
+.goal-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.goal-objective { font-weight: 600; overflow-wrap: anywhere; }
+.goal-status { border: 1px solid var(--border, #e5e0d6); border-radius: 999px; padding: 1px 8px; font-size: 12px; }
+.goal-complete { color: var(--ok, #2e7d32); }
+.goal-blocked, .goal-usageLimited, .goal-budgetLimited { color: var(--danger, #b3261e); }
+.goal-actions { display: flex; gap: 10px; }
+
+/* Background terminals codex runs for a code chat. */
+.codex-terminal-command { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }

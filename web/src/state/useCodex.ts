@@ -118,6 +118,10 @@ export function useCodex() {
         publishThread(frame.threadId, "fs/changed", (frame.params ?? {}) as Record<string, unknown>);
         return;
       }
+      // A chat's goal changed: the goal bar reads it again.
+      if (frame.type === "event" && (frame.method === "thread/goal/updated" || frame.method === "thread/goal/cleared") && typeof frame.threadId === "string") {
+        publishThread(frame.threadId, String(frame.method), (frame.params ?? {}) as Record<string, unknown>);
+      }
       if (frame.type === "event") {
         const notice = noticeFor(String(frame.method), (frame.params ?? {}) as Record<string, unknown>);
         if (notice) setNotices((prev) => [...prev.slice(-4), newNotice(notice)]);

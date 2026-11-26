@@ -8,6 +8,8 @@ import type { CommandOutput } from "../state/commandOutput";
 import { CheckoutFiles } from "./CheckoutFiles";
 import { RunCommand } from "./RunCommand";
 import { WorkspaceChanges } from "./WorkspaceChanges";
+import { BackgroundTerminals } from "./BackgroundTerminals";
+import { GoalBar } from "./GoalBar";
 import type { Notice } from "../state/notices";
 import { Composer } from "./Composer";
 import { usePreview } from "./Preview";
@@ -244,6 +246,8 @@ export function Home(props: HomeProps) {
           {thread.repo_id && <CheckoutFiles threadId={thread.id} onError={onError} />}
           {thread.repo_id && <RunCommand threadId={thread.id} output={commandOutput} onError={onError} />}
           {thread.repo_id && <WorkspaceChanges threadId={thread.id} onError={onError} />}
+          {thread.repo_id && <BackgroundTerminals threadId={thread.id} onError={onError} />}
+          <GoalBar threadId={thread.id} onError={onError} />
           <div className="thread-scroll">
             <Conversation
               variant={thread.repo_id ? "code" : "chat"}

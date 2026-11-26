@@ -332,6 +332,35 @@ pub async fn mock_app_server() -> MockServer {
                         "thread/revert" => {
                             out_tx.send(reply(json!({ "thread": { "id": "thr_mock" }, "turnsBackwardsCursor": null }))).unwrap();
                         }
+                        "thread/goal/get" => {
+                            out_tx.send(reply(json!({ "goal": { "threadId": "thr_mock", "objective": "ship it", "status": "active", "tokenBudget": null, "tokensUsed": 120, "timeUsedSeconds": 30, "createdAt": 0, "updatedAt": 0 } }))).unwrap();
+                        }
+                        "thread/goal/set" => {
+                            // Echoes the change over the goal the chat had: unchanged parts keep their values.
+                            let p = &msg["params"];
+                            let goal = json!({
+                                "threadId": "thr_mock",
+                                "objective": p.get("objective").cloned().unwrap_or(json!("ship it")),
+                                "status": p.get("status").cloned().unwrap_or(json!("active")),
+                                "tokenBudget": p.get("tokenBudget").cloned().unwrap_or(Value::Null),
+                                "tokensUsed": 120, "timeUsedSeconds": 30, "createdAt": 0, "updatedAt": 0
+                            });
+                            out_tx.send(reply(json!({ "goal": goal }))).unwrap();
+                        }
+                        "thread/goal/clear" => {
+                            out_tx.send(reply(json!({ "cleared": true }))).unwrap();
+                        }
+                        "thread/backgroundTerminals/list" => {
+                            out_tx.send(reply(json!({ "data": [
+                                { "itemId": "item_1", "processId": "p1", "command": "npm run dev", "cwd": "/work", "osPid": 4242, "cpuPercent": 1.5, "rssKb": 900 }
+                            ], "nextCursor": null }))).unwrap();
+                        }
+                        "thread/backgroundTerminals/terminate" => {
+                            out_tx.send(reply(json!({ "terminated": true }))).unwrap();
+                        }
+                        "thread/backgroundTerminals/clean" => {
+                            out_tx.send(reply(json!({}))).unwrap();
+                        }
                         "memory/reset" => {
                             out_tx.send(reply(json!({}))).unwrap();
                         }

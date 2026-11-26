@@ -49,6 +49,26 @@ export interface ToolUseRecord {
 }
 
 /** The unified diff of everything a code turn changed, as Codex last reported it. */
+/** A chat's goal, as codex keeps it. */
+export interface Goal {
+  objective: string;
+  /** active, paused, blocked, usageLimited, budgetLimited, or complete. */
+  status: string;
+  token_budget: number | null;
+  tokens_used: number;
+  time_used_seconds: number;
+}
+
+/** A background terminal codex runs for a chat. */
+export interface BackgroundTerminal {
+  process_id: string;
+  command: string;
+  cwd: string;
+  os_pid: number | null;
+  cpu_percent: number | null;
+  rss_kb: number | null;
+}
+
 export interface TurnDiff {
   /** The chat's turn, when the gateway still knows it. */
   turn_id: string | null;

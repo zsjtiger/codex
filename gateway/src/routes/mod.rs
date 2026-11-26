@@ -18,6 +18,7 @@ mod projects;
 mod scheduled;
 mod search;
 mod skills;
+mod thread_runtime;
 mod threads;
 pub mod usage;
 mod workspaces;
@@ -30,6 +31,7 @@ pub fn router() -> Router<AppState> {
         .merge(members::routes())
         .merge(environments::routes())
         .merge(threads::routes())
+        .merge(thread_runtime::routes())
         .merge(code::routes())
         .merge(checkout::routes())
         .merge(github::routes())
