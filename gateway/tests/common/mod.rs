@@ -39,6 +39,8 @@ pub struct MockServer {
     pub responses: Arc<Mutex<Vec<Value>>>,
     /// Largest number of turns in flight at once.
     pub max_in_flight: Arc<AtomicUsize>,
+    /// Every frame the mock has sent to the gateway, parsed: responses, notifications and server requests.
+    pub sent: Arc<Mutex<Vec<Value>>>,
 }
 
 /// Starts a mock app-server. Turn behaviour depends on the input text:
@@ -55,6 +57,8 @@ pub async fn mock_app_server() -> MockServer {
     let turn_counter = Arc::new(AtomicU64::new(1));
 
     let requests_c = Arc::clone(&requests);
+    let sent = Arc::new(Mutex::new(Vec::new()));
+    let sent_c = Arc::clone(&sent);
     let (seen_c, responses_c, max_c) = (
         Arc::clone(&seen),
         Arc::clone(&responses),
@@ -66,10 +70,14 @@ pub async fn mock_app_server() -> MockServer {
                 return;
             };
             let socket = accept_async(stream).await.unwrap();
+            let sent_w = Arc::clone(&sent_c);
             let (mut sink, mut stream) = socket.split();
             let (out_tx, mut out_rx) = mpsc::unbounded_channel::<String>();
             tokio::spawn(async move {
                 while let Some(frame) = out_rx.recv().await {
+                    if let Ok(parsed) = serde_json::from_str::<Value>(&frame) {
+                        sent_w.lock().unwrap().push(parsed);
+                    }
                     if sink.send(Message::Text(frame.into())).await.is_err() {
                         break;
                     }
@@ -154,6 +162,7 @@ pub async fn mock_app_server() -> MockServer {
                                     json!({
                                         "method": "item/completed",
                                         "params": {
+                                            "completedAtMs": 0,
                                             "threadId": "thr_mock",
                                             "turnId": turn_id,
                                             "item": { "type": "agentMessage", "id": "msg_review", "text": "Review: no problems found." }
@@ -176,7 +185,7 @@ pub async fn mock_app_server() -> MockServer {
                             // Compaction reports back with a notification, not a turn.
                             out_tx.send(reply(json!({}))).unwrap();
                             out_tx
-                                .send(json!({ "method": "thread/compacted", "params": { "threadId": "thr_mock" } }).to_string())
+                                .send(json!({ "method": "thread/compacted", "params": { "threadId": "thr_mock", "turnId": "turn_compact" } }).to_string())
                                 .unwrap();
                         }
                         "thread/fork" => {
@@ -530,6 +539,7 @@ pub async fn mock_app_server() -> MockServer {
                                         json!({
                                             "method": "item/completed",
                                             "params": {
+                                                "completedAtMs": 0,
                                                 "threadId": "thr_mock",
                                                 "turnId": turn_id,
                                                 "item": {"type": "webSearch", "id": "ws_1", "query": "alphafold weights", "action": null, "results": []}
@@ -542,6 +552,7 @@ pub async fn mock_app_server() -> MockServer {
                                         json!({
                                             "method": "item/completed",
                                             "params": {
+                                                "completedAtMs": 0,
                                                 "threadId": "thr_mock",
                                                 "turnId": turn_id,
                                                 "item": {"type": "agentMessage", "id": "msg_1", "text": agent_text(&input), "delivery": null, "memoryCitation": null, "phase": null, "questions": null}
@@ -584,8 +595,8 @@ pub async fn mock_app_server() -> MockServer {
                                             "threadId": "thr_mock",
                                             "turnId": turn_id,
                                             "tokenUsage": {
-                                                "last": { "inputTokens": 10, "outputTokens": 5 },
-                                                "total": { "inputTokens": 10, "outputTokens": 5 }
+                                                "last": { "inputTokens": 10, "cachedInputTokens": 0, "outputTokens": 5, "reasoningOutputTokens": 0, "totalTokens": 15 },
+                                                "total": { "inputTokens": 10, "cachedInputTokens": 0, "outputTokens": 5, "reasoningOutputTokens": 0, "totalTokens": 15 }
                                             }
                                         }
                                     })
@@ -619,6 +630,7 @@ pub async fn mock_app_server() -> MockServer {
         requests,
         responses,
         max_in_flight,
+        sent,
     }
 }
 

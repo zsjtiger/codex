@@ -32,5 +32,6 @@ uuid = { version = "1", features = ["v4", "serde"] }
 
 [dev-dependencies]
 http-body-util = "0.1"
+jsonschema = { version = "0.33", default-features = false }
 tower = { version = "0.5", features = ["util"] }
 wiremock = "0.6"
