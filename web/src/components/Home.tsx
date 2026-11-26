@@ -11,6 +11,7 @@ import { WorkspaceChanges } from "./WorkspaceChanges";
 import { BackgroundTerminals } from "./BackgroundTerminals";
 import { GoalBar } from "./GoalBar";
 import type { Notice } from "../state/notices";
+import type { Prediction } from "../state/useCodex";
 import { Composer } from "./Composer";
 import { usePreview } from "./Preview";
 import { Conversation } from "./Conversation";
@@ -27,6 +28,9 @@ interface HomeProps {
   /** Starts a new chat from a reply of this one. */
   onFork?: (turnId: string) => void;
   onRevert?: (turnId: string) => void;
+  predictions: Record<string, Prediction>;
+  onSuggestNext: (turn: Turn) => void;
+  onDismissSuggestion: (codexTurnId: string) => void;
   /** A review or a compaction of the open chat. */
   onAction?: (action: "review" | "compact") => void;
   /** Saves a plugin a reply designed into the workspace. */
@@ -68,8 +72,15 @@ interface HomeProps {
 
 export function Home(props: HomeProps) {
   const { t } = useI18n();
-  const { prefill, onPrefillUsed, onAddPlugin, onAction, onFork, onRevert, user, workspaceId, thread, threads, onOpenThread, turns, agentText, streamText, toolUses, activity, work, diffs, commandOutput, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError, notices, onDismissNotice } = props;
+  const { prefill, onPrefillUsed, onAddPlugin, onAction, onFork, onRevert, predictions, onSuggestNext, onDismissSuggestion, user, workspaceId, thread, threads, onOpenThread, turns, agentText, streamText, toolUses, activity, work, diffs, commandOutput, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError, notices, onDismissNotice } = props;
   const pending = approvals.filter((a) => a.threadId === thread?.id);
+  // The newest finished turn whose suggestion is ready is offered above the composer.
+  const suggestedTurn = [...turns].reverse().find((turn) => turn.status === "completed" && turn.codex_turn_id && predictions[turn.codex_turn_id]?.status === "ready");
+  const suggestedPrediction = suggestedTurn?.codex_turn_id ? predictions[suggestedTurn.codex_turn_id] : undefined;
+  const suggestion =
+    suggestedTurn?.codex_turn_id && suggestedPrediction?.status === "ready"
+      ? { text: suggestedPrediction.text, onDismiss: () => onDismissSuggestion(suggestedTurn.codex_turn_id as string) }
+      : null;
   const threadId = thread?.id ?? "";
   const hasRepo = Boolean(thread?.repo_id);
   const searchFiles = useCallback((query: string): Promise<FileMatch[]> => threadApi.files(threadId, query), [threadId]);
@@ -264,6 +275,8 @@ export function Home(props: HomeProps) {
               onSummarize={(turnId) => void summarize(turnId)}
               onFork={onFork}
               onRevert={onRevert}
+              predictions={predictions}
+              onSuggest={onSuggestNext}
               onAddPlugin={onAddPlugin}
             />
             {docs.map((doc) => (
@@ -282,6 +295,7 @@ export function Home(props: HomeProps) {
             <Composer
               prefill={prefill}
               onPrefillUsed={onPrefillUsed}
+              suggestion={suggestion}
               environmentId={environment?.id ?? null}
               onSend={onSend}
               onAction={onAction}
@@ -309,6 +323,7 @@ export function Home(props: HomeProps) {
           <Composer
             prefill={prefill}
             onPrefillUsed={onPrefillUsed}
+            suggestion={suggestion}
             environmentId={environment?.id ?? null}
             onSend={onSend}
             disabled={sending}

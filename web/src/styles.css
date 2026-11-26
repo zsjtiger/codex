@@ -1231,3 +1231,12 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 /* Options for a command run from a code chat, and the input and size of a running one. */
 .run-options { display: flex; gap: 16px; }
 .run-options label { display: flex; align-items: center; gap: 6px; }
+
+/* codex's suggestion of what to write next, above the composer. */
+.suggestion { display: flex; align-items: center; gap: 8px; margin: 0 auto 8px; max-width: 100%; }
+.suggestion-use {
+  flex: 1; min-width: 0; text-align: left; border: 1px dashed var(--border, #e5e0d6); border-radius: 999px;
+  padding: 6px 14px; background: transparent; color: inherit; font: inherit; font-size: 13px; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.suggestion-use:hover { background: var(--hover, rgba(0, 0, 0, 0.04)); }

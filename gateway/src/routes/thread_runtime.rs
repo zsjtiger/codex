@@ -27,6 +27,7 @@ pub fn routes() -> Router<AppState> {
         .route("/threads/{id}/background-terminals", get(list_terminals))
         .route("/threads/{id}/background-terminals/clean", post(clean_terminals))
         .route("/threads/{id}/background-terminals/{process_id}/terminate", post(terminate_terminal))
+        .route("/turns/{id}/prediction", post(request_prediction))
 }
 
 /// The chat's workspace, and its codex thread and environment. A chat codex has not started has none of these.
@@ -262,4 +263,48 @@ async fn clean_terminals(State(state): State<AppState>, user: CurrentUser, Path(
         .map_err(|err| ApiError::BadRequest(format!("could not clean up the terminals: {err}")))?;
     audit::record(&state.pool, chat.workspace_id, user.id, "thread.terminals_clean", "thread", id, json!({})).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Asks codex to suggest what the person might write next, from a finished turn. The suggestion comes later, as
+/// a `thread/prediction/updated` notice to the chat. It is not asked for on every turn: a person asks for it.
+async fn request_prediction(State(state): State<AppState>, user: CurrentUser, Path(id): Path<Uuid>) -> Result<StatusCode, ApiError> {
+    let row: Option<(Uuid, String, Option<String>, Option<String>, Option<Uuid>, Option<String>)> = sqlx::query_as(
+        "SELECT th.workspace_id, t.status, t.codex_turn_id, th.codex_thread_id, th.environment_id, e.endpoint
+           FROM turns t
+           JOIN threads th ON th.id = t.thread_id
+           LEFT JOIN environments e ON e.id = th.environment_id
+          WHERE t.id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?;
+    let Some((workspace_id, status, codex_turn_id, codex_thread_id, environment_id, endpoint)) = row else {
+        return Err(ApiError::NotFound);
+    };
+    require_role(&state.pool, workspace_id, user.id, Role::Member).await?;
+    if status != "completed" {
+        return Err(ApiError::Conflict("a suggestion is made from a finished turn".to_string()));
+    }
+    let (Some(codex_turn_id), Some(codex_thread_id), Some(environment_id)) = (codex_turn_id, codex_thread_id, environment_id) else {
+        return Err(ApiError::Conflict("this turn has no codex history to suggest from".to_string()));
+    };
+    let busy: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM turns t JOIN turns self ON self.id = $1 WHERE t.thread_id = self.thread_id AND t.status IN ('running', 'queued'))",
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?;
+    if busy {
+        return Err(ApiError::Conflict("a suggestion waits until the chat is idle".to_string()));
+    }
+    let lease = state
+        .runtime
+        .lease(environment_id, endpoint.as_deref())
+        .await
+        .map_err(|err| ApiError::BadRequest(err.to_string()))?;
+    lease
+        .request("thread/prediction/request", json!({ "threadId": codex_thread_id, "sourceTurnId": codex_turn_id }))
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("could not ask for a suggestion: {err}")))?;
+    Ok(StatusCode::ACCEPTED)
 }

@@ -7,6 +7,9 @@ import { type Frame, GatewaySocket, type SocketStatus } from "../realtime/socket
 import { tx } from "../i18n";
 import { type ToolUse, mergeToolUses, toolUseFromItem } from "./toolUses";
 import { WORK_METHODS, applyWorkEvent, type WorkLog } from "./work";
+
+/** A suggestion of what to write next: being made, ready to use, or not made. */
+export type Prediction = { status: "pending" } | { status: "ready"; text: string } | { status: "failed" };
 import { publishEnvironment } from "./environmentEvents";
 import { type Notice, newNotice, noticeFor } from "./notices";
 import { publishThread } from "./threadEvents";
@@ -57,6 +60,8 @@ export function useCodex() {
   const [work, setWork] = useState<Record<string, WorkLog>>({});
   // The latest diff of everything each codex turn changed, from turn/diff/updated or the saved copy.
   const [diffs, setDiffs] = useState<Record<string, string>>({});
+  // Suggestions of what to write next, by the codex turn they were made from.
+  const [predictions, setPredictions] = useState<Record<string, Prediction>>({});
   // Output of command runs in code chats, by process id, as it streams.
   const [commandOutput, setCommandOutput] = useState<Record<string, CommandOutput>>({});
   const [approvals, setApprovals] = useState<Approval[]>([]);
@@ -117,6 +122,18 @@ export function useCodex() {
       if (frame.type === "event" && frame.method === "fs/changed" && typeof frame.threadId === "string") {
         publishThread(frame.threadId, "fs/changed", (frame.params ?? {}) as Record<string, unknown>);
         return;
+      }
+      // codex's suggestion for the next message is ready, or could not be made.
+      if (frame.type === "event" && frame.method === "thread/prediction/updated" && typeof frame.params === "object" && frame.params !== null) {
+        const params = frame.params as { sourceTurnId?: unknown; result?: { type?: unknown; text?: unknown } };
+        const key = typeof params.sourceTurnId === "string" ? params.sourceTurnId : "";
+        const text = typeof params.result?.text === "string" ? params.result.text.trim() : "";
+        if (key) {
+          setPredictions((prev) => ({
+            ...prev,
+            [key]: params.result?.type === "completed" && text ? { status: "ready", text } : { status: "failed" },
+          }));
+        }
       }
       // A chat's goal changed: the goal bar reads it again.
       if (frame.type === "event" && (frame.method === "thread/goal/updated" || frame.method === "thread/goal/cleared") && typeof frame.threadId === "string") {
@@ -347,6 +364,28 @@ export function useCodex() {
   );
 
   // Starts a new chat from a finished reply, and opens it.
+  const suggestNext = useCallback(
+    async (turn: Turn) => {
+      if (!turn.codex_turn_id) return;
+      const key = turn.codex_turn_id;
+      setPredictions((prev) => ({ ...prev, [key]: { status: "pending" } }));
+      try {
+        await threadApi.suggestNext(turn.id);
+      } catch (err) {
+        setPredictions((prev) => ({ ...prev, [key]: { status: "failed" } }));
+        fail(err);
+      }
+    },
+    [fail],
+  );
+
+  const dismissSuggestion = useCallback((codexTurnId: string) => {
+    setPredictions((prev) => {
+      const { [codexTurnId]: _dismissed, ...rest } = prev;
+      return rest;
+    });
+  }, []);
+
   const revertTurn = useCallback(
     async (turnId: string) => {
       const threadId = activeRef.current;
@@ -497,6 +536,9 @@ export function useCodex() {
     runAction,
     forkFromTurn,
     revertTurn,
+    predictions,
+    suggestNext,
+    dismissSuggestion,
     answerApproval,
     setFeedback,
   };

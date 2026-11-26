@@ -390,6 +390,14 @@ pub async fn mock_app_server() -> MockServer {
                         "thread/backgroundTerminals/clean" => {
                             out_tx.send(reply(json!({}))).unwrap();
                         }
+                        "thread/prediction/request" => {
+                            // The suggestion itself comes as a notice, after the request is accepted.
+                            let source = msg["params"]["sourceTurnId"].clone();
+                            out_tx.send(reply(json!({}))).unwrap();
+                            out_tx.send(json!({ "method": "thread/prediction/updated", "params": {
+                                "threadId": "thr_mock", "sourceTurnId": source,
+                                "result": { "type": "completed", "text": "Now run the tests." } } }).to_string()).unwrap();
+                        }
                         "memory/reset" => {
                             out_tx.send(reply(json!({}))).unwrap();
                         }

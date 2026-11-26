@@ -123,3 +123,52 @@ async fn background_terminals_are_listed_stopped_and_cleaned(pool: PgPool) {
         .unwrap();
     assert_eq!(stopped, 2);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_suggestion_for_the_next_message_comes_from_a_finished_turn_while_the_chat_is_idle(pool: PgPool) {
+    let state = AppState::new(pool.clone(), true, RuntimeConfig::default());
+    let mock = mock_app_server().await;
+    let token = login(&state, "predict@example.com").await;
+    let (_, chat_id) = setup(&state, &token, Some(&mock.url)).await;
+    let addr = spawn_gateway(state.clone()).await;
+    let mut watcher = connect(&state, addr, &token).await;
+    send(&mut watcher, json!({ "type": "subscribe", "threadId": chat_id })).await;
+    next_of_type(&mut watcher, "subscribed").await;
+
+    post_turn(&state, &token, &chat_id, "first").await;
+    assert_eq!(wait_for_turn(&state, &token, &chat_id, 0).await["status"], "completed");
+    let (_, turns) = call(&state, "GET", &format!("/api/v1/threads/{chat_id}/turns"), &token, None).await;
+    let turn = turns[0]["id"].as_str().unwrap().to_string();
+    let codex_turn = turns[0]["codex_turn_id"].as_str().unwrap().to_string();
+
+    let (status, _) = call(&state, "POST", &format!("/api/v1/turns/{turn}/prediction"), &token, None).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    let requests = mock.requests.lock().unwrap().clone();
+    let (_, params) = requests.iter().rev().find(|(m, _)| m == "thread/prediction/request").expect("codex was asked");
+    assert_eq!(params["threadId"], "thr_mock");
+    assert_eq!(params["sourceTurnId"], codex_turn.as_str());
+
+    // The suggestion reaches the chat, named by the turn it came from.
+    // The chat also hears the turn's own events first; the suggestion is the one named for this turn.
+    let suggestion = loop {
+        let frame = next_of_type(&mut watcher, "event").await;
+        if frame["method"] == "thread/prediction/updated" {
+            break frame;
+        }
+    };
+    assert_eq!(suggestion["method"], "thread/prediction/updated");
+    assert_eq!(suggestion["threadId"], chat_id.as_str());
+    assert_eq!(suggestion["params"]["sourceTurnId"], codex_turn.as_str());
+    assert_eq!(suggestion["params"]["result"], json!({ "type": "completed", "text": "Now run the tests." }));
+
+    // A chat that is running gets no suggestion, since it would be about the past.
+    post_turn(&state, &token, &chat_id, "SLOW second").await;
+    let (status, _) = call(&state, "POST", &format!("/api/v1/turns/{turn}/prediction"), &token, None).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    wait_for_turn(&state, &token, &chat_id, 1).await;
+
+    // Someone outside the workspace cannot ask.
+    let outsider = login(&state, "predict-outsider@example.com").await;
+    let (status, _) = call(&state, "POST", &format!("/api/v1/turns/{turn}/prediction"), &outsider, None).await;
+    assert_ne!(status, StatusCode::ACCEPTED);
+}

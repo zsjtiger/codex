@@ -11,6 +11,7 @@ import { usePreview } from "./Preview";
 import { attachments as attachmentApi } from "../api/resources";
 import { isDesktop, saveFileAs, showInFolder } from "../desktop";
 import type { Turn } from "../api/types";
+import type { Prediction } from "../state/useCodex";
 import { tx } from "../i18n";
 import { ElicitationCard } from "./ElicitationCard";
 
@@ -24,6 +25,10 @@ function relativeTime(iso: string): string {
 }
 
 interface ReplyActionsProps {
+  /** Asks codex what to write next, from this turn. */
+  onSuggest?: (turn: Turn) => void;
+  /** A suggestion for this turn is being made. */
+  pending?: boolean;
   /** Starts a new chat from this reply. */
   onFork?: (turnId: string) => void;
   /** Rewinds the chat to before this turn. */
@@ -101,7 +106,7 @@ function PluginDesignCard({ draft, onSave }: { draft: PluginDraft; onSave: () =>
   );
 }
 
-function ReplyActions({ turn, reply, onFeedback, onRegenerate, onSaveDocument, onSummarize, onFork, onRevert }: ReplyActionsProps) {
+function ReplyActions({ turn, reply, onFeedback, onRegenerate, onSaveDocument, onSummarize, onFork, onRevert, onSuggest, pending }: ReplyActionsProps) {
   const [copied, setCopied] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const timer = useRef<number | undefined>(undefined);
@@ -154,6 +159,11 @@ function ReplyActions({ turn, reply, onFeedback, onRegenerate, onSaveDocument, o
       {onSaveDocument && (
         <button type="button" className="reply-action" onClick={() => onSaveDocument(reply)} aria-label={tx("Save as document")} title={tx("Save as document")}>
           <FileIcon />
+        </button>
+      )}
+      {onSuggest && turn.codex_turn_id && !turn.reverted_at && (
+        <button type="button" className="reply-action reply-suggest" disabled={pending} onClick={() => onSuggest(turn)}>
+          {pending ? tx("Suggesting…") : tx("Suggest next")}
         </button>
       )}
       {onRevert && !turn.reverted_at && (
@@ -578,6 +588,10 @@ interface ConversationProps {
   onFork?: (turnId: string) => void;
   /** Rewinds the chat to before this turn. */
   onRevert?: (turnId: string) => void;
+  /** Asks codex what the person might write next, from this turn. */
+  onSuggest?: (turn: Turn) => void;
+  /** Suggestions being made or ready, by codex turn. */
+  predictions?: Record<string, Prediction>;
   /** Saves the plugin a reply designed. */
   onAddPlugin?: (draft: PluginDraft) => Promise<void>;
   /** "code" shows replies as plain text with grouped activity, as in a code session. */
@@ -598,7 +612,7 @@ interface ConversationProps {
   onSummarize?: (turnId: string) => void;
 }
 
-export function Conversation({ variant = "chat", turns, agentText, activity, work = {}, diffs = {}, approvals, onAnswer, onFeedback, onRegenerate, onSaveDocument, onSummarize, onAddPlugin, onFork, onRevert }: ConversationProps) {
+export function Conversation({ variant = "chat", turns, agentText, activity, work = {}, diffs = {}, approvals, onAnswer, onFeedback, onRegenerate, onSaveDocument, onSummarize, onAddPlugin, onFork, onRevert, onSuggest, predictions = {} }: ConversationProps) {
   const code = variant === "code";
   return (
     <div className={code ? "conversation code-conversation" : "conversation"}>
@@ -640,7 +654,7 @@ export function Conversation({ variant = "chat", turns, agentText, activity, wor
                   {pluginDraft && onAddPlugin && <PluginDesignCard draft={pluginDraft} onSave={() => onAddPlugin(pluginDraft)} />}
                     {changeNote && <p className="muted small doc-edited">{changeNote}</p>}
                   </div>
-                  {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} onSummarize={onSummarize} onFork={onFork} onRevert={onRevert} />}
+                  {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} onSummarize={onSummarize} onFork={onFork} onRevert={onRevert} onSuggest={onSuggest} pending={predictions[turn.codex_turn_id ?? ""]?.status === "pending"} />}
                 </>
               )}
               {(turn.status !== "completed" && turn.status !== "running" && turn.status !== "queued") || turn.error ? (
@@ -671,7 +685,7 @@ export function Conversation({ variant = "chat", turns, agentText, activity, wor
                   {pluginDraft && onAddPlugin && <PluginDesignCard draft={pluginDraft} onSave={() => onAddPlugin(pluginDraft)} />}
                   {changeNote && <p className="muted small doc-edited">{changeNote}</p>}
                 </div>
-                {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} onSummarize={onSummarize} onFork={onFork} onRevert={onRevert} />}
+                {turn.status === "completed" && <ReplyActions turn={turn} reply={reply} onFeedback={onFeedback} onRegenerate={onRegenerate} onSaveDocument={onSaveDocument} onSummarize={onSummarize} onFork={onFork} onRevert={onRevert} onSuggest={onSuggest} pending={predictions[turn.codex_turn_id ?? ""]?.status === "pending"} />}
               </>
             )}
             <div className={`turn-status status-${turn.status}`}>

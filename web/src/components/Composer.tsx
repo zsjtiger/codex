@@ -43,6 +43,8 @@ function attachmentLimit(file: File): number {
 }
 
 interface ComposerProps {
+  /** codex's suggestion of what to write next. Clicking it fills the message; it is not sent. */
+  suggestion?: { text: string; onDismiss: () => void } | null;
   /** Text to start the message with, from outside the composer. Used once, then `onPrefillUsed` is called. */
   prefill?: string | null;
   onPrefillUsed?: () => void;
@@ -88,7 +90,7 @@ interface Pending {
  */
 export function Composer(props: ComposerProps) {
   const { t } = useI18n();
-  const { prefill, onPrefillUsed, environmentId, onSend, onAction, onSearchFiles, onStop, running, disabled, placeholder = t("home.placeholder"), projects, projectId, onProjectChange, onCreateProject, skills, upload, onError } = props;
+  const { prefill, onPrefillUsed, suggestion, environmentId, onSend, onAction, onSearchFiles, onStop, running, disabled, placeholder = t("home.placeholder"), projects, projectId, onProjectChange, onCreateProject, skills, upload, onError } = props;
   const [draft, setDraft] = useState("");
   useEffect(() => {
     if (!prefill) return;
@@ -265,6 +267,23 @@ export function Composer(props: ComposerProps) {
 
   return (
     <div className="composer-wrap">
+      {suggestion && (
+        <div className="suggestion">
+          <button
+            type="button"
+            className="suggestion-use"
+            onClick={() => {
+              setDraft(suggestion.text);
+              suggestion.onDismiss();
+            }}
+          >
+            {suggestion.text}
+          </button>
+          <button type="button" className="banner-close" onClick={suggestion.onDismiss} aria-label={tx("Dismiss")}>
+            ×
+          </button>
+        </div>
+      )}
       <form
         className="composer"
         onSubmit={(event) => {

@@ -327,6 +327,9 @@ export function App() {
             onAction={codex.runAction}
             onFork={codex.forkFromTurn}
             onRevert={codex.revertTurn}
+            predictions={codex.predictions}
+            onSuggestNext={codex.suggestNext}
+            onDismissSuggestion={codex.dismissSuggestion}
             prefill={prefill}
             onPrefillUsed={() => setPrefill(null)}
             user={codex.user}
