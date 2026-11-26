@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { environments } from "../api/resources";
 import type { CodexSkills as CodexSkillsState } from "../api/types";
 import { tx } from "../i18n";
+import { subscribeEnvironment } from "../state/environmentEvents";
 
 /** The labels codex uses for where a skill came from. */
 const SCOPE_LABEL: Record<string, string> = {
@@ -18,6 +19,15 @@ const SCOPE_LABEL: Record<string, string> = {
 export function CodexSkills({ environmentId, onError }: { environmentId: string; onError: (message: string) => void }) {
   const [found, setFound] = useState<CodexSkillsState | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // When codex's skills change while the list is shown, the list is read again.
+  useEffect(() => {
+    if (!found) return;
+    return subscribeEnvironment(environmentId, (method) => {
+      if (method === "skills/changed") void load();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [environmentId, found !== null]);
 
   const load = async () => {
     setLoading(true);

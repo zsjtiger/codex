@@ -34,6 +34,9 @@ struct Pending {
     method: String,
 }
 
+/// Notices codex sends for an environment as a whole, which browsers watching its chats are told about.
+const ENVIRONMENT_NOTICES: &[&str] = &["account/rateLimits/updated", "skills/changed"];
+
 /// Most output kept for each stream of a command run from a chat.
 pub const RUN_OUTPUT_LIMIT: usize = 256 * 1024;
 
@@ -182,10 +185,38 @@ impl Hub {
         );
     }
 
-    async fn forward_event(&self, pool: &PgPool, method: &str, params: &Value) {
+    /// Sends an environment-wide notice (one that names no thread) to every browser watching a chat in that environment.
+    async fn forward_environment_event(&self, pool: &PgPool, environment_id: Uuid, method: &str, params: &Value) {
+        let threads: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM threads WHERE environment_id = $1")
+            .bind(environment_id)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+        let frame = json!({ "type": "event", "environmentId": environment_id, "method": method, "params": params });
+        let mut subscribers = self.subscribers.lock().expect("subscribers lock poisoned");
+        // A browser watching several chats in the environment gets the notice once.
+        let mut reached = std::collections::HashSet::new();
+        for thread in threads {
+            if let Some(list) = subscribers.get_mut(&thread) {
+                list.retain(|(handle, outbound)| {
+                    if !reached.insert(*handle) {
+                        return true;
+                    }
+                    outbound.send(frame.clone()).is_ok()
+                });
+            }
+        }
+    }
+
+    async fn forward_event(&self, pool: &PgPool, environment_id: Uuid, method: &str, params: &Value) {
         // Command output names its process, not its thread, so it is routed by the process.
         if method == "command/exec/outputDelta" {
             self.record_process_output(params);
+            return;
+        }
+        // Some notices name no thread but concern the whole environment's codex.
+        if ENVIRONMENT_NOTICES.contains(&method) && params.get("threadId").is_none() {
+            self.forward_environment_event(pool, environment_id, method, params).await;
             return;
         }
         let Some(codex_thread_id) = params.get("threadId").and_then(Value::as_str) else {
@@ -299,14 +330,14 @@ impl Hub {
     }
 
     /// Reads one connection's traffic until the connection closes.
-    pub async fn pump(self: Arc<Self>, pool: PgPool, connection: Arc<RpcConnection>) {
+    pub async fn pump(self: Arc<Self>, pool: PgPool, connection: Arc<RpcConnection>, environment_id: Uuid) {
         let mut notifications = connection.subscribe();
         let mut requests = connection.subscribe_server_requests();
         let mut tick = tokio::time::interval(Duration::from_secs(1));
         loop {
             tokio::select! {
                 event = notifications.recv() => match event {
-                    Ok(event) => self.forward_event(&pool, &event.method, &event.params).await,
+                    Ok(event) => self.forward_event(&pool, environment_id, &event.method, &event.params).await,
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 },

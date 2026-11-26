@@ -7,6 +7,7 @@ import { type Frame, GatewaySocket, type SocketStatus } from "../realtime/socket
 import { tx } from "../i18n";
 import { type ToolUse, mergeToolUses, toolUseFromItem } from "./toolUses";
 import { WORK_METHODS, applyWorkEvent, type WorkLog } from "./work";
+import { publishEnvironment } from "./environmentEvents";
 
 export interface SendOptions {
   model?: string;
@@ -101,6 +102,11 @@ export function useCodex() {
 
   const handleFrame = useCallback(
     (frame: Frame) => {
+      // A notice about an environment as a whole, such as its account's limits, goes to the components showing it.
+      if (frame.type === "event" && typeof frame.environmentId === "string") {
+        publishEnvironment(frame.environmentId, String(frame.method), (frame.params ?? {}) as Record<string, unknown>);
+        return;
+      }
       switch (frame.type) {
         case "event": {
           const method = frame.method as string;

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { environments, usage } from "../api/resources";
 import type { Environment, RateLimits, RateWindow, UsageReport } from "../api/types";
 import { tx } from "../i18n";
+import { subscribeEnvironment } from "../state/environmentEvents";
 
 const RANGES = [7, 30, 90];
 
@@ -39,12 +40,19 @@ function EnvironmentLimits({ environment }: { environment: Environment }) {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let current = true;
-    environments
-      .rateLimits(environment.id)
-      .then((next) => current && setLimits(next))
-      .catch((err) => current && setError(err instanceof Error ? err.message : tx("Could not read the limits.")));
+    const read = () =>
+      environments
+        .rateLimits(environment.id)
+        .then((next) => current && setLimits(next))
+        .catch((err) => current && setError(err instanceof Error ? err.message : tx("Could not read the limits.")));
+    void read();
+    // codex announces a change to the account's limits; the dialog reads them again.
+    const stop = subscribeEnvironment(environment.id, (method) => {
+      if (method === "account/rateLimits/updated") void read();
+    });
     return () => {
       current = false;
+      stop();
     };
   }, [environment.id]);
   return (

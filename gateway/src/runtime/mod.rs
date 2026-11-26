@@ -182,7 +182,7 @@ impl Runtime {
         let entry = match endpoint {
             Some(url) => {
                 let connection = RpcConnection::connect(url).await?;
-                self.spawn_pump(&connection);
+                self.spawn_pump(environment_id, &connection);
                 Entry {
                     endpoint: Some(url.to_string()),
                     connection,
@@ -268,7 +268,7 @@ impl Runtime {
             match RpcConnection::connect(&url).await {
                 Ok(connection) => {
                     self.set_status(environment_id, "ready").await;
-                    self.spawn_pump(&connection);
+                    self.spawn_pump(environment_id, &connection);
                     return Ok(Entry {
                         endpoint: None,
                         connection,
@@ -294,11 +294,11 @@ impl Runtime {
     }
 
     /// Starts the hub pump for every connection, so events and approvals are routed.
-    pub fn spawn_pump(&self, connection: &Arc<RpcConnection>) {
+    pub fn spawn_pump(&self, environment_id: Uuid, connection: &Arc<RpcConnection>) {
         let hub = Arc::clone(&self.hub);
         let pool = self.pool.clone();
         let connection = Arc::clone(connection);
-        tokio::spawn(async move { hub.pump(pool, connection).await });
+        tokio::spawn(async move { hub.pump(pool, connection, environment_id).await });
     }
 
     /// Stops local processes that have been idle longer than the configured timeout.

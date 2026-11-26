@@ -369,3 +369,36 @@ async fn codex_can_read_the_clock_without_anyone_watching(pool: PgPool) {
     let at = answer["result"]["currentTimeAt"].as_i64().expect("unix seconds");
     assert!(before <= at && at <= after, "{at} is not between {before} and {after}");
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn an_environment_notice_reaches_the_browsers_watching_its_chats(pool: PgPool) {
+    let mock = mock_app_server().await;
+    let state = AppState::new(pool.clone(), true, RuntimeConfig::default());
+    let token = login(&state, "notice@example.com").await;
+    let (ws_id, thread_id) = setup(&state, &token, Some(&mock.url)).await;
+    let (_, envs) = call(&state, "GET", &format!("/api/v1/workspaces/{ws_id}/environments"), &token, None).await;
+    let env_id = envs[0]["id"].as_str().unwrap().to_string();
+    let addr = spawn_gateway(state.clone()).await;
+
+    // Two browsers watch the same chat; one watches nothing.
+    let mut watcher = connect(&state, addr, &token).await;
+    send(&mut watcher, json!({ "type": "subscribe", "threadId": thread_id })).await;
+    next_of_type(&mut watcher, "subscribed").await;
+    let mut second = connect(&state, addr, &token).await;
+    send(&mut second, json!({ "type": "subscribe", "threadId": thread_id })).await;
+    next_of_type(&mut second, "subscribed").await;
+    let mut idle = connect(&state, addr, &token).await;
+
+    post_turn(&state, &token, &thread_id, "LIMITS check").await;
+    for browser in [&mut watcher, &mut second] {
+        let notice = next_of_type(browser, "event").await;
+        assert_eq!(notice["method"], "account/rateLimits/updated");
+        assert_eq!(notice["environmentId"], env_id.as_str());
+        assert!(notice.get("threadId").is_none());
+        assert_eq!(notice["params"]["rateLimits"]["primary"]["usedPercent"], 60);
+    }
+    // The browser that watches nothing hears nothing.
+    let quiet = tokio::time::timeout(Duration::from_millis(300), next_of_type(&mut idle, "event")).await;
+    assert!(quiet.is_err(), "an unwatched browser got a notice");
+    wait_for_turn(&state, &token, &thread_id, 0).await;
+}

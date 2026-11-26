@@ -392,6 +392,10 @@ pub async fn mock_app_server() -> MockServer {
                                     .unwrap();
                                     wait_for_response(&responses, ELICIT_ID).await;
                                 }
+                                if input.contains("LIMITS") {
+                                    // The account's limits changed; the notice names no chat.
+                                    out.send(json!({ "method": "account/rateLimits/updated", "params": { "rateLimits": { "planType": "plus", "primary": { "usedPercent": 60, "windowDurationMins": 300, "resetsAt": null } } } }).to_string()).unwrap();
+                                }
                                 if input.contains("CLOCK") {
                                     out.send(json!({ "id": CLOCK_ID, "method": "currentTime/read", "params": { "threadId": "thr_mock" } }).to_string()).unwrap();
                                     wait_for_response(&responses, CLOCK_ID).await;
