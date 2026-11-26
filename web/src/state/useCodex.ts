@@ -9,6 +9,7 @@ import { type ToolUse, mergeToolUses, toolUseFromItem } from "./toolUses";
 import { WORK_METHODS, applyWorkEvent, type WorkLog } from "./work";
 import { publishEnvironment } from "./environmentEvents";
 import { type Notice, newNotice, noticeFor } from "./notices";
+import { publishThread } from "./threadEvents";
 
 export interface SendOptions {
   model?: string;
@@ -111,6 +112,10 @@ export function useCodex() {
         const notice = noticeFor(String(frame.method), params);
         if (notice) setNotices((prev) => [...prev.slice(-4), newNotice(notice)]);
         publishEnvironment(frame.environmentId, String(frame.method), params);
+        return;
+      }
+      if (frame.type === "event" && frame.method === "fs/changed" && typeof frame.threadId === "string") {
+        publishThread(frame.threadId, "fs/changed", (frame.params ?? {}) as Record<string, unknown>);
         return;
       }
       if (frame.type === "event") {

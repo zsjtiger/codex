@@ -59,6 +59,8 @@ pub struct Hub {
     subscribers: Mutex<HashMap<Uuid, Vec<(u64, Outbound)>>>,
     /// Command runs in progress, by process id. Their output is collected here and sent to the chat.
     processes: Mutex<HashMap<String, ProcessOutput>>,
+    /// File watches a chat has open, by watch id. Changes to the files are sent to the chat.
+    watches: Mutex<HashMap<String, Uuid>>,
     pending: Mutex<HashMap<Uuid, Pending>>,
     codex_threads: Mutex<HashMap<String, Uuid>>,
     /// Reply text whose turn is not yet linked to its codex turn, by codex turn id. See `record_reply`.
@@ -146,6 +148,16 @@ impl Hub {
         true
     }
 
+    /// Records a file watch a chat has open. Its changes are sent to that chat.
+    pub fn start_watch(&self, watch_id: &str, thread_id: Uuid) {
+        self.watches.lock().expect("watches lock poisoned").insert(watch_id.to_string(), thread_id);
+    }
+
+    /// Forgets a file watch; its changes are no longer sent.
+    pub fn stop_watch(&self, watch_id: &str) -> Option<Uuid> {
+        self.watches.lock().expect("watches lock poisoned").remove(watch_id)
+    }
+
     /// The chat a command run belongs to, while it is going.
     pub fn process_thread(&self, process_id: &str) -> Option<Uuid> {
         self.processes
@@ -218,6 +230,14 @@ impl Hub {
         // Command output names its process, not its thread, so it is routed by the process.
         if method == "command/exec/outputDelta" {
             self.record_process_output(params);
+            return;
+        }
+        // File changes name their watch, which belongs to one chat.
+        if method == "fs/changed" {
+            let thread = params.get("watchId").and_then(Value::as_str).and_then(|id| self.watches.lock().expect("watches lock poisoned").get(id).copied());
+            if let Some(thread_id) = thread {
+                self.send_to(thread_id, &json!({ "type": "event", "threadId": thread_id, "method": method, "params": params }));
+            }
             return;
         }
         // Some notices name no thread but concern the whole environment's codex.

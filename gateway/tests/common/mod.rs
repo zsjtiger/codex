@@ -210,6 +210,36 @@ pub async fn mock_app_server() -> MockServer {
                             };
                             out_tx.send(reply(json!({ "entries": entries }))).unwrap();
                         }
+                        "fs/watch" | "fs/unwatch" => {
+                            out_tx.send(reply(json!({ "path": msg["params"]["path"] }))).unwrap();
+                        }
+                        "fs/writeFile" | "fs/createDirectory" | "fs/copy" | "fs/remove" => {
+                            // The mock works on the real disk, as codex does, so the tests see the result.
+                            use base64::{Engine as _, engine::general_purpose::STANDARD};
+                            let p = &msg["params"];
+                            let result = match method.as_str() {
+                                "fs/writeFile" => {
+                                    let bytes = STANDARD.decode(p["dataBase64"].as_str().unwrap_or_default()).unwrap_or_default();
+                                    std::fs::write(p["path"].as_str().unwrap(), bytes)
+                                }
+                                "fs/createDirectory" => {
+                                    let path = p["path"].as_str().unwrap();
+                                    if p["recursive"] == true { std::fs::create_dir_all(path) } else { std::fs::create_dir(path) }
+                                }
+                                "fs/copy" => copy_tree(
+                                    std::path::Path::new(p["sourcePath"].as_str().unwrap()),
+                                    std::path::Path::new(p["destinationPath"].as_str().unwrap()),
+                                ),
+                                _ => {
+                                    let path = std::path::Path::new(p["path"].as_str().unwrap());
+                                    if path.is_dir() { std::fs::remove_dir_all(path) } else { std::fs::remove_file(path) }
+                                }
+                            };
+                            match result {
+                                Ok(()) => out_tx.send(reply(json!({}))).unwrap(),
+                                Err(err) => out_tx.send(json!({ "id": id, "error": { "code": -32000, "message": err.to_string() } }).to_string()).unwrap(),
+                            }
+                        }
                         "fs/readFile" => {
                             use base64::{Engine as _, engine::general_purpose::STANDARD};
                             let path = msg["params"]["path"].as_str().unwrap_or_default();
@@ -345,6 +375,8 @@ pub async fn mock_app_server() -> MockServer {
                                 .as_str()
                                 .unwrap_or_default()
                                 .to_string();
+                            // The turn runs on its own task, which needs the requests log too.
+                            let requests_turn = Arc::clone(&requests);
                             if input.contains("FAIL_START") {
                                 out_tx
                                     .send(json!({ "id": id, "error": { "code": -32000, "message": "model unavailable" } }).to_string())
@@ -408,6 +440,13 @@ pub async fn mock_app_server() -> MockServer {
                                     // A configuration warning names no chat; a model switch names its chat.
                                     out.send(json!({ "method": "configWarning", "params": { "summary": "Unknown key", "details": "in config.toml" } }).to_string()).unwrap();
                                     out.send(json!({ "method": "model/rerouted", "params": { "threadId": "thr_mock", "turnId": turn_id, "fromModel": "big", "toModel": "small", "reason": "highRiskCyberActivity" } }).to_string()).unwrap();
+                                }
+                                if input.contains("CHANGE") {
+                                    // A file changed under the watch that the gateway started last.
+                                    let watch = requests_turn.lock().unwrap().iter().rev().find(|(m, _)| m == "fs/watch").map(|(_, p)| p["watchId"].clone());
+                                    if let Some(watch_id) = watch {
+                                        out.send(json!({ "method": "fs/changed", "params": { "watchId": watch_id, "changedPaths": ["/work/src/cache.rs"] } }).to_string()).unwrap();
+                                    }
                                 }
                                 if input.contains("LIMITS") {
                                     // The account's limits changed; the notice names no chat.
@@ -716,3 +755,30 @@ pub async fn next_of_type(ws: &mut Ws, kind: &str) -> Value {
     }
 }
 
+/// Copies a file, or a folder and everything in it, as codex's fs/copy does.
+fn copy_tree(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    if from.is_dir() {
+        std::fs::create_dir_all(to)?;
+        for entry in std::fs::read_dir(from)? {
+            let entry = entry?;
+            copy_tree(&entry.path(), &to.join(entry.file_name()))?;
+        }
+        Ok(())
+    } else {
+        std::fs::copy(from, to).map(|_| ())
+    }
+}
+
+/// Starts a turn in a thread and checks it was accepted.
+pub async fn post_turn(state: &AppState, token: &str, thread_id: &str, input: &str) -> StatusCode {
+    let (status, body) = call(
+        state,
+        "POST",
+        &format!("/api/v1/threads/{thread_id}/turns"),
+        token,
+        Some(json!({ "input": input })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    status
+}

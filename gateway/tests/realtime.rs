@@ -4,7 +4,6 @@ mod common;
 
 use std::time::Duration;
 
-use axum::http::StatusCode;
 use codex_gateway::{
     AppState,
     runtime::{LocalLaunch, RuntimeConfig, dispatch},
@@ -16,18 +15,6 @@ use tokio_tungstenite::connect_async;
 use uuid::Uuid;
 
 
-async fn post_turn(state: &AppState, token: &str, thread_id: &str, input: &str) -> StatusCode {
-    let (status, body) = call(
-        state,
-        "POST",
-        &format!("/api/v1/threads/{thread_id}/turns"),
-        token,
-        Some(json!({ "input": input })),
-    )
-    .await;
-    assert_eq!(status, StatusCode::CREATED, "{body}");
-    status
-}
 
 #[sqlx::test(migrations = "./migrations")]
 async fn websocket_requires_a_valid_session(pool: PgPool) {

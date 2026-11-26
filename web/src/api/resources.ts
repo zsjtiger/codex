@@ -246,6 +246,18 @@ export const threads = {
   /** The entries of a folder in a code chat's checkout; "" is the root. */
   listFiles: (id: string, path: string) =>
     api<CheckoutEntry[]>("GET", `/threads/${id}/files/list?path=${encodeURIComponent(path)}`),
+  /** Writes a text file in a code chat's checkout, creating it if needed. */
+  writeFile: (id: string, path: string, content: string) => api<void>("PUT", `/threads/${id}/files/content`, { path, content }),
+  /** Creates a folder in a code chat's checkout. Its parent folder must exist. */
+  createFolder: (id: string, path: string) => api<void>("POST", `/threads/${id}/files/folder`, { path }),
+  /** Starts watching a code chat's checkout; its changes are sent to the chat as they happen. */
+  watchFiles: (id: string) => api<{ watch_id: string }>("POST", `/threads/${id}/files/watch`),
+  /** Stops a watch started for a code chat's checkout. */
+  unwatchFiles: (id: string, watchId: string) => api<void>("DELETE", `/threads/${id}/files/watch/${watchId}`),
+  /** Moves or renames a file or folder in a code chat's checkout. */
+  moveFile: (id: string, from: string, to: string) => api<void>("POST", `/threads/${id}/files/move`, { from, to }),
+  /** Deletes a file or folder in a code chat's checkout, with everything in it. */
+  deleteFile: (id: string, path: string) => api<void>("DELETE", `/threads/${id}/files?path=${encodeURIComponent(path)}`),
   /** One file of a code chat's checkout, as text. */
   readFile: (id: string, path: string) => api<CheckoutFile>("GET", `/threads/${id}/files/read?path=${encodeURIComponent(path)}`),
   /** Runs one command in a code chat's checkout, under the sandbox, and waits for it to finish. */

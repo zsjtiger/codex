@@ -1197,3 +1197,17 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 /* Warnings and notices codex sends, shown above the chat. */
 .notice-warning { border-color: #c98a1b; }
 .notice-info { border-color: var(--border, #e5e0d6); }
+
+/* Changing files in a code chat's checkout: the tree's actions and the file editor in the preview panel. */
+.checkout-toolbar { display: flex; gap: 14px; padding: 0 2px 4px; }
+.checkout-row { position: relative; }
+.checkout-row-actions { display: inline-flex; gap: 8px; padding-right: 12px; }
+.checkout-row-actions .link-button { font-size: 12px; }
+.checkout-editor { display: flex; flex-direction: column; gap: 10px; height: 100%; }
+.checkout-editor-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.checkout-editor-text {
+  flex: 1; min-height: 360px; width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
+  padding: 12px; border: 1px solid var(--border, #e5e0d6); border-radius: 8px; background: transparent; color: inherit; resize: vertical;
+}
+.checkout-line { display: flex; align-items: center; }
+.checkout-line .checkout-row { flex: 1; min-width: 0; }

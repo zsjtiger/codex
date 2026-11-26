@@ -12,7 +12,9 @@ import { tx } from "../i18n";
 export type PreviewItem =
   | { kind: "code"; title: string; lang: string; text: string }
   | { kind: "document"; title: string; content: string; artifactId?: string; live?: boolean; onSaved?: (doc: { title: string; content: string }) => void }
-  | { kind: "file"; title: string; attachmentId: string; contentType: string };
+  | { kind: "file"; title: string; attachmentId: string; contentType: string }
+  // A text file of a code chat's checkout, edited in place. `onSave` writes the new text back to the checkout.
+  | { kind: "checkout"; title: string; text: string; onSave: (text: string) => Promise<void> };
 
 interface PreviewContextValue {
   open: (item: PreviewItem) => void;
@@ -192,7 +194,7 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
 
   const editable = item.kind === "document" && Boolean(item.artifactId);
   const text = item.kind === "code" ? item.text : editing ? draft.content : doc ? doc.content : null;
-  const label = item.kind === "code" ? item.lang || "code" : item.kind === "document" ? tx("Document") : contentLabel(item.contentType, item.title);
+  const label = item.kind === "code" ? item.lang || "code" : item.kind === "document" ? tx("Document") : item.kind === "checkout" ? tx("File") : contentLabel(item.contentType, item.title);
   const highlighted = item.kind === "code" ? highlightCode(item.text, item.lang) : null;
   const title = editing ? draft.title : doc ? doc.title : item.title;
   const saveText = saveState === "saving" ? tx("Saving…") : saveState === "saved" ? tx("Saved") : saveState === "error" ? tx("Could not save the document.") : "";
@@ -277,7 +279,9 @@ function PreviewPanel({ item, onClose }: { item: PreviewItem; onClose: () => voi
         </button>
       </header>
       <div className="preview-body">
-        {item.kind === "file" ? (
+        {item.kind === "checkout" ? (
+          <CheckoutEditor key={item.title} title={item.title} text={item.text} onSave={item.onSave} />
+        ) : item.kind === "file" ? (
           <FilePreview attachmentId={item.attachmentId} title={item.title} contentType={item.contentType} />
         ) : history ? (
           <DocumentHistory history={history} onSelect={(selected) => setHistory({ ...history, selected })} onBack={() => setHistory({ ...history, selected: null })} onRestore={restore} busy={saveState === "saving"} />
@@ -478,4 +482,57 @@ function DocumentHistory({
 function contentLabel(contentType: string, title: string): string {
   const kind = fileKind(contentType, title);
   return tx({ pdf: "PDF", word: "Word", slides: "PowerPoint", sheet: "Excel", markdown: "Markdown", text: "text", other: "File" }[kind]);
+}
+
+/** A text file of a code chat's checkout, edited as plain text. Saving writes it back to the checkout. */
+function CheckoutEditor({ title, text, onSave }: { title: string; text: string; onSave: (text: string) => Promise<void> }) {
+  const [draft, setDraft] = useState(text);
+  // What the checkout holds as far as this editor knows: the file as opened, then each text saved.
+  const [saved, setSaved] = useState(text);
+  const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [message, setMessage] = useState<string | null>(null);
+  const dirty = draft !== saved;
+
+  const save = async () => {
+    setState("saving");
+    setMessage(null);
+    const written = draft;
+    try {
+      await onSave(written);
+      setSaved(written);
+      setState("saved");
+    } catch (err) {
+      setState("error");
+      setMessage(err instanceof Error ? err.message : tx("Could not save the file."));
+    }
+  };
+
+  return (
+    <div className="checkout-editor">
+      <div className="checkout-editor-bar">
+        <span className="muted small">{title}{dirty ? " ·" : ""}</span>
+        <button type="button" className="primary" disabled={!dirty || state === "saving"} onClick={() => void save()}>
+          {state === "saving" ? tx("Saving…") : tx("Save")}
+        </button>
+        {state === "saved" && !dirty && <span className="muted small">{tx("Saved")}</span>}
+        {state === "error" && message && <span className="banner error">{message}</span>}
+      </div>
+      <textarea
+        className="checkout-editor-text"
+        value={draft}
+        spellCheck={false}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          setState("idle");
+        }}
+        onKeyDown={(event) => {
+          if ((event.metaKey || event.ctrlKey) && event.key === "s") {
+            event.preventDefault();
+            if (dirty) void save();
+          }
+        }}
+        aria-label={tx("File contents")}
+      />
+    </div>
+  );
 }

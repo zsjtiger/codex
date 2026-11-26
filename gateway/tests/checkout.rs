@@ -304,3 +304,101 @@ async fn the_workspace_diff_is_read_from_codex_against_the_remote_branch(pool: P
     assert_eq!(status, StatusCode::NOT_FOUND);
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_member_can_write_create_move_and_delete_inside_the_checkout_and_each_is_audited(pool: PgPool) {
+    let root = std::env::temp_dir().join(format!("checkout-{}", Uuid::new_v4()));
+    let state = state_with_checkouts(&pool, &root);
+    let mock = mock_app_server().await;
+    let token = login(&state, "write@example.com").await;
+    let (chat_id, worktree) = code_chat(&pool, &state, &token, &mock.url, &root).await;
+    let base = format!("/api/v1/threads/{chat_id}/files");
+
+    // A folder for the new file must exist first, as it would in a checkout.
+    let (status, _) = call(&state, "POST", &format!("{base}/folder"), &token, Some(json!({ "path": "docs" }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    // A new file: the write reaches codex with the content, base64-encoded, at an absolute path in the checkout.
+    let (status, body) = call(&state, "PUT", &format!("{base}/content"), &token, Some(json!({ "path": "docs/new.md", "content": "hi\n" }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    let requests = mock.requests.lock().unwrap().clone();
+    let (_, params) = requests.iter().rev().find(|(m, _)| m == "fs/writeFile").expect("codex was asked");
+    assert_eq!(params["path"], json!(worktree.canonicalize().unwrap().join("docs/new.md").to_string_lossy()));
+    assert_eq!(params["dataBase64"], "aGkK");
+
+    // Folders, moves, and deletes.
+    let (status, _) = call(&state, "POST", &format!("{base}/folder"), &token, Some(json!({ "path": "tests" }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = call(&state, "POST", &format!("{base}/move"), &token, Some(json!({ "from": "README.md", "to": "tests/README.md" }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let requests = mock.requests.lock().unwrap().clone();
+    assert!(requests.iter().any(|(m, p)| m == "fs/copy" && p["recursive"] == true));
+    assert!(requests.iter().any(|(m, p)| m == "fs/remove" && p["path"].as_str().unwrap().ends_with("README.md")));
+    let (status, _) = call(&state, "DELETE", &format!("{base}?path=tests"), &token, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // Refused: leaving the checkout, the git data, a link out of it, the checkout itself, a write into a folder that is not there.
+    for path in ["../escape.txt", "/etc/escape.txt", ".git/hooks/x", "link.txt", "", "missing/deeper.txt"] {
+        let (status, body) = call(&state, "PUT", &format!("{base}/content"), &token, Some(json!({ "path": path, "content": "x" }))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "write to {path:?} should be refused: {body}");
+    }
+    let (status, _) = call(&state, "DELETE", &format!("{base}?path="), &token, None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "the checkout cannot be deleted");
+    let (status, _) = call(&state, "POST", &format!("{base}/move"), &token, Some(json!({ "from": "src", "to": "src/inside" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "a folder cannot move into itself");
+    let (status, _) = call(&state, "PUT", &format!("{base}/content"), &token, Some(json!({ "path": "other.md", "content": "o\n" }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = call(&state, "POST", &format!("{base}/move"), &token, Some(json!({ "from": "other.md", "to": "src/cache.rs" }))).await;
+    assert_eq!(status, StatusCode::CONFLICT, "nothing is overwritten");
+    assert!(worktree.join("other.md").exists(), "the source is kept when the move is refused");
+
+    // Each write is in the audit log.
+    let audited: i64 = sqlx::query_scalar("SELECT count(*) FROM audit_logs WHERE action LIKE 'checkout.%' AND target_id = $1")
+        .bind(&chat_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(audited, 6, "two folders, two writes, a move and a delete are each recorded");
+
+    // Someone outside the workspace cannot write.
+    let outsider = login(&state, "write-outsider@example.com").await;
+    let (status, _) = call(&state, "PUT", &format!("{base}/content"), &outsider, Some(json!({ "path": "x.txt", "content": "x" }))).await;
+    assert_ne!(status, StatusCode::NO_CONTENT);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn changes_to_a_watched_checkout_reach_its_chat_until_the_watch_is_stopped(pool: PgPool) {
+    let root = std::env::temp_dir().join(format!("checkout-{}", Uuid::new_v4()));
+    let state = state_with_checkouts(&pool, &root);
+    let mock = mock_app_server().await;
+    let token = login(&state, "watch@example.com").await;
+    let (chat_id, worktree) = code_chat(&pool, &state, &token, &mock.url, &root).await;
+    let addr = spawn_gateway(state.clone()).await;
+
+    let mut watcher = connect(&state, addr, &token).await;
+    send(&mut watcher, json!({ "type": "subscribe", "threadId": chat_id })).await;
+    next_of_type(&mut watcher, "subscribed").await;
+
+    let (status, started) = call(&state, "POST", &format!("/api/v1/threads/{chat_id}/files/watch"), &token, None).await;
+    assert_eq!(status, StatusCode::CREATED, "{started}");
+    let watch_id = started["watch_id"].as_str().unwrap().to_string();
+    let requests = mock.requests.lock().unwrap().clone();
+    let (_, params) = requests.iter().rev().find(|(m, _)| m == "fs/watch").expect("codex was asked to watch");
+    assert_eq!(params["path"], json!(worktree.canonicalize().unwrap().to_string_lossy()));
+
+    // A change under the watch reaches the chat, named by the watch.
+    post_turn(&state, &token, &chat_id, "CHANGE the file").await;
+    let change = next_of_type(&mut watcher, "event").await;
+    assert_eq!(change["method"], "fs/changed");
+    assert_eq!(change["threadId"], chat_id.as_str());
+    assert_eq!(change["params"]["watchId"], watch_id.as_str());
+
+    // Once stopped, codex is asked to stop too, and no more changes come.
+    let (status, _) = call(&state, "DELETE", &format!("/api/v1/threads/{chat_id}/files/watch/{watch_id}"), &token, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(mock.requests.lock().unwrap().iter().any(|(m, p)| m == "fs/unwatch" && p["watchId"] == watch_id.as_str()));
+    post_turn(&state, &token, &chat_id, "CHANGE again").await;
+    let quiet = tokio::time::timeout(std::time::Duration::from_millis(300), next_of_type(&mut watcher, "event")).await;
+    assert!(quiet.map(|frame| frame["method"] != "fs/changed").unwrap_or(true), "no change after the watch was stopped");
+    let _ = std::fs::remove_dir_all(&root);
+}
