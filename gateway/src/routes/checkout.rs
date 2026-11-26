@@ -6,6 +6,7 @@ use std::path::{Component, Path, PathBuf};
 
 use axum::{
     Json, Router,
+    http::StatusCode,
     extract::{Path as PathParam, Query, State},
     routing::{get, post},
 };
@@ -34,6 +35,7 @@ pub fn routes() -> Router<AppState> {
         .route("/threads/{id}/files/list", get(list_directory))
         .route("/threads/{id}/files/read", get(read_file))
         .route("/threads/{id}/run", post(run_command))
+        .route("/threads/{id}/run/{process_id}/stop", post(stop_command))
 }
 
 /// The chat's checkout on disk, and the environment its turns run in.
@@ -271,7 +273,7 @@ async fn read_file(
 const RUN_MAX_TIMEOUT_MS: i64 = 600_000;
 const RUN_DEFAULT_TIMEOUT_MS: i64 = 120_000;
 /// Most output kept for each of stdout and stderr.
-const RUN_OUTPUT_CAP: usize = 256 * 1024;
+const RUN_OUTPUT_CAP: usize = crate::runtime::hub::RUN_OUTPUT_LIMIT;
 const RUN_MAX_COMMAND: usize = 2_000;
 
 #[derive(Deserialize)]
@@ -279,6 +281,8 @@ pub struct RunRequest {
     /// A shell command line, run in the checkout's root with `sh -c`.
     command: String,
     timeout_ms: Option<i64>,
+    /// An id for this run, chosen by the browser so it can stop the run while it goes. A UUID; made up if absent.
+    process_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -305,15 +309,29 @@ async fn run_command(
         return Err(ApiError::BadRequest(format!("a command is at most {RUN_MAX_COMMAND} characters")));
     }
     let timeout = req.timeout_ms.unwrap_or(RUN_DEFAULT_TIMEOUT_MS).clamp(1_000, RUN_MAX_TIMEOUT_MS);
+    let process_id = match req.process_id {
+        Some(given) => {
+            Uuid::parse_str(&given).map_err(|_| ApiError::BadRequest("the process id must be a UUID".to_string()))?;
+            given
+        }
+        None => Uuid::new_v4().to_string(),
+    };
     let checkout = checkout_of(&state, id).await?.ok_or(ApiError::NotFound)?;
     let root = checkout.root.canonicalize().map_err(|_| ApiError::NotFound)?;
     let lease = codex_for(&state, &checkout).await?;
-    let response = lease
+    let hub = state.runtime.hub();
+    if !hub.start_process(&process_id, id) {
+        return Err(ApiError::Conflict("a command with that id is already running".to_string()));
+    }
+    // Output streams to the chat as codex sends it; the reply carries what was kept, so nothing is lost.
+    let outcome = lease
         .request(
             "command/exec",
             json!({
                 "command": ["/bin/sh", "-c", command],
                 "cwd": root,
+                "processId": process_id,
+                "streamStdoutStderr": true,
                 "timeoutMs": timeout,
                 "outputBytesCap": RUN_OUTPUT_CAP,
                 "sandboxPolicy": {
@@ -325,12 +343,13 @@ async fn run_command(
                 },
             }),
         )
-        .await
-        .map_err(|err| ApiError::BadRequest(err.to_string()))?;
+        .await;
+    let (stdout, stderr) = hub.finish_process(&process_id).unwrap_or_default();
+    let response = outcome.map_err(|err| ApiError::BadRequest(err.to_string()))?;
     let result = RunResult {
         exit_code: response.get("exitCode").and_then(|code| code.as_i64()).unwrap_or(-1),
-        stdout: response.get("stdout").and_then(|out| out.as_str()).unwrap_or_default().to_string(),
-        stderr: response.get("stderr").and_then(|err| err.as_str()).unwrap_or_default().to_string(),
+        stdout,
+        stderr,
     };
     audit::record(
         &state.pool,
@@ -343,4 +362,23 @@ async fn run_command(
     )
     .await?;
     Ok(Json(result))
+}
+
+/// Stops a command run from a code chat while it goes. Its run then returns with the output it had.
+async fn stop_command(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    PathParam((id, process_id)): PathParam<(Uuid, String)>,
+) -> Result<StatusCode, ApiError> {
+    member_of(&state, id, &user).await?;
+    if state.runtime.hub().process_thread(&process_id) != Some(id) {
+        return Err(ApiError::NotFound);
+    }
+    let checkout = checkout_of(&state, id).await?.ok_or(ApiError::NotFound)?;
+    let lease = codex_for(&state, &checkout).await?;
+    lease
+        .request("command/exec/terminate", json!({ "processId": process_id }))
+        .await
+        .map_err(|err| ApiError::BadRequest(err.to_string()))?;
+    Ok(StatusCode::NO_CONTENT)
 }

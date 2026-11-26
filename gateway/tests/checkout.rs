@@ -188,3 +188,93 @@ async fn an_empty_or_long_command_is_refused_and_only_members_run_commands(pool:
     assert!(!requests.iter().any(|(m, _)| m == "command/exec"), "nothing ran");
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_running_command_streams_its_output_to_the_chat_and_its_reply_keeps_it(pool: PgPool) {
+    let root = std::env::temp_dir().join(format!("checkout-{}", Uuid::new_v4()));
+    let state = state_with_checkouts(&pool, &root);
+    let mock = mock_app_server().await;
+    let token = login(&state, "stream@example.com").await;
+    let (chat_id, _) = code_chat(&pool, &state, &token, &mock.url, &root).await;
+    let addr = spawn_gateway(state.clone()).await;
+
+    let mut watcher = connect(&state, addr, &token).await;
+    send(&mut watcher, json!({ "type": "subscribe", "threadId": chat_id })).await;
+    next_of_type(&mut watcher, "subscribed").await;
+
+    let process_id = Uuid::new_v4().to_string();
+    let (status, run) = call(&state, "POST", &format!("/api/v1/threads/{chat_id}/run"), &token, Some(json!({ "command": "echo hi", "process_id": process_id }))).await;
+    assert_eq!(status, StatusCode::OK, "{run}");
+    assert_eq!(run["stdout"], "ran: echo hi\n", "the reply keeps the output");
+
+    // The browser saw the same output as it was produced, tagged with the chat and the run.
+    let mut seen = String::new();
+    while seen.len() < "ran: echo hi\n".len() {
+        let frame = next_of_type(&mut watcher, "event").await;
+        if frame["method"] != "command/exec/outputDelta" {
+            continue;
+        }
+        assert_eq!(frame["params"]["processId"], process_id.as_str());
+        assert_eq!(frame["threadId"], chat_id.as_str());
+        let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, frame["params"]["deltaBase64"].as_str().unwrap()).unwrap();
+        seen.push_str(std::str::from_utf8(&bytes).unwrap());
+    }
+    assert_eq!(seen, "ran: echo hi\n");
+
+    let requests = mock.requests.lock().unwrap().clone();
+    let (_, params) = requests.iter().rev().find(|(m, _)| m == "command/exec").unwrap();
+    assert_eq!(params["processId"], process_id.as_str());
+    assert_eq!(params["streamStdoutStderr"], true);
+
+    // A run id is used once while it goes; a reused id that is not running is accepted again.
+    let (status, _) = call(&state, "POST", &format!("/api/v1/threads/{chat_id}/run"), &token, Some(json!({ "command": "echo hi", "process_id": "not-a-uuid" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_running_command_can_be_stopped_and_returns_what_it_printed(pool: PgPool) {
+    let root = std::env::temp_dir().join(format!("checkout-{}", Uuid::new_v4()));
+    let state = state_with_checkouts(&pool, &root);
+    let mock = mock_app_server().await;
+    let token = login(&state, "stop@example.com").await;
+    let (chat_id, _) = code_chat(&pool, &state, &token, &mock.url, &root).await;
+    let addr = spawn_gateway(state.clone()).await;
+
+    let mut watcher = connect(&state, addr, &token).await;
+    send(&mut watcher, json!({ "type": "subscribe", "threadId": chat_id })).await;
+    next_of_type(&mut watcher, "subscribed").await;
+
+    let process_id = Uuid::new_v4().to_string();
+    let run_state = state.clone();
+    let run_token = token.clone();
+    let run_chat = chat_id.clone();
+    let run_process = process_id.clone();
+    let running = tokio::spawn(async move {
+        call(&run_state, "POST", &format!("/api/v1/threads/{run_chat}/run"), &run_token, Some(json!({ "command": "forever", "process_id": run_process }))).await
+    });
+
+    // Wait until the command has printed, so it is known to be going.
+    loop {
+        let frame = next_of_type(&mut watcher, "event").await;
+        if frame["method"] == "command/exec/outputDelta" {
+            break;
+        }
+    }
+
+    // Someone else's chat cannot stop it, and a stop for an unknown run is refused.
+    let (status, _) = call(&state, "POST", &format!("/api/v1/threads/{chat_id}/run/{}/stop", Uuid::new_v4()), &token, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _) = call(&state, "POST", &format!("/api/v1/threads/{chat_id}/run/{process_id}/stop"), &token, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, run) = running.await.unwrap();
+    assert_eq!(status, StatusCode::OK, "{run}");
+    assert_eq!(run["stdout"], "started\n", "what it printed before it was stopped is kept");
+    assert_eq!(run["exit_code"], -1);
+
+    // Once it has ended it cannot be stopped again.
+    let (status, _) = call(&state, "POST", &format!("/api/v1/threads/{chat_id}/run/{process_id}/stop"), &token, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let _ = std::fs::remove_dir_all(&root);
+}

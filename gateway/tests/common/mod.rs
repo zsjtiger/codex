@@ -19,7 +19,7 @@ use futures_util::{SinkExt, StreamExt};
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use tokio::{net::TcpListener, sync::mpsc};
-use tokio_tungstenite::{accept_async, tungstenite::Message};
+use tokio_tungstenite::{accept_async, connect_async, tungstenite::Message};
 use tower::ServiceExt;
 
 use codex_gateway::{AppState, app};
@@ -223,14 +223,42 @@ pub async fn mock_app_server() -> MockServer {
                             out_tx.send(reply(json!({ "dataBase64": STANDARD.encode(bytes) }))).unwrap();
                         }
                         "command/exec" => {
-                            // Echoes the command; a command that mentions "fail" exits with 3 and writes to stderr.
+                            // Streams output the way codex does: deltas for the process, then a reply with no stdout.
+                            // A command that mentions "fail" exits with 3 and writes to stderr; one that mentions
+                            // "forever" runs until it is terminated.
+                            use base64::{Engine as _, engine::general_purpose::STANDARD};
+                            let process_id = msg["params"]["processId"].as_str().unwrap_or_default().to_string();
                             let command = msg["params"]["command"][2].as_str().unwrap_or_default().to_string();
-                            let reply_value = if command.contains("fail") {
-                                json!({ "exitCode": 3, "stdout": "", "stderr": "nope\n" })
-                            } else {
-                                json!({ "exitCode": 0, "stdout": format!("ran: {command}\n"), "stderr": "" })
+                            let delta = |stream: &str, text: &str| {
+                                json!({ "method": "command/exec/outputDelta", "params": {
+                                    "processId": process_id, "stream": stream,
+                                    "deltaBase64": STANDARD.encode(text), "capReached": false } })
+                                .to_string()
                             };
-                            out_tx.send(reply(reply_value)).unwrap();
+                            if command.contains("forever") {
+                                out_tx.send(delta("stdout", "started\n")).unwrap();
+                                let requests = Arc::clone(&requests);
+                                let out = out_tx.clone();
+                                let id = id.clone();
+                                tokio::spawn(async move {
+                                    for _ in 0..500 {
+                                        if requests.lock().unwrap().iter().any(|(m, _)| m == "command/exec/terminate") {
+                                            break;
+                                        }
+                                        tokio::time::sleep(Duration::from_millis(10)).await;
+                                    }
+                                    out.send(json!({ "id": id, "result": { "exitCode": -1, "stdout": "", "stderr": "" } }).to_string()).unwrap();
+                                });
+                            } else if command.contains("fail") {
+                                out_tx.send(delta("stderr", "nope\n")).unwrap();
+                                out_tx.send(reply(json!({ "exitCode": 3, "stdout": "", "stderr": "" }))).unwrap();
+                            } else {
+                                out_tx.send(delta("stdout", &format!("ran: {command}\n"))).unwrap();
+                                out_tx.send(reply(json!({ "exitCode": 0, "stdout": "", "stderr": "" }))).unwrap();
+                            }
+                        }
+                        "command/exec/terminate" => {
+                            out_tx.send(reply(json!({}))).unwrap();
                         }
                         "account/rateLimits/read" => {
                             // The codex account's limits: a five-hour window and a weekly one, with credits.
@@ -625,3 +653,45 @@ fn agent_text(input: &str) -> String {
     }
     "ignored".to_string()
 }
+
+/// A browser's WebSocket to the gateway, as the tests open it.
+pub type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+/// Gets a ticket for the session and opens the WebSocket with it.
+pub async fn connect(state: &AppState, addr: SocketAddr, token: &str) -> Ws {
+    let (status, body) = call(state, "POST", "/api/v1/ws-tickets", token, None).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    connect_async(format!(
+        "ws://{addr}/ws?ticket={}",
+        body["ticket"].as_str().unwrap()
+    ))
+    .await
+    .expect("websocket connect")
+    .0
+}
+
+pub async fn send(ws: &mut Ws, value: Value) {
+    ws.send(Message::Text(value.to_string().into()))
+        .await
+        .unwrap();
+}
+
+pub async fn next_json(ws: &mut Ws) -> Value {
+    let frame = tokio::time::timeout(Duration::from_secs(10), ws.next())
+        .await
+        .expect("timed out waiting for a frame")
+        .expect("socket closed")
+        .expect("socket error");
+    serde_json::from_str(frame.to_text().unwrap()).unwrap()
+}
+
+/// Reads frames until one has the given `type`.
+pub async fn next_of_type(ws: &mut Ws, kind: &str) -> Value {
+    loop {
+        let frame = next_json(ws).await;
+        if frame["type"] == kind {
+            return frame;
+        }
+    }
+}
+

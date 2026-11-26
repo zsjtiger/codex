@@ -246,7 +246,10 @@ export const threads = {
   /** One file of a code chat's checkout, as text. */
   readFile: (id: string, path: string) => api<CheckoutFile>("GET", `/threads/${id}/files/read?path=${encodeURIComponent(path)}`),
   /** Runs one command in a code chat's checkout, under the sandbox, and waits for it to finish. */
-  run: (id: string, command: string) => api<CommandResult>("POST", `/threads/${id}/run`, { command }),
+  run: (id: string, command: string, processId: string) =>
+    api<CommandResult>("POST", `/threads/${id}/run`, { command, process_id: processId }),
+  /** Stops a command run that is going. Its run then ends with the output it had. */
+  stopRun: (id: string, processId: string) => api<void>("POST", `/threads/${id}/run/${processId}/stop`),
   /** The diff of everything each code turn changed, in turn order. */
   diffs: (id: string) => api<TurnDiff[]>("GET", `/threads/${id}/diffs`),
   /** The finished commands and file changes of a thread, grouped by Codex turn. */

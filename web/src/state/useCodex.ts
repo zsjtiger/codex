@@ -1,3 +1,4 @@
+import { appendCommandOutput, type CommandOutput } from "./commandOutput";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, loadStoredToken, setToken } from "../api/client";
 import { attachments as attachmentApi, contentTypeOf, interruptTurn, rateTurn, threads as threadApi } from "../api/resources";
@@ -53,6 +54,8 @@ export function useCodex() {
   const [work, setWork] = useState<Record<string, WorkLog>>({});
   // The latest diff of everything each codex turn changed, from turn/diff/updated or the saved copy.
   const [diffs, setDiffs] = useState<Record<string, string>>({});
+  // Output of command runs in code chats, by process id, as it streams.
+  const [commandOutput, setCommandOutput] = useState<Record<string, CommandOutput>>({});
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [socketStatus, setSocketStatus] = useState<SocketStatus>("closed");
   const [error, setError] = useState<string | null>(null);
@@ -109,6 +112,9 @@ export function useCodex() {
               const current = prev[turnKey] ?? { reasoning: "", steps: [] };
               return { ...prev, [turnKey]: { ...current, reasoning: current.reasoning + delta } };
             });
+          }
+          if (method === "command/exec/outputDelta") {
+            setCommandOutput((prev) => appendCommandOutput(prev, params));
           }
           if (method === "turn/diff/updated" && typeof params.turnId === "string") {
             const key = params.turnId;
@@ -411,6 +417,7 @@ export function useCodex() {
     activity,
     work,
     diffs,
+    commandOutput,
     approvals,
     socketStatus,
     error,

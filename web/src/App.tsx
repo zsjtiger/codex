@@ -341,6 +341,7 @@ export function App() {
             activity={codex.activity}
             work={codex.work}
             diffs={codex.diffs}
+            commandOutput={codex.commandOutput}
             approvals={codex.approvals}
             sending={codex.sending}
             projects={projects}

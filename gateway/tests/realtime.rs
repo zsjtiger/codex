@@ -2,7 +2,7 @@
 
 mod common;
 
-use std::{net::SocketAddr, time::Duration};
+use std::time::Duration;
 
 use axum::http::StatusCode;
 use codex_gateway::{
@@ -10,52 +10,11 @@ use codex_gateway::{
     runtime::{LocalLaunch, RuntimeConfig, dispatch},
 };
 use common::*;
-use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use sqlx::PgPool;
-use tokio::net::TcpStream;
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite::Message};
+use tokio_tungstenite::connect_async;
 use uuid::Uuid;
 
-type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
-
-/// Gets a ticket for the session and opens the WebSocket with it.
-async fn connect(state: &AppState, addr: SocketAddr, token: &str) -> Ws {
-    let (status, body) = call(state, "POST", "/api/v1/ws-tickets", token, None).await;
-    assert_eq!(status, StatusCode::CREATED, "{body}");
-    connect_async(format!(
-        "ws://{addr}/ws?ticket={}",
-        body["ticket"].as_str().unwrap()
-    ))
-    .await
-    .expect("websocket connect")
-    .0
-}
-
-async fn send(ws: &mut Ws, value: Value) {
-    ws.send(Message::Text(value.to_string().into()))
-        .await
-        .unwrap();
-}
-
-async fn next_json(ws: &mut Ws) -> Value {
-    let frame = tokio::time::timeout(Duration::from_secs(10), ws.next())
-        .await
-        .expect("timed out waiting for a frame")
-        .expect("socket closed")
-        .expect("socket error");
-    serde_json::from_str(frame.to_text().unwrap()).unwrap()
-}
-
-/// Reads frames until one has the given `type`.
-async fn next_of_type(ws: &mut Ws, kind: &str) -> Value {
-    loop {
-        let frame = next_json(ws).await;
-        if frame["type"] == kind {
-            return frame;
-        }
-    }
-}
 
 async fn post_turn(state: &AppState, token: &str, thread_id: &str, input: &str) -> StatusCode {
     let (status, body) = call(

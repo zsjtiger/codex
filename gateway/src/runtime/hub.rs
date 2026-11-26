@@ -5,6 +5,7 @@
 //! Approval requests wait for a subscriber's answer; with no subscriber, or after
 //! `APPROVAL_TIMEOUT`, they are declined so the turn can continue.
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use std::{
     collections::HashMap,
     sync::{
@@ -33,9 +34,22 @@ struct Pending {
     method: String,
 }
 
+/// Most output kept for each stream of a command run from a chat.
+pub const RUN_OUTPUT_LIMIT: usize = 256 * 1024;
+
+/// A command run from a code chat that is still going: its chat, and the output codex has sent so far.
+#[derive(Default)]
+struct ProcessOutput {
+    thread_id: Uuid,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
 #[derive(Default)]
 pub struct Hub {
     subscribers: Mutex<HashMap<Uuid, Vec<(u64, Outbound)>>>,
+    /// Command runs in progress, by process id. Their output is collected here and sent to the chat.
+    processes: Mutex<HashMap<String, ProcessOutput>>,
     pending: Mutex<HashMap<Uuid, Pending>>,
     codex_threads: Mutex<HashMap<String, Uuid>>,
     /// Reply text whose turn is not yet linked to its codex turn, by codex turn id. See `record_reply`.
@@ -113,7 +127,67 @@ impl Hub {
         found
     }
 
+    /// Starts collecting the output of a command run. False if a run with that id is already going.
+    pub fn start_process(&self, process_id: &str, thread_id: Uuid) -> bool {
+        let mut processes = self.processes.lock().expect("processes lock poisoned");
+        if processes.contains_key(process_id) {
+            return false;
+        }
+        processes.insert(process_id.to_string(), ProcessOutput { thread_id, ..Default::default() });
+        true
+    }
+
+    /// The chat a command run belongs to, while it is going.
+    pub fn process_thread(&self, process_id: &str) -> Option<Uuid> {
+        self.processes
+            .lock()
+            .expect("processes lock poisoned")
+            .get(process_id)
+            .map(|process| process.thread_id)
+    }
+
+    /// Ends a command run's collection and returns the output it kept, as (stdout, stderr).
+    pub fn finish_process(&self, process_id: &str) -> Option<(String, String)> {
+        let process = self.processes.lock().expect("processes lock poisoned").remove(process_id)?;
+        Some((
+            String::from_utf8_lossy(&process.stdout).into_owned(),
+            String::from_utf8_lossy(&process.stderr).into_owned(),
+        ))
+    }
+
+    /// Keeps a chunk of a command run's output, and sends it to the chat as it arrives.
+    fn record_process_output(&self, params: &Value) {
+        let Some(process_id) = params.get("processId").and_then(Value::as_str) else {
+            return;
+        };
+        let thread_id = {
+            let mut processes = self.processes.lock().expect("processes lock poisoned");
+            let Some(process) = processes.get_mut(process_id) else {
+                return;
+            };
+            if let Some(bytes) = params.get("deltaBase64").and_then(Value::as_str).and_then(|d| STANDARD.decode(d).ok()) {
+                let buffer = if params.get("stream").and_then(Value::as_str) == Some("stderr") {
+                    &mut process.stderr
+                } else {
+                    &mut process.stdout
+                };
+                let room = RUN_OUTPUT_LIMIT.saturating_sub(buffer.len());
+                buffer.extend_from_slice(&bytes[..bytes.len().min(room)]);
+            }
+            process.thread_id
+        };
+        self.send_to(
+            thread_id,
+            &json!({ "type": "event", "threadId": thread_id, "method": "command/exec/outputDelta", "params": params }),
+        );
+    }
+
     async fn forward_event(&self, pool: &PgPool, method: &str, params: &Value) {
+        // Command output names its process, not its thread, so it is routed by the process.
+        if method == "command/exec/outputDelta" {
+            self.record_process_output(params);
+            return;
+        }
         let Some(codex_thread_id) = params.get("threadId").and_then(Value::as_str) else {
             return;
         };

@@ -4,6 +4,7 @@ import type { Artifact, Environment, FileMatch, Project, Skill, Thread, Turn, Us
 import type { Activity, Approval, SendOptions } from "../state/useCodex";
 import type { ToolUse } from "../state/toolUses";
 import type { WorkLog } from "../state/work";
+import type { CommandOutput } from "../state/commandOutput";
 import { CheckoutFiles } from "./CheckoutFiles";
 import { RunCommand } from "./RunCommand";
 import { Composer } from "./Composer";
@@ -39,6 +40,7 @@ interface HomeProps {
   activity: Record<string, Activity>;
   work: Record<string, WorkLog>;
   diffs: Record<string, string>;
+  commandOutput: Record<string, CommandOutput>;
   approvals: Approval[];
   sending: boolean;
   projects: Project[];
@@ -59,7 +61,7 @@ interface HomeProps {
 
 export function Home(props: HomeProps) {
   const { t } = useI18n();
-  const { prefill, onPrefillUsed, onAddPlugin, onAction, onFork, user, workspaceId, thread, threads, onOpenThread, turns, agentText, streamText, toolUses, activity, work, diffs, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
+  const { prefill, onPrefillUsed, onAddPlugin, onAction, onFork, user, workspaceId, thread, threads, onOpenThread, turns, agentText, streamText, toolUses, activity, work, diffs, commandOutput, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
   const pending = approvals.filter((a) => a.threadId === thread?.id);
   const threadId = thread?.id ?? "";
   const hasRepo = Boolean(thread?.repo_id);
@@ -227,7 +229,7 @@ export function Home(props: HomeProps) {
           {thread.repo_id && <CommitBar threadId={thread.id} branch={thread.work_branch} onError={onError} />}
           {thread.repo_id && <PreviewBar threadId={thread.id} onError={onError} />}
           {thread.repo_id && <CheckoutFiles threadId={thread.id} onError={onError} />}
-          {thread.repo_id && <RunCommand threadId={thread.id} onError={onError} />}
+          {thread.repo_id && <RunCommand threadId={thread.id} output={commandOutput} onError={onError} />}
           <div className="thread-scroll">
             <Conversation
               variant={thread.repo_id ? "code" : "chat"}
