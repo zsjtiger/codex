@@ -170,6 +170,8 @@ export const environments = {
   codexPlugins: (id: string) => api<CodexPlugins>("GET", `/environments/${id}/codex-plugins`),
   /** The skills codex discovers in this environment now, with any that it could not read. */
   codexSkills: (id: string) => api<CodexSkills>("GET", `/environments/${id}/codex-skills`),
+  /** Clears codex's own memory in this environment. Only workspace admins can do this. */
+  resetCodexMemory: (id: string) => api<void>("POST", `/environments/${id}/memory/reset`),
   /** Codex's own memory in this environment: how many past threads it has learned from, and whether it is ready. */
   codexMemory: (id: string) => api<CodexMemory>("GET", `/environments/${id}/memory`),
   /** Every MCP server codex has in this environment, with its state and tools, as it is now. */

@@ -2,7 +2,7 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     http::StatusCode,
-    routing::get,
+    routing::{get, post},
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -56,6 +56,7 @@ pub fn routes() -> Router<AppState> {
         .route("/environments/{id}/rate-limits", get(rate_limits))
         .route("/environments/{id}/mcp-servers", get(mcp_servers))
         .route("/environments/{id}/memory", get(codex_memory))
+        .route("/environments/{id}/memory/reset", post(reset_codex_memory))
         .route("/environments/{id}/codex-skills", get(codex_skills))
         .route("/environments/{id}/codex-plugins", get(codex_plugins))
 }
@@ -581,4 +582,26 @@ async fn codex_plugins(
         })
         .collect();
     Ok(Json(CodexPlugins { plugins, errors }))
+}
+
+/// Clears codex's own memory in an environment. Only workspace admins can do this: it cannot be undone, and
+/// it affects every chat in the environment. Recorded in the audit log.
+async fn reset_codex_memory(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    let env = load(&state.pool, id).await?;
+    require_role(&state.pool, env.workspace_id, user.id, Role::Admin).await?;
+    let lease = state
+        .runtime
+        .lease(id, env.endpoint.as_deref())
+        .await
+        .map_err(|err| ApiError::BadRequest(err.to_string()))?;
+    lease
+        .request("memory/reset", serde_json::Value::Null)
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("could not reset codex's memory: {err}")))?;
+    audit::record(&state.pool, env.workspace_id, user.id, "environment.memory_reset", "environment", id, json!({})).await?;
+    Ok(StatusCode::NO_CONTENT)
 }

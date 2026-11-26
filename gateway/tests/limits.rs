@@ -137,3 +137,32 @@ async fn the_plugins_codex_has_installed_are_listed_with_their_marketplace(pool:
     );
     assert_eq!(found["errors"], json!([{ "marketplace_path": "/home/x/.codex/plugins/broken", "message": "bad manifest" }]));
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn only_admins_can_reset_codex_memory_and_it_is_audited(pool: PgPool) {
+    let state = AppState::new(pool.clone(), true, RuntimeConfig::default());
+    let mock = mock_app_server().await;
+    let owner = login(&state, "reset-owner@example.com").await;
+    let (ws_id, _) = setup(&state, &owner, Some(&mock.url)).await;
+    let (_, envs) = call(&state, "GET", &format!("/api/v1/workspaces/{ws_id}/environments"), &owner, None).await;
+    let env_id = envs[0]["id"].as_str().unwrap().to_string();
+
+    // A plain member can read codex's memory but cannot reset it.
+    let member = login(&state, "reset-member@example.com").await;
+    let (status, _) = call(&state, "POST", &format!("/api/v1/workspaces/{ws_id}/members"), &owner, Some(json!({ "email": "reset-member@example.com", "role": "member" }))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (status, _) = call(&state, "POST", &format!("/api/v1/environments/{env_id}/memory/reset"), &member, None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(!mock.requests.lock().unwrap().iter().any(|(m, _)| m == "memory/reset"), "a member's reset never reached codex");
+
+    // The owner (an admin) resets it; codex is asked, and the reset is in the audit log.
+    let (status, body) = call(&state, "POST", &format!("/api/v1/environments/{env_id}/memory/reset"), &owner, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    assert!(mock.requests.lock().unwrap().iter().any(|(m, _)| m == "memory/reset"));
+    let audited: i64 = sqlx::query_scalar("SELECT count(*) FROM audit_logs WHERE action = 'environment.memory_reset' AND target_id = $1")
+        .bind(env_id.as_str())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(audited, 1);
+}
