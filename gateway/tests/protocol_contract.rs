@@ -283,3 +283,134 @@ fn the_schema_check_rejects_messages_codex_would_refuse() {
     );
 }
 
+/// The response type each method answers with, by its name in the schema. Some names do not follow the method's
+/// (`account/rateLimits/read` answers `GetAccountRateLimitsResponse`), so the table is written out. A test below
+/// checks that every name exists in the schema.
+const RESPONSE_TYPES: &[(&str, &str)] = &[
+    ("initialize", "InitializeResponse"),
+    ("thread/start", "ThreadStartResponse"),
+    ("turn/start", "TurnStartResponse"),
+    ("thread/resume", "ThreadResumeResponse"),
+    ("thread/fork", "ThreadForkResponse"),
+    ("turn/steer", "TurnSteerResponse"),
+    ("turn/interrupt", "TurnInterruptResponse"),
+    ("review/start", "ReviewStartResponse"),
+    ("thread/compact/start", "ThreadCompactStartResponse"),
+    ("thread/goal/get", "ThreadGoalGetResponse"),
+    ("thread/goal/set", "ThreadGoalSetResponse"),
+    ("thread/goal/clear", "ThreadGoalClearResponse"),
+    ("thread/revert", "ThreadRevertResponse"),
+    ("command/exec", "CommandExecResponse"),
+    ("command/exec/write", "CommandExecWriteResponse"),
+    ("command/exec/resize", "CommandExecResizeResponse"),
+    ("fs/readFile", "FsReadFileResponse"),
+    ("fs/writeFile", "FsWriteFileResponse"),
+    ("fs/createDirectory", "FsCreateDirectoryResponse"),
+    ("fs/remove", "FsRemoveResponse"),
+    ("fs/copy", "FsCopyResponse"),
+    ("fs/readDirectory", "FsReadDirectoryResponse"),
+    ("fs/watch", "FsWatchResponse"),
+    ("fs/unwatch", "FsUnwatchResponse"),
+    ("fuzzyFileSearch", "FuzzyFileSearchResponse"),
+    ("config/read", "ConfigReadResponse"),
+    ("model/list", "ModelListResponse"),
+    ("account/rateLimits/read", "GetAccountRateLimitsResponse"),
+    ("mcpServerStatus/list", "ListMcpServerStatusResponse"),
+    ("skills/list", "SkillsListResponse"),
+    ("plugin/installed", "PluginInstalledResponse"),
+];
+
+/// Removes every `required` list from a schema, at every depth.
+fn without_required(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            map.remove("required");
+            for child in map.values_mut() {
+                without_required(child);
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(without_required),
+        _ => {}
+    }
+}
+
+/// A validator for one response type, by its name in the schema, found under `v2` or at the top.
+///
+/// The mock answers with the fields the gateway reads, not every field codex sends, so presence is not checked
+/// here: `required` is dropped. What the mock does send must still have the right types and values, which is
+/// what a mistyped answer breaks. Presence of the fields the gateway reads is covered by the gateway's own tests.
+fn response_validator(name: &str) -> Option<jsonschema::Validator> {
+    let document: Value = serde_json::from_str(&std::fs::read_to_string(schema_path()).unwrap()).unwrap();
+    let mut definitions = document["definitions"].clone();
+    let path = if definitions["v2"].get(name).is_some() {
+        format!("v2/{name}")
+    } else if definitions.get(name).is_some() {
+        name.to_string()
+    } else {
+        return None;
+    };
+    without_required(&mut definitions);
+    let schema = json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "definitions": definitions,
+        "$ref": format!("#/definitions/{path}"),
+    });
+    Some(jsonschema::validator_for(&schema).expect("the response schema compiles"))
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn every_answer_the_mock_gives_matches_the_protocol(pool: PgPool) {
+    let root = std::env::temp_dir().join(format!("contract-{}", Uuid::new_v4()));
+    let config = CodeConfig { root: root.join("data"), ..Default::default() };
+    let state = AppState::new(pool.clone(), true, RuntimeConfig::default()).with_code(config);
+    let mock = mock_app_server().await;
+    let token = login(&state, "contract-answers@example.com").await;
+    exercise_features(&state, &pool, &token, &mock, &root).await;
+
+    let answers = mock.answers.lock().unwrap().clone();
+    let table: std::collections::BTreeMap<&str, &str> = RESPONSE_TYPES.iter().copied().collect();
+    let mut wrong = Vec::new();
+    let mut checked = 0;
+    let mut validators = std::collections::HashMap::new();
+    for (method, outcome) in &answers {
+        // An error answer is not a result; the mock gives those on purpose for some requests.
+        if outcome.get("code").is_some() && outcome.get("message").is_some() {
+            continue;
+        }
+        let Some(name) = table.get(method.as_str()) else {
+            if NOT_IN_SCHEMA.contains(&method.as_str()) {
+                continue;
+            }
+            wrong.push(format!("{method}: no response type is listed for it in RESPONSE_TYPES"));
+            continue;
+        };
+        let validator = validators.entry(*name).or_insert_with(|| response_validator(name));
+        let Some(validator) = validator else {
+            wrong.push(format!("{method}: {name} is not in the schema"));
+            continue;
+        };
+        checked += 1;
+        let found = problems(validator, outcome);
+        if !found.is_empty() {
+            wrong.push(format!("{method} answered with {outcome}: {}", found.join("; ")));
+        }
+    }
+    let _ = std::fs::remove_dir_all(&root);
+    assert!(checked > 0, "the mock answered requests to check");
+    assert!(wrong.is_empty(), "answers that do not match the protocol:\n{}", wrong.join("\n"));
+}
+
+/// The response check itself: a wrong answer must be reported.
+#[test]
+fn the_response_check_rejects_answers_codex_would_not_send() {
+    let goal = response_validator("ThreadGoalGetResponse").expect("the type is in the schema");
+    // A goal whose objective is a number is not a goal.
+    assert!(!problems(&goal, &json!({ "goal": { "objective": 5 } })).is_empty());
+    // An answer that is right is accepted.
+    assert_eq!(problems(&goal, &json!({ "goal": null })), Vec::<String>::new());
+    // Every type in the table must exist in the schema.
+    for (method, name) in RESPONSE_TYPES {
+        assert!(response_validator(name).is_some(), "{method} answers with {name}, which the schema does not define");
+    }
+}
+

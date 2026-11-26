@@ -41,6 +41,8 @@ pub struct MockServer {
     pub max_in_flight: Arc<AtomicUsize>,
     /// Every frame the mock has sent to the gateway, parsed: responses, notifications and server requests.
     pub sent: Arc<Mutex<Vec<Value>>>,
+    /// Each answer the mock gave to one of the gateway's requests: the method asked, and the result (or error).
+    pub answers: Arc<Mutex<Vec<(String, Value)>>>,
 }
 
 /// Starts a mock app-server. Turn behaviour depends on the input text:
@@ -59,6 +61,13 @@ pub async fn mock_app_server() -> MockServer {
     let requests_c = Arc::clone(&requests);
     let sent = Arc::new(Mutex::new(Vec::new()));
     let sent_c = Arc::clone(&sent);
+    let answers = Arc::new(Mutex::new(Vec::new()));
+    let answers_c = Arc::clone(&answers);
+    // Which method each of the gateway's requests asked for, per connection, so an answer can be named.
+    let asked: Arc<Mutex<std::collections::HashMap<(usize, String), String>>> = Arc::new(Mutex::new(std::collections::HashMap::new()));
+    let asked_c = Arc::clone(&asked);
+    let connections = Arc::new(AtomicUsize::new(0));
+    let connections_c = Arc::clone(&connections);
     let (seen_c, responses_c, max_c) = (
         Arc::clone(&seen),
         Arc::clone(&responses),
@@ -71,11 +80,24 @@ pub async fn mock_app_server() -> MockServer {
             };
             let socket = accept_async(stream).await.unwrap();
             let sent_w = Arc::clone(&sent_c);
+            let answers_w = Arc::clone(&answers_c);
+            let asked_w = Arc::clone(&asked_c);
+            let asked_r = Arc::clone(&asked_c);
+            let conn_no = connections_c.fetch_add(1, Ordering::SeqCst);
             let (mut sink, mut stream) = socket.split();
             let (out_tx, mut out_rx) = mpsc::unbounded_channel::<String>();
             tokio::spawn(async move {
                 while let Some(frame) = out_rx.recv().await {
                     if let Ok(parsed) = serde_json::from_str::<Value>(&frame) {
+                        // An answer names the request it answers; its method was recorded when the request came in.
+                        if parsed.get("method").is_none() {
+                            if let Some(id) = parsed.get("id") {
+                                if let Some(method) = asked_w.lock().unwrap().get(&(conn_no, id.to_string())).cloned() {
+                                    let outcome = parsed.get("result").or_else(|| parsed.get("error")).cloned().unwrap_or(Value::Null);
+                                    answers_w.lock().unwrap().push((method, outcome));
+                                }
+                            }
+                        }
                         sent_w.lock().unwrap().push(parsed);
                     }
                     if sink.send(Message::Text(frame.into())).await.is_err() {
@@ -85,6 +107,7 @@ pub async fn mock_app_server() -> MockServer {
             });
 
             let requests = Arc::clone(&requests_c);
+            let asked = Arc::clone(&asked_r);
             let (seen, responses, max_in_flight, in_flight, turn_counter) = (
                 Arc::clone(&seen_c),
                 Arc::clone(&responses_c),
@@ -112,6 +135,7 @@ pub async fn mock_app_server() -> MockServer {
                     let Some(id) = msg.get("id").cloned() else {
                         continue; // notification such as "initialized"
                     };
+                    asked.lock().unwrap().insert((conn_no, id.to_string()), method.clone());
                     let reply = |result: Value| json!({ "id": id, "result": result }).to_string();
                     match method.as_str() {
                         "initialize" => out_tx.send(reply(json!({ "userAgent": "mock" }))).unwrap(),
@@ -631,6 +655,7 @@ pub async fn mock_app_server() -> MockServer {
         responses,
         max_in_flight,
         sent,
+        answers,
     }
 }
 
