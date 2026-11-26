@@ -8,6 +8,7 @@ import { tx } from "../i18n";
 import { type ToolUse, mergeToolUses, toolUseFromItem } from "./toolUses";
 import { WORK_METHODS, applyWorkEvent, type WorkLog } from "./work";
 import { publishEnvironment } from "./environmentEvents";
+import { type Notice, newNotice, noticeFor } from "./notices";
 
 export interface SendOptions {
   model?: string;
@@ -60,6 +61,8 @@ export function useCodex() {
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [socketStatus, setSocketStatus] = useState<SocketStatus>("closed");
   const [error, setError] = useState<string | null>(null);
+  // Warnings and notices codex sent, newest last. Shown above the chat until dismissed.
+  const [notices, setNotices] = useState<Notice[]>([]);
   const [sending, setSending] = useState(false);
   const [draftProjectId, setDraftProjectId] = useState<string | null>(null);
 
@@ -104,8 +107,15 @@ export function useCodex() {
     (frame: Frame) => {
       // A notice about an environment as a whole, such as its account's limits, goes to the components showing it.
       if (frame.type === "event" && typeof frame.environmentId === "string") {
-        publishEnvironment(frame.environmentId, String(frame.method), (frame.params ?? {}) as Record<string, unknown>);
+        const params = (frame.params ?? {}) as Record<string, unknown>;
+        const notice = noticeFor(String(frame.method), params);
+        if (notice) setNotices((prev) => [...prev.slice(-4), newNotice(notice)]);
+        publishEnvironment(frame.environmentId, String(frame.method), params);
         return;
+      }
+      if (frame.type === "event") {
+        const notice = noticeFor(String(frame.method), (frame.params ?? {}) as Record<string, unknown>);
+        if (notice) setNotices((prev) => [...prev.slice(-4), newNotice(notice)]);
       }
       switch (frame.type) {
         case "event": {
@@ -429,6 +439,8 @@ export function useCodex() {
     error,
     sending,
     dismissError: () => setError(null),
+    notices,
+    dismissNotice: (id: number) => setNotices((prev) => prev.filter((notice) => notice.id !== id)),
     draftProjectId,
     setDraftProjectId,
     refreshThreads: () => (workspaceRef.current ? refreshThreads(workspaceRef.current) : Promise.resolve()),

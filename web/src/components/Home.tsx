@@ -7,6 +7,8 @@ import type { WorkLog } from "../state/work";
 import type { CommandOutput } from "../state/commandOutput";
 import { CheckoutFiles } from "./CheckoutFiles";
 import { RunCommand } from "./RunCommand";
+import { WorkspaceChanges } from "./WorkspaceChanges";
+import type { Notice } from "../state/notices";
 import { Composer } from "./Composer";
 import { usePreview } from "./Preview";
 import { Conversation } from "./Conversation";
@@ -57,11 +59,13 @@ interface HomeProps {
   error: string | null;
   onError: (message: string) => void;
   onDismissError: () => void;
+  notices: Notice[];
+  onDismissNotice: (id: number) => void;
 }
 
 export function Home(props: HomeProps) {
   const { t } = useI18n();
-  const { prefill, onPrefillUsed, onAddPlugin, onAction, onFork, user, workspaceId, thread, threads, onOpenThread, turns, agentText, streamText, toolUses, activity, work, diffs, commandOutput, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError } = props;
+  const { prefill, onPrefillUsed, onAddPlugin, onAction, onFork, user, workspaceId, thread, threads, onOpenThread, turns, agentText, streamText, toolUses, activity, work, diffs, commandOutput, environment, approvals, sending, projects, draftProjectId, onDraftProject, onCreateProject, onThreadChanged, onSend, onStop, onAnswer, onFeedback, onOpenArtifacts, upload, error, onError, onDismissError, notices, onDismissNotice } = props;
   const pending = approvals.filter((a) => a.threadId === thread?.id);
   const threadId = thread?.id ?? "";
   const hasRepo = Boolean(thread?.repo_id);
@@ -193,6 +197,14 @@ export function Home(props: HomeProps) {
           </button>
         </p>
       )}
+      {notices.map((notice) => (
+        <p key={notice.id} className={notice.tone === "warning" ? "banner notice-warning" : "banner notice-info"} role="status">
+          {notice.text}
+          <button className="banner-close" onClick={() => onDismissNotice(notice.id)} aria-label={tx("Dismiss")}>
+            ×
+          </button>
+        </p>
+      ))}
 
       {showUsedPanel && <UsedPanel uses={used} onClose={() => setShowUsed(false)} />}
 
@@ -230,6 +242,7 @@ export function Home(props: HomeProps) {
           {thread.repo_id && <PreviewBar threadId={thread.id} onError={onError} />}
           {thread.repo_id && <CheckoutFiles threadId={thread.id} onError={onError} />}
           {thread.repo_id && <RunCommand threadId={thread.id} output={commandOutput} onError={onError} />}
+          {thread.repo_id && <WorkspaceChanges threadId={thread.id} onError={onError} />}
           <div className="thread-scroll">
             <Conversation
               variant={thread.repo_id ? "code" : "chat"}

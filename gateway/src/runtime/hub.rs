@@ -35,7 +35,13 @@ struct Pending {
 }
 
 /// Notices codex sends for an environment as a whole, which browsers watching its chats are told about.
-const ENVIRONMENT_NOTICES: &[&str] = &["account/rateLimits/updated", "skills/changed"];
+const ENVIRONMENT_NOTICES: &[&str] = &[
+    "account/rateLimits/updated",
+    "skills/changed",
+    "warning",
+    "configWarning",
+    "deprecationNotice",
+];
 
 /// Most output kept for each stream of a command run from a chat.
 pub const RUN_OUTPUT_LIMIT: usize = 256 * 1024;

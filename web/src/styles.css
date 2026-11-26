@@ -1193,3 +1193,7 @@ html.desktop .app { height: 100vh; margin-top: 0; }
 .codex-skill code { overflow-wrap: anywhere; }
 .codex-skill-errors { padding-left: 18px; margin: 0; }
 .codex-plugin-group { display: flex; flex-direction: column; gap: 6px; }
+
+/* Warnings and notices codex sends, shown above the chat. */
+.notice-warning { border-color: #c98a1b; }
+.notice-info { border-color: var(--border, #e5e0d6); }

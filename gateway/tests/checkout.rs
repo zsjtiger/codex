@@ -278,3 +278,29 @@ async fn a_running_command_can_be_stopped_and_returns_what_it_printed(pool: PgPo
     assert_eq!(status, StatusCode::NOT_FOUND);
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn the_workspace_diff_is_read_from_codex_against_the_remote_branch(pool: PgPool) {
+    let root = std::env::temp_dir().join(format!("checkout-{}", Uuid::new_v4()));
+    let state = state_with_checkouts(&pool, &root);
+    let mock = mock_app_server().await;
+    let token = login(&state, "wsdiff@example.com").await;
+    let (chat_id, worktree) = code_chat(&pool, &state, &token, &mock.url, &root).await;
+
+    let (status, diff) = call(&state, "GET", &format!("/api/v1/threads/{chat_id}/workspace-diff"), &token, None).await;
+    assert_eq!(status, StatusCode::OK, "{diff}");
+    assert_eq!(diff["sha"], "1234567890abcdef1234567890abcdef12345678");
+    assert!(diff["diff"].as_str().unwrap().contains("+new"));
+    let requests = mock.requests.lock().unwrap().clone();
+    let (_, params) = requests.iter().rev().find(|(m, _)| m == "gitDiffToRemote").expect("codex was asked");
+    assert_eq!(params["cwd"], json!(worktree.canonicalize().unwrap().to_string_lossy()));
+
+    // A plain chat has no checkout, so no diff.
+    let ws_id: String = sqlx::query_scalar("SELECT workspace_id::text FROM threads WHERE id = $1::uuid").bind(&chat_id).fetch_one(&pool).await.unwrap();
+    let (_, envs) = call(&state, "GET", &format!("/api/v1/workspaces/{ws_id}/environments"), &token, None).await;
+    let (_, plain_thread) = call(&state, "POST", &format!("/api/v1/workspaces/{ws_id}/threads"), &token, Some(json!({ "title": "plain", "environment_id": envs[0]["id"] }))).await;
+    let plain = plain_thread["id"].as_str().unwrap().to_string();
+    let (status, _) = call(&state, "GET", &format!("/api/v1/threads/{plain}/workspace-diff"), &token, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let _ = std::fs::remove_dir_all(&root);
+}

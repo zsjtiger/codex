@@ -150,6 +150,12 @@ export interface CodexPlugins {
   errors: { marketplace_path: string; message: string }[];
 }
 
+/** The changes in a code chat's checkout against the remote's copy of its branch. */
+export interface WorkspaceDiff {
+  sha: string;
+  diff: string;
+}
+
 export interface Turn {
   id: string;
   /** The assistant's reply, kept on the turn once its messages complete. */

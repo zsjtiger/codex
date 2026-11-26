@@ -4,6 +4,7 @@ import { apiUrl } from "./config";
 
 import { api, ApiError, getToken } from "./client";
 import type {
+  WorkspaceDiff,
   CodexMemory,
   CodexPlugins,
   CodexSkills,
@@ -252,6 +253,8 @@ export const threads = {
     api<CommandResult>("POST", `/threads/${id}/run`, { command, process_id: processId }),
   /** Stops a command run that is going. Its run then ends with the output it had. */
   stopRun: (id: string, processId: string) => api<void>("POST", `/threads/${id}/run/${processId}/stop`),
+  /** Everything in the checkout that differs from the remote's copy of its branch, as codex computes it. */
+  workspaceDiff: (id: string) => api<WorkspaceDiff>("GET", `/threads/${id}/workspace-diff`),
   /** The diff of everything each code turn changed, in turn order. */
   diffs: (id: string) => api<TurnDiff[]>("GET", `/threads/${id}/diffs`),
   /** The finished commands and file changes of a thread, grouped by Codex turn. */

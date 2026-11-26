@@ -290,6 +290,15 @@ pub async fn mock_app_server() -> MockServer {
                             };
                             out_tx.send(reply(json!({ "data": data, "nextCursor": next }))).unwrap();
                         }
+                        "gitDiffToRemote" => {
+                            // The checkout's changes against the remote's copy of its branch.
+                            out_tx
+                                .send(reply(json!({
+                                    "sha": "1234567890abcdef1234567890abcdef12345678",
+                                    "diff": "diff --git a/src/cache.rs b/src/cache.rs\n--- a/src/cache.rs\n+++ b/src/cache.rs\n@@ -1 +1 @@\n-old\n+new\n"
+                                })))
+                                .unwrap();
+                        }
                         "memory/reset" => {
                             out_tx.send(reply(json!({}))).unwrap();
                         }
@@ -394,6 +403,11 @@ pub async fn mock_app_server() -> MockServer {
                                     )
                                     .unwrap();
                                     wait_for_response(&responses, ELICIT_ID).await;
+                                }
+                                if input.contains("WARN") {
+                                    // A configuration warning names no chat; a model switch names its chat.
+                                    out.send(json!({ "method": "configWarning", "params": { "summary": "Unknown key", "details": "in config.toml" } }).to_string()).unwrap();
+                                    out.send(json!({ "method": "model/rerouted", "params": { "threadId": "thr_mock", "turnId": turn_id, "fromModel": "big", "toModel": "small", "reason": "highRiskCyberActivity" } }).to_string()).unwrap();
                                 }
                                 if input.contains("LIMITS") {
                                     // The account's limits changed; the notice names no chat.

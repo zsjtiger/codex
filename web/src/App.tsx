@@ -362,6 +362,8 @@ export function App() {
             error={error}
             onError={onError}
             onDismissError={dismiss}
+            notices={codex.notices}
+            onDismissNotice={codex.dismissNotice}
           />
         )}
       </div>

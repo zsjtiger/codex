@@ -402,3 +402,31 @@ async fn an_environment_notice_reaches_the_browsers_watching_its_chats(pool: PgP
     assert!(quiet.is_err(), "an unwatched browser got a notice");
     wait_for_turn(&state, &token, &thread_id, 0).await;
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn configuration_warnings_and_model_switches_reach_the_chat(pool: PgPool) {
+    let mock = mock_app_server().await;
+    let state = AppState::new(pool.clone(), true, RuntimeConfig::default());
+    let token = login(&state, "warn@example.com").await;
+    let (ws_id, thread_id) = setup(&state, &token, Some(&mock.url)).await;
+    let (_, envs) = call(&state, "GET", &format!("/api/v1/workspaces/{ws_id}/environments"), &token, None).await;
+    let env_id = envs[0]["id"].as_str().unwrap().to_string();
+    let addr = spawn_gateway(state.clone()).await;
+
+    let mut watcher = connect(&state, addr, &token).await;
+    send(&mut watcher, json!({ "type": "subscribe", "threadId": thread_id })).await;
+    next_of_type(&mut watcher, "subscribed").await;
+
+    post_turn(&state, &token, &thread_id, "WARN check the config").await;
+    // The configuration warning names no chat, so it arrives as an environment notice.
+    let warning = next_of_type(&mut watcher, "event").await;
+    assert_eq!(warning["method"], "configWarning");
+    assert_eq!(warning["environmentId"], env_id.as_str());
+    assert_eq!(warning["params"]["summary"], "Unknown key");
+    // The model switch names its chat, so it arrives as that chat's event.
+    let rerouted = next_of_type(&mut watcher, "event").await;
+    assert_eq!(rerouted["method"], "model/rerouted");
+    assert_eq!(rerouted["threadId"], thread_id.as_str());
+    assert_eq!(rerouted["params"]["toModel"], "small");
+    wait_for_turn(&state, &token, &thread_id, 0).await;
+}

@@ -36,6 +36,7 @@ pub fn routes() -> Router<AppState> {
         .route("/threads/{id}/files/read", get(read_file))
         .route("/threads/{id}/run", post(run_command))
         .route("/threads/{id}/run/{process_id}/stop", post(stop_command))
+        .route("/threads/{id}/workspace-diff", get(workspace_diff))
 }
 
 /// The chat's checkout on disk, and the environment its turns run in.
@@ -381,4 +382,33 @@ async fn stop_command(
         .await
         .map_err(|err| ApiError::BadRequest(err.to_string()))?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Serialize)]
+pub struct WorkspaceDiff {
+    /// The commit the checkout is compared with: the remote's copy of its branch.
+    sha: String,
+    /// Everything that differs from that commit, committed or not, as a unified diff.
+    diff: String,
+}
+
+/// The changes in a code chat's checkout against the remote's copy of its branch, as codex computes them.
+async fn workspace_diff(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    PathParam(id): PathParam<Uuid>,
+) -> Result<Json<WorkspaceDiff>, ApiError> {
+    member_of(&state, id, &user).await?;
+    let checkout = checkout_of(&state, id).await?.ok_or(ApiError::NotFound)?;
+    let root = checkout.root.canonicalize().map_err(|_| ApiError::NotFound)?;
+    let lease = codex_for(&state, &checkout).await?;
+    let response = lease
+        .request("gitDiffToRemote", json!({ "cwd": root }))
+        .await
+        .map_err(|err| ApiError::BadRequest(format!("could not read the changes: {err}")))?;
+    // codex answers null when the checkout is not a git repository it can compare.
+    let (Some(sha), Some(diff)) = (response["sha"].as_str(), response["diff"].as_str()) else {
+        return Err(ApiError::NotFound);
+    };
+    Ok(Json(WorkspaceDiff { sha: sha.to_string(), diff: diff.to_string() }))
 }

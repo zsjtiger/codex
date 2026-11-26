@@ -446,8 +446,8 @@ function splitDiff(diff: string): WorkFile[] {
  * Everything a code turn changed, as Codex reports it for the whole turn. It also covers files that
  * shell commands changed, which the per-file work log cannot see. Collapsed until opened.
  */
-function TurnChanges({ diff }: { diff: string }) {
-  const [open, setOpen] = useState(false);
+export function TurnChanges({ diff, defaultOpen = false }: { diff: string; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
   const files = useMemo(() => splitDiff(diff), [diff]);
   const counts = diffCounts(diff);
   if (files.length === 0) return null;
