@@ -72,6 +72,8 @@ pub struct ProcessMode {
 #[derive(Default)]
 pub struct Hub {
     subscribers: Mutex<HashMap<Uuid, Vec<(u64, Outbound)>>>,
+    /// Browsers following a workspace's chat list, by workspace. See `notify_workspace`.
+    workspace_subscribers: Mutex<HashMap<Uuid, Vec<(u64, Outbound)>>>,
     /// Command runs in progress, by process id. Their output is collected here and sent to the chat.
     processes: Mutex<HashMap<String, ProcessOutput>>,
     /// File watches a chat has open, by watch id. Changes to the files are sent to the chat.
@@ -100,6 +102,38 @@ impl Hub {
             .or_default()
             .push((handle, outbound));
         handle
+    }
+
+    /// Registers a browser for a workspace's chat list. Returns a handle for `unsubscribe_workspace`.
+    pub fn subscribe_workspace(&self, workspace_id: Uuid, outbound: Outbound) -> u64 {
+        let handle = self.next_subscription.fetch_add(1, Ordering::Relaxed);
+        self.workspace_subscribers
+            .lock()
+            .expect("workspace subscribers lock poisoned")
+            .entry(workspace_id)
+            .or_default()
+            .push((handle, outbound));
+        handle
+    }
+
+    pub fn unsubscribe_workspace(&self, workspace_id: Uuid, handle: u64) {
+        let mut subscribers = self.workspace_subscribers.lock().expect("workspace subscribers lock poisoned");
+        if let Some(list) = subscribers.get_mut(&workspace_id) {
+            list.retain(|(h, _)| *h != handle);
+            if list.is_empty() {
+                subscribers.remove(&workspace_id);
+            }
+        }
+    }
+
+    /// Tells the browsers following a workspace's chat list that a chat was added, changed or removed. `change` is
+    /// created, title, archived, project or deleted. Every browser in the workspace gets it, watching the chat or not.
+    pub fn notify_workspace(&self, workspace_id: Uuid, thread_id: Uuid, change: &str) {
+        let frame = json!({ "type": "workspaceChanged", "workspaceId": workspace_id, "threadId": thread_id, "change": change });
+        let mut subscribers = self.workspace_subscribers.lock().expect("workspace subscribers lock poisoned");
+        if let Some(list) = subscribers.get_mut(&workspace_id) {
+            list.retain(|(_, outbound)| outbound.send(frame.clone()).is_ok());
+        }
     }
 
     pub fn unsubscribe(&self, thread_id: Uuid, handle: u64) {

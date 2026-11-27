@@ -243,6 +243,10 @@ export function useCodex() {
           }
           break;
         }
+        case "workspaceChanged":
+          // A chat in this workspace was added, changed or removed, perhaps in another tab or on another device.
+          if (frame.workspaceId === workspaceRef.current?.id) applyChatChange(String(frame.threadId), String(frame.change));
+          break;
         case "approvalRequest":
           setApprovals((prev) => [
             ...prev,
@@ -294,6 +298,7 @@ export function useCodex() {
       socketRef.current = new GatewaySocket(handleFrame, setSocketStatus);
       await socketRef.current.start();
     }
+    socketRef.current.subscribeWorkspace(ws.id);
     if (activeRef.current) socketRef.current.subscribe(activeRef.current);
   }, [handleFrame, refreshThreads]);
 

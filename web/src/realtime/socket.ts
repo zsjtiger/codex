@@ -14,6 +14,7 @@ const RECONNECT_DELAY_MS = 2000;
 export class GatewaySocket {
   private ws: WebSocket | null = null;
   private wanted = new Set<string>();
+  private wantedWorkspaces = new Set<string>();
   private stopped = true;
 
   constructor(
@@ -32,6 +33,7 @@ export class GatewaySocket {
     ws.onopen = () => {
       this.onStatus("open");
       for (const threadId of this.wanted) this.send({ type: "subscribe", threadId });
+      for (const workspaceId of this.wantedWorkspaces) this.send({ type: "subscribeWorkspace", workspaceId });
     };
     ws.onmessage = (event) => this.onFrame(JSON.parse(event.data as string) as Frame);
     ws.onclose = () => {
@@ -51,6 +53,12 @@ export class GatewaySocket {
   subscribe(threadId: string): void {
     this.wanted.add(threadId);
     this.send({ type: "subscribe", threadId });
+  }
+
+  /** Follows a workspace's chat list: chats added, renamed, moved or removed reach this socket. */
+  subscribeWorkspace(workspaceId: string): void {
+    this.wantedWorkspaces.add(workspaceId);
+    this.send({ type: "subscribeWorkspace", workspaceId });
   }
 
   unsubscribe(threadId: string): void {

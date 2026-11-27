@@ -5,6 +5,8 @@
 //!
 //! - `{"type":"subscribe","threadId":"..."}`: start receiving the thread's events.
 //! - `{"type":"unsubscribe","threadId":"..."}`
+//! - `{"type":"subscribeWorkspace","workspaceId":"..."}`: start receiving the chat-list changes of a workspace
+//!   (`workspaceChanged` frames: created, title, archived, project, deleted).
 //! - `{"type":"approvalResponse","requestId":"...","result":{...}}`: answer an
 //!   `approvalRequest`. `result` is the app-server response for that request kind.
 //!
@@ -46,6 +48,8 @@ pub struct WsQuery {
 enum ClientMessage {
     Subscribe { thread_id: Uuid },
     Unsubscribe { thread_id: Uuid },
+    /// Follow a workspace's chat list: chats added, renamed, moved or removed reach this browser.
+    SubscribeWorkspace { workspace_id: Uuid },
     ApprovalResponse { request_id: Uuid, result: Value },
 }
 
@@ -80,6 +84,7 @@ async fn session(socket: WebSocket, state: AppState, user: CurrentUser) {
     let (mut sink, mut stream) = socket.split();
     let (outbound, mut outbound_rx) = mpsc::unbounded_channel::<Value>();
     let mut subscriptions: Vec<Subscription> = Vec::new();
+    let mut workspaces: Vec<(Uuid, u64)> = Vec::new();
 
     loop {
         tokio::select! {
@@ -92,7 +97,7 @@ async fn session(socket: WebSocket, state: AppState, user: CurrentUser) {
                     continue;
                 };
                 let reply = match serde_json::from_str::<ClientMessage>(text.as_str()) {
-                    Ok(message) => handle(&state, &user, &outbound, &mut subscriptions, message).await,
+                    Ok(message) => handle(&state, &user, &outbound, &mut subscriptions, &mut workspaces, message).await,
                     Err(err) => error_frame(&format!("invalid message: {err}")),
                 };
                 if sink.send(Message::Text(reply.to_string().into())).await.is_err() {
@@ -116,6 +121,9 @@ async fn session(socket: WebSocket, state: AppState, user: CurrentUser) {
             .hub()
             .unsubscribe(subscription.thread_id, subscription.handle);
     }
+    for (workspace_id, handle) in workspaces {
+        state.runtime.hub().unsubscribe_workspace(workspace_id, handle);
+    }
 }
 
 async fn handle(
@@ -123,9 +131,23 @@ async fn handle(
     user: &CurrentUser,
     outbound: &mpsc::UnboundedSender<Value>,
     subscriptions: &mut Vec<Subscription>,
+    workspaces: &mut Vec<(Uuid, u64)>,
     message: ClientMessage,
 ) -> Value {
     match message {
+        ClientMessage::SubscribeWorkspace { workspace_id } => {
+            if workspaces.iter().any(|(id, _)| *id == workspace_id) {
+                return json!({ "type": "subscribedWorkspace", "workspaceId": workspace_id });
+            }
+            match require_role(&state.pool, workspace_id, user.id, Role::Member).await {
+                Ok(_) => {
+                    let handle = state.runtime.hub().subscribe_workspace(workspace_id, outbound.clone());
+                    workspaces.push((workspace_id, handle));
+                    json!({ "type": "subscribedWorkspace", "workspaceId": workspace_id })
+                }
+                Err(_) => error_frame("workspace not found"),
+            }
+        }
         ClientMessage::Subscribe { thread_id } => {
             match subscribe(state, user, outbound, subscriptions, thread_id).await {
                 Ok(()) => json!({ "type": "subscribed", "threadId": thread_id }),

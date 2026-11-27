@@ -512,6 +512,7 @@ async fn create_thread(
     )
     .await?;
     tx.commit().await?;
+    state.runtime.hub().notify_workspace(id, thread_id, "created");
 
     Ok((
         StatusCode::CREATED,
@@ -580,14 +581,16 @@ async fn update_thread(
     .execute(&state.pool)
     .await?;
     let hub = state.runtime.hub();
-    if req.title.is_some() {
-        hub.notify_thread(id, "title");
-    }
-    if req.archived.is_some() {
-        hub.notify_thread(id, "archived");
-    }
-    if set_project {
-        hub.notify_thread(id, "project");
+    let changes = [
+        (req.title.is_some(), "title"),
+        (req.archived.is_some(), "archived"),
+        (set_project, "project"),
+    ];
+    for (changed, change) in changes {
+        if changed {
+            hub.notify_thread(id, change);
+            hub.notify_workspace(access.workspace_id, id, change);
+        }
     }
     Ok(Json(load_thread(&state.pool, id).await?))
 }
@@ -618,6 +621,7 @@ async fn delete_thread(
     tx.commit().await?;
 
     state.runtime.hub().notify_thread(id, "deleted");
+    state.runtime.hub().notify_workspace(access.workspace_id, id, "deleted");
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1040,6 +1044,7 @@ async fn fork_thread(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
+    state.runtime.hub().notify_workspace(access.workspace_id, new_id, "created");
     Ok((StatusCode::CREATED, Json(load_thread(&state.pool, new_id).await?)))
 }
 
