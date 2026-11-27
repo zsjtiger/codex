@@ -16,6 +16,9 @@ use std::{
 };
 
 use serde_json::{Value, json};
+
+/// The event a chat's browsers get when the gateway changes the chat: see `Hub::notify_thread`.
+pub const CHAT_CHANGED: &str = "baize/thread/changed";
 use sqlx::PgPool;
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -115,6 +118,15 @@ impl Hub {
             .expect("subscribers lock poisoned")
             .get(&thread_id)
             .is_some_and(|list| !list.is_empty())
+    }
+
+    /// Tells the browsers watching a chat that something about it changed made through the gateway, so the
+    /// other tabs can reload what they show. `change` is one of title, archived, project, deleted, reverted or feedback.
+    pub fn notify_thread(&self, thread_id: Uuid, change: &str) {
+        self.send_to(
+            thread_id,
+            &json!({ "type": "event", "threadId": thread_id, "method": CHAT_CHANGED, "params": { "change": change } }),
+        );
     }
 
     fn send_to(&self, thread_id: Uuid, frame: &Value) {

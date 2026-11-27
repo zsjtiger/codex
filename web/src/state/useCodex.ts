@@ -14,6 +14,20 @@ import { publishEnvironment } from "./environmentEvents";
 import { type Notice, newNotice, noticeFor } from "./notices";
 import { publishThread } from "./threadEvents";
 
+/** The gateway's event when it changed a chat itself. Its `change` names what changed. */
+const CHAT_CHANGED = "baize/thread/changed";
+/** Codex's own events that mean a chat changed, and what changed. */
+const CODEX_CHAT_CHANGES: Record<string, string> = {
+  "thread/name/updated": "title",
+  "thread/archived": "archived",
+  "thread/unarchived": "archived",
+  "thread/deleted": "deleted",
+  "thread/closed": "status",
+  "thread/reverted": "reverted",
+  "thread/status/changed": "status",
+  "thread/settings/updated": "status",
+};
+
 export interface SendOptions {
   model?: string;
   effort?: string;
@@ -109,6 +123,23 @@ export function useCodex() {
     setDiffs((prev) => ({ ...savedDiffs, ...prev }));
   }, []);
 
+  /** Reloads what a tab shows after its chat changed elsewhere. A chat deleted while open is closed here. */
+  const applyChatChange = useCallback(
+    (threadId: string, change: string) => {
+      if (workspaceRef.current) void refreshThreads(workspaceRef.current).catch(fail);
+      if (activeRef.current !== threadId) return;
+      if (change === "deleted") {
+        activeRef.current = null;
+        setActiveId(null);
+        setTurns([]);
+        socketRef.current?.unsubscribe(threadId);
+        return;
+      }
+      if (change === "reverted" || change === "feedback" || change === "status") void loadTurns(threadId).catch(fail);
+    },
+    [fail, loadTurns, refreshThreads],
+  );
+
   const handleFrame = useCallback(
     (frame: Frame) => {
       // A notice about an environment as a whole, such as its account's limits, goes to the components showing it.
@@ -198,6 +229,14 @@ export function useCodex() {
               return { ...prev, [threadId]: [...list, use] };
             });
           }
+          // A chat changed on the gateway or in codex (another tab, or a device): reload what this tab shows.
+          const codexChange = CODEX_CHAT_CHANGES[method];
+          if (method === CHAT_CHANGED) applyChatChange(frame.threadId as string, String(params.change));
+          else if (codexChange) applyChatChange(frame.threadId as string, codexChange);
+          if (method === "serverRequest/resolved") {
+            // Answered in another tab or by codex itself: the card is no longer waiting for this tab.
+            setApprovals((prev) => prev.filter((a) => a.requestId !== params.requestId));
+          }
           if (method === "turn/started" || method === "turn/completed") {
             if (frame.threadId === activeRef.current) void loadTurns(frame.threadId as string).catch(fail);
             if (workspaceRef.current) void refreshThreads(workspaceRef.current).catch(fail);
@@ -223,8 +262,16 @@ export function useCodex() {
           break;
       }
     },
-    [fail, loadTurns, refreshThreads],
+    [fail, applyChatChange, loadTurns, refreshThreads],
   );
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && workspaceRef.current) void refreshThreads(workspaceRef.current).catch(() => {});
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [refreshThreads]);
 
   const bootstrap = useCallback(async () => {
     const me = await api<User>("GET", "/me");

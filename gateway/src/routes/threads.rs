@@ -579,6 +579,16 @@ async fn update_thread(
     .bind(project_id)
     .execute(&state.pool)
     .await?;
+    let hub = state.runtime.hub();
+    if req.title.is_some() {
+        hub.notify_thread(id, "title");
+    }
+    if req.archived.is_some() {
+        hub.notify_thread(id, "archived");
+    }
+    if set_project {
+        hub.notify_thread(id, "project");
+    }
     Ok(Json(load_thread(&state.pool, id).await?))
 }
 
@@ -607,6 +617,7 @@ async fn delete_thread(
     .await?;
     tx.commit().await?;
 
+    state.runtime.hub().notify_thread(id, "deleted");
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -788,8 +799,8 @@ async fn set_feedback(
             "rating must be \"up\", \"down\", or null".to_string(),
         ));
     }
-    let workspace_id: Uuid = sqlx::query_scalar(
-        "SELECT th.workspace_id FROM turns t JOIN threads th ON th.id = t.thread_id WHERE t.id = $1",
+    let (workspace_id, thread_id): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT th.workspace_id, th.id FROM turns t JOIN threads th ON th.id = t.thread_id WHERE t.id = $1",
     )
     .bind(id)
     .fetch_optional(&state.pool)
@@ -801,6 +812,7 @@ async fn set_feedback(
         .bind(req.rating)
         .execute(&state.pool)
         .await?;
+    state.runtime.hub().notify_thread(thread_id, "feedback");
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1111,5 +1123,6 @@ async fn revert_turn(
         .await?
         .rows_affected();
     audit::record(&state.pool, workspace_id, user.id, "turn.revert", "thread", thread_id, json!({ "turn": id, "turns": marked })).await?;
+    state.runtime.hub().notify_thread(thread_id, "reverted");
     Ok(StatusCode::NO_CONTENT)
 }
